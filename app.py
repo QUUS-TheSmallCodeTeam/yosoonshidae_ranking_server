@@ -129,7 +129,7 @@ async def preprocess_and_train():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error during preprocessing or training: {str(e)}")
 
-@app.get("/test")
+@app.post("/test")
 async def test_endpoint():
     return {"message": "Test successful. Endpoint is reachable."}
 
