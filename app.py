@@ -133,7 +133,7 @@ async def preprocess_and_train():
 async def test_endpoint(request: Request):
     #return submitted body
     data = await request.json()
-    return data
+    return f"{data}"
     #return {"message": "Test successful. Endpoint is reachable."}
 
 if __name__ == "__main__":
