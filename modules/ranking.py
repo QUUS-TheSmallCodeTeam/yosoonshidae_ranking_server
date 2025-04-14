@@ -430,14 +430,31 @@ def save_report(html_content, model_name, dataset_type, feature_set, timestamp):
     filename = f"plan_rankings_{model_name}_{dataset_type}_{feature_set}_{timestamp}.html"
     
     # Create reports directory if it doesn't exist
-    base_dir = Path("reports")
-    base_dir.mkdir(exist_ok=True, parents=True)
+    # Use a path that will work in Hugging Face Spaces
+    base_dir = Path("./reports")
     
-    # Full path to the report file
-    file_path = base_dir / filename
+    try:
+        # Try to create directory in the app folder
+        base_dir.mkdir(exist_ok=True, parents=True)
+        file_path = base_dir / filename
+    except PermissionError:
+        # Fallback to /tmp if app directory is not writable
+        print("Permission error creating reports directory, using /tmp as fallback")
+        base_dir = Path("/tmp/reports")
+        base_dir.mkdir(exist_ok=True, parents=True)
+        file_path = base_dir / filename
     
     # Write the HTML content to the file
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(html_content)
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        print(f"Report saved to {file_path}")
+    except Exception as e:
+        print(f"Error saving report: {e}")
+        # Use an even more basic fallback if all else fails
+        file_path = Path(f"/tmp/{filename}")
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        print(f"Report saved to fallback location: {file_path}")
     
     return str(file_path) 

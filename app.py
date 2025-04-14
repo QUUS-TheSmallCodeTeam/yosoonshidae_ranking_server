@@ -76,28 +76,16 @@ def read_root():
     otherwise return a simple welcome message.
     """
     # Look for the latest HTML report in the reports directory
-    reports_dir = Path("reports")
+    # Try both the regular app directory and the /tmp fallback
+    report_dirs = [Path("./reports"), Path("/tmp/reports"), Path("/tmp")]
     
-    if not reports_dir.exists():
-        return """
-        <html>
-            <head>
-                <title>Moyo Ranking Model API</title>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
-                    h1 { color: #2c3e50; }
-                </style>
-            </head>
-            <body>
-                <h1>Welcome to the Moyo Ranking Model API</h1>
-                <p>No ranking reports are available yet. Use the <code>/process</code> endpoint to analyze data and generate rankings.</p>
-            </body>
-        </html>
-        """
+    html_files = []
+    for reports_dir in report_dirs:
+        if reports_dir.exists():
+            html_files.extend(list(reports_dir.glob("plan_rankings_*.html")))
     
-    # Find the most recent HTML report
-    html_files = list(reports_dir.glob("*.html"))
     if not html_files:
+        # No reports found, return welcome message
         return """
         <html>
             <head>
@@ -116,12 +104,30 @@ def read_root():
     
     # Get the latest report by modification time
     latest_report = max(html_files, key=lambda x: x.stat().st_mtime)
+    print(f"Serving latest report: {latest_report}")
     
     # Read and return the HTML content
-    with open(latest_report, "r", encoding="utf-8") as f:
-        html_content = f.read()
-    
-    return html_content
+    try:
+        with open(latest_report, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return html_content
+    except Exception as e:
+        print(f"Error reading HTML report: {e}")
+        return """
+        <html>
+            <head>
+                <title>Moyo Ranking Model API - Error</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+                    h1 { color: #e74c3c; }
+                </style>
+            </head>
+            <body>
+                <h1>Error Reading Report</h1>
+                <p>There was an error reading the latest report. Please try generating a new report using the <code>/process</code> endpoint.</p>
+            </body>
+        </html>
+        """
 
 @app.post("/test")
 async def test_endpoint(request: Request):
