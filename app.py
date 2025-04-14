@@ -130,8 +130,11 @@ async def preprocess_and_train():
         raise HTTPException(status_code=500, detail=f"Error during preprocessing or training: {str(e)}")
 
 @app.post("/test")
-async def test_endpoint():
-    return {"message": "Test successful. Endpoint is reachable."}
+async def test_endpoint(request: Request):
+    #return submitted body
+    data = await request.json()
+    return data
+    #return {"message": "Test successful. Endpoint is reachable."}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=7860)
