@@ -80,16 +80,32 @@ class XGBoostModel:
         
         # Define paths for model and metadata
         if path is None:
-            # Default path in the current directory structure
-            base_path = Path(os.path.dirname(os.path.abspath(__file__))) / "../../trained_models/xgboost"
-            os.makedirs(base_path, exist_ok=True)
-            model_path = base_path / "model.json"
-            metadata_path = base_path / "model_metadata.json"
+            # Try to use default path in the current directory structure
+            try:
+                base_path = Path(os.path.dirname(os.path.abspath(__file__))) / "../../trained_models/xgboost"
+                os.makedirs(base_path, exist_ok=True)
+                model_path = base_path / "model.json"
+                metadata_path = base_path / "model_metadata.json"
+            except PermissionError:
+                # Fallback to /tmp if we don't have permission to write to the app directory
+                print("Permission denied for app directory. Falling back to /tmp for model storage.")
+                base_path = Path("/tmp/trained_models/xgboost")
+                os.makedirs(base_path, exist_ok=True)
+                model_path = base_path / "model.json"
+                metadata_path = base_path / "model_metadata.json"
         else:
-            base_path = Path(path)
-            os.makedirs(base_path, exist_ok=True)
-            model_path = base_path / "model.json"
-            metadata_path = base_path / "model_metadata.json"
+            try:
+                base_path = Path(path)
+                os.makedirs(base_path, exist_ok=True)
+                model_path = base_path / "model.json"
+                metadata_path = base_path / "model_metadata.json"
+            except PermissionError:
+                # Fallback to /tmp if specified path isn't writable
+                print(f"Permission denied for path {path}. Falling back to /tmp for model storage.")
+                base_path = Path("/tmp/trained_models/xgboost")
+                os.makedirs(base_path, exist_ok=True)
+                model_path = base_path / "model.json"
+                metadata_path = base_path / "model_metadata.json"
         
         # Save the XGBoost model in native JSON format
         self.model.save_model(str(model_path))
@@ -103,8 +119,11 @@ class XGBoostModel:
             'saved_date': datetime.now().isoformat()
         }
         
-        with open(metadata_path, 'w') as f:
-            json.dump(metadata, f, indent=2)
+        try:
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
+        except Exception as e:
+            print(f"Error saving metadata: {e}. Model saved but metadata may be missing.")
         
         return str(model_path)
     
@@ -121,10 +140,16 @@ class XGBoostModel:
         """
         # Define paths for model and metadata
         if model_path is None:
-            # Default path in the current directory structure
+            # Try default path in current directory structure
             base_path = Path(os.path.dirname(os.path.abspath(__file__))) / "../../trained_models/xgboost"
             model_path = base_path / "model.json"
             metadata_path = base_path / "model_metadata.json"
+            
+            # If not found, try /tmp fallback location
+            if not os.path.exists(model_path):
+                base_path = Path("/tmp/trained_models/xgboost")
+                model_path = base_path / "model.json"
+                metadata_path = base_path / "model_metadata.json"
         else:
             base_path = Path(model_path)
             model_path = base_path / "model.json"
