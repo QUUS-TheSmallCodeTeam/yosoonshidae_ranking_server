@@ -9,15 +9,14 @@ from datetime import datetime
 
 class XGBoostModel:
     """
-    A simplified XGBoost model implementation with domain knowledge support.
+    A simplified XGBoost model implementation without domain knowledge support.
     """
     
-    def __init__(self, use_domain_knowledge=True, feature_names=None):
+    def __init__(self, use_domain_knowledge=False, feature_names=None):
         self.model_type = 'xgboost'
         self.use_domain_knowledge = use_domain_knowledge
         self.feature_names = feature_names
         self.model = None
-        self.monotone_constraints = None
         
         # Default XGBoost parameters
         self.params = {
@@ -31,50 +30,6 @@ class XGBoostModel:
             'nthread': -1,
             'seed': 42
         }
-        
-        # Set up monotonicity constraints if using domain knowledge
-        if use_domain_knowledge and feature_names:
-            self.setup_monotonicity_constraints(feature_names)
-    
-    def setup_monotonicity_constraints(self, feature_names):
-        """
-        Set up monotonicity constraints based on domain knowledge.
-        
-        Features that should have a positive correlation with price:
-        - basic_data_clean: More data = higher price
-        - basic_data_unlimited: Unlimited data = higher price
-        - daily_data_clean: More daily data = higher price 
-        - daily_data_unlimited: Unlimited daily data = higher price
-        - voice_clean: More minutes = higher price
-        - voice_unlimited: Unlimited voice = higher price
-        - message_clean: More messages = higher price
-        - message_unlimited: Unlimited messages = higher price
-        - throttle_speed_normalized: Higher throttled speed = higher price
-        - unlimited_type_numeric: Better unlimited type = higher price
-        """
-        # Default to 0 (no constraint)
-        constraints = {feature: 0 for feature in feature_names}
-        
-        # Set positive constraints (these features should have positive correlation with price)
-        positive_features = [
-            'basic_data_clean', 'basic_data_unlimited', 
-            'daily_data_clean', 'daily_data_unlimited',
-            'voice_clean', 'voice_unlimited',
-            'message_clean', 'message_unlimited',
-            'throttle_speed_normalized', 'unlimited_type_numeric',
-            'is_5g'  # 5G should be more expensive than 4G
-        ]
-        
-        for feature in positive_features:
-            if feature in constraints:
-                constraints[feature] = 1
-        
-        # Create ordered list of constraints matching feature_names
-        self.monotone_constraints = [constraints.get(f, 0) for f in feature_names]
-        
-        # Add monotonicity constraints to model parameters
-        if any(self.monotone_constraints):
-            self.params['monotone_constraints'] = self.monotone_constraints
     
     def train(self, X, y):
         """Train the XGBoost model."""
@@ -139,14 +94,13 @@ class XGBoostModel:
         # Save the XGBoost model in native JSON format
         self.model.save_model(str(model_path))
         
-        # Save metadata separately (feature names, constraints, etc.)
+        # Save metadata separately (feature names, etc.)
         metadata = {
             'feature_names': self.feature_names,
-            'monotone_constraints': self.monotone_constraints,
             'use_domain_knowledge': self.use_domain_knowledge,
             'params': self.params,
             'model_type': self.model_type,
-            'saved_date': datetime.now().isoformat() if 'datetime' in globals() else None
+            'saved_date': datetime.now().isoformat()
         }
         
         with open(metadata_path, 'w') as f:
@@ -200,8 +154,7 @@ class XGBoostModel:
             
             # Set attributes from metadata
             instance.feature_names = metadata.get('feature_names')
-            instance.monotone_constraints = metadata.get('monotone_constraints')
-            instance.use_domain_knowledge = metadata.get('use_domain_knowledge', True)
+            instance.use_domain_knowledge = metadata.get('use_domain_knowledge', False)
             instance.params = metadata.get('params', instance.params)
         
         return instance
@@ -214,13 +167,12 @@ class XGBoostModel:
         
         # Create a new instance
         instance = cls(
-            use_domain_knowledge=data.get('use_domain_knowledge', True),
+            use_domain_knowledge=data.get('use_domain_knowledge', False),
             feature_names=data.get('feature_names', None)
         )
         
         # Set attributes from pickled data
         instance.model = data.get('model')
-        instance.monotone_constraints = data.get('monotone_constraints')
         instance.params = data.get('params', instance.params)
         
         return instance
@@ -231,17 +183,9 @@ class XGBoostModel:
     
     def get_monotonicity_constraints(self):
         """Get the monotonicity constraints used by the model."""
-        if not self.monotone_constraints:
-            return {}
-        
-        # Create a dictionary mapping feature names to constraints
-        return {
-            feat: const 
-            for feat, const in zip(self.feature_names, self.monotone_constraints)
-            if const != 0  # Only include non-zero constraints
-        }
+        return {}  # No constraints in this simplified version
 
-def get_model(model_type='xgboost', use_domain_knowledge=True, feature_names=None, **kwargs):
+def get_model(model_type='xgboost', use_domain_knowledge=False, feature_names=None, **kwargs):
     """
     Factory function to get the requested model type.
     Currently only supports XGBoost.
@@ -249,4 +193,22 @@ def get_model(model_type='xgboost', use_domain_knowledge=True, feature_names=Non
     if model_type.lower() == 'xgboost':
         return XGBoostModel(use_domain_knowledge=use_domain_knowledge, feature_names=feature_names)
     else:
-        raise ValueError(f"Unsupported model type: {model_type}. Only 'xgboost' is currently supported.") 
+        raise ValueError(f"Unsupported model type: {model_type}")
+
+def get_basic_feature_list():
+    """Return a list of basic feature names used for modeling."""
+    return [
+        'is_5g',
+        'basic_data_clean',
+        'basic_data_unlimited',
+        'daily_data_clean',
+        'daily_data_unlimited',
+        'voice_clean',
+        'voice_unlimited',
+        'message_clean',
+        'message_unlimited',
+        'throttle_speed_normalized',
+        'tethering_gb',
+        'unlimited_type_numeric',
+        'additional_call'
+    ] 

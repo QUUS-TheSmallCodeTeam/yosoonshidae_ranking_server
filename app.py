@@ -185,10 +185,10 @@ async def process_data(request: Request):
         # Record start time for training
         training_start_time = time.time()
         
-        # Get XGBoost model
+        # Get XGBoost model - with domain knowledge DISABLED for now
         model = get_model(
             'xgboost',
-            use_domain_knowledge=True,
+            use_domain_knowledge=False,  # Disable domain knowledge until monotonic constraints are fixed
             feature_names=features_to_use
         )
         
