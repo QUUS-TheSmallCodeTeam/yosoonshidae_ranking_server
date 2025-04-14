@@ -77,8 +77,8 @@ async def receive_data(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing data: {str(e)}")
 
-@app.post("/preprocess")
-async def preprocess_data():
+@app.post("/preprocess-and-train")
+async def preprocess_and_train():
     try:
         # Define paths
         data_dir = Path(os.path.dirname(__file__)) / "../data"
@@ -115,19 +115,23 @@ async def preprocess_data():
         latest_path = processed_dir / "latest_processed_data.csv"
         processed_df.to_csv(latest_path, index=False)
 
+        # Placeholder for training logic
+        # In a real implementation, you would call your training function here
+        training_message = "Training process started (placeholder). In a real implementation, training would occur here."
+
         return {
             "message": f"Preprocessing complete. Saved to {output_path}",
             "also_saved_to": str(latest_path),
             "total_records": len(processed_df),
-            "features": len(processed_df.columns)
+            "features": len(processed_df.columns),
+            "training": training_message
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error during preprocessing: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error during preprocessing or training: {str(e)}")
 
-# Placeholder for training endpoint (to be implemented later)
-@app.post("/train")
-async def train_model():
-    return {"message": "Training endpoint - to be implemented"}
+@app.get("/test")
+async def test_endpoint():
+    return {"message": "Test successful. Endpoint is reachable."}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=7860)
