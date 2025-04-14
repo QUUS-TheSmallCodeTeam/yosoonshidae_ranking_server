@@ -109,7 +109,7 @@ def shorten_plan_name(name, max_length=40):
         return name
     return name[:max_length-3] + "..."
 
-def generate_html_report(df, model_name, timestamp):
+def generate_html_report(df, model_name, timestamp, model_metrics=None):
     """
     Generate a full HTML report with styling using the enhanced format from update_rankings.py.
     
@@ -117,6 +117,7 @@ def generate_html_report(df, model_name, timestamp):
         df: DataFrame with ranking results
         model_name: Name of the model used for prediction
         timestamp: Timestamp for the report
+        model_metrics: Optional dictionary containing model performance metrics
         
     Returns:
         HTML string containing the report
@@ -147,6 +148,19 @@ def generate_html_report(df, model_name, timestamp):
             padding: 15px;
             border-radius: 5px;
             margin-bottom: 20px;
+        }
+        .metrics {
+            background-color: #eaf7fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .metrics table {
+            width: auto;
+            margin: 0;
+        }
+        .metrics td, .metrics th {
+            padding: 4px 8px;
         }
         table {
             width: 100%;
@@ -186,6 +200,25 @@ def generate_html_report(df, model_name, timestamp):
         .highlight-low {
             color: #e74c3c;
             font-weight: bold;
+        }
+        .metric-good {
+            color: #27ae60;
+        }
+        .metric-average {
+            color: #f39c12;
+        }
+        .metric-poor {
+            color: #e74c3c;
+        }
+        .chart {
+            width: 100%;
+            max-width: 800px;
+            height: 300px;
+            margin: 20px auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            background-color: #f9f9f9;
         }
         @media print {
             body {
@@ -240,7 +273,103 @@ def generate_html_report(df, model_name, timestamp):
     summary_html += """
             </ul>
         </div>
+    """
+    
+    # Add model metrics section if provided
+    metrics_html = ""
+    if model_metrics:
+        metrics_html = """
+        <div class="metrics">
+            <h2>모델 성능 지표</h2>
+            <table>
+                <tr>
+                    <th>지표 이름</th>
+                    <th>값</th>
+                    <th>설명</th>
+                </tr>
+        """
         
+        # Format metrics with descriptions
+        metrics_descriptions = {
+            "rmse": "Root Mean Squared Error - 실제 가격과 예측 가격의 평균 제곱근 오차",
+            "mae": "Mean Absolute Error - 실제 가격과 예측 가격의 평균 절대 오차",
+            "r2": "R² Score - 모델이 데이터 변동성을 설명하는 정도 (1에 가까울수록 좋음)",
+            "explained_variance": "Explained Variance - 모델이 예측한 가격의 분산이 실제 가격의 분산과 일치하는 정도",
+            "mean_absolute_percentage_error": "MAPE - 실제 가격 대비 예측 오차의 평균 백분율",
+            "training_time": "모델 학습 시간 (초)",
+            "num_features": "사용된 특성 수",
+            "num_samples": "학습 샘플 수"
+        }
+        
+        # Define thresholds for metric colors (customize based on your domain)
+        def get_metric_class(metric_name, value):
+            if metric_name == 'r2':
+                if value > 0.8: return "metric-good"
+                if value > 0.5: return "metric-average"
+                return "metric-poor"
+            elif metric_name in ['rmse', 'mae', 'mean_absolute_percentage_error']:
+                # For error metrics, lower is better
+                if metric_name == 'mean_absolute_percentage_error':
+                    if value < 0.1: return "metric-good" 
+                    if value < 0.2: return "metric-average"
+                    return "metric-poor"
+                elif metric_name == 'mae':
+                    if value < 5000: return "metric-good" 
+                    if value < 10000: return "metric-average"
+                    return "metric-poor"
+                else:  # rmse
+                    if value < 8000: return "metric-good" 
+                    if value < 15000: return "metric-average"
+                    return "metric-poor"
+            return ""  # Default, no color
+        
+        # Add each metric
+        for metric_name, metric_value in model_metrics.items():
+            # Format the metric value
+            if isinstance(metric_value, float):
+                if metric_name == 'mean_absolute_percentage_error':
+                    formatted_value = f"{metric_value:.2%}"  # Format as percentage
+                elif metric_name in ['training_time', 'r2', 'explained_variance']:
+                    formatted_value = f"{metric_value:.4f}"  # 4 decimal places
+                else:
+                    formatted_value = format_number_with_commas(metric_value)  # Standard number format
+            else:
+                formatted_value = str(metric_value)
+            
+            # Get the metric description
+            description = metrics_descriptions.get(metric_name, "")
+            
+            # Get CSS class for color-coding
+            metric_class = get_metric_class(metric_name, metric_value if isinstance(metric_value, (int, float)) else 0)
+            
+            # Add to table
+            metrics_html += f"""
+                <tr>
+                    <td>{metric_name}</td>
+                    <td class="{metric_class}">{formatted_value}</td>
+                    <td>{description}</td>
+                </tr>
+            """
+        
+        metrics_html += """
+            </table>
+        </div>
+        """
+        
+        # Add basic visualization - Prediction vs Actual scatter plot placeholder
+        # This would normally be implemented with JavaScript/D3.js for interactive visualization
+        metrics_html += """
+        <div class="chart">
+            <h3>모델 예측 정확도</h3>
+            <p style="text-align: center; margin-top: 120px;">
+                이 섹션에서는 실제 가격과 예측 가격의 관계를 시각화합니다. 
+                완전한 시각화는 클라이언트 측 JavaScript 구현이 필요합니다.
+            </p>
+        </div>
+        """
+    
+    # Main section heading
+    table_heading = """
         <h2>통합 요금제 랭킹</h2>
     """
     
@@ -420,7 +549,7 @@ def generate_html_report(df, model_name, timestamp):
     table_html.append('</table>')
     
     # Combine all HTML parts
-    full_html = html_head + summary_html + "\n".join(table_html) + html_foot
+    full_html = html_head + summary_html + metrics_html + table_heading + "\n".join(table_html) + html_foot
     
     return full_html
 

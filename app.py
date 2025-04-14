@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import os
 import json
 from datetime import datetime
@@ -9,6 +9,8 @@ from pathlib import Path
 import time
 import gc  # Import garbage collector for memory cleanup
 from fastapi.responses import HTMLResponse
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, explained_variance_score, mean_absolute_percentage_error
+from typing import Optional, Union
 
 # Import modules
 from modules import (
@@ -27,47 +29,47 @@ from modules import (
 
 app = FastAPI()
 
-# Define a model for the incoming data
+# Define a model for the incoming data - adjusted to match test.json structure
 class PlanData(BaseModel):
     id: int
     plan_name: str
     network: str
     mvno: str
     mno: str
-    basic_data: float
-    daily_data: float
-    data_exhaustion: str
-    voice: str
-    message: str
-    additional_call: str
+    basic_data: Union[float, str]  # Accept both float and string
+    daily_data: Optional[Union[float, str]] = None  # Optional and accept both types
+    data_exhaustion: Optional[str] = None
+    voice: int  # Integer as seen in test.json
+    message: int  # Integer as seen in test.json
+    additional_call: int  # Integer as seen in test.json
     data_sharing: bool
     roaming_support: bool
     micro_payment: bool
     is_esim: bool
     signup_minor: bool
     signup_foreigner: bool
-    has_usim: bool
-    has_nfc_usim: bool
-    tethering_gb: float
+    has_usim: Optional[bool] = None
+    has_nfc_usim: Optional[bool] = None
+    tethering_gb: Union[float, str]  # Accept both float and string
     tethering_status: str
-    esim_fee: int
-    esim_fee_status: str
-    usim_delivery_fee: int
-    usim_delivery_fee_status: str
-    nfc_usim_delivery_fee: int
-    nfc_usim_delivery_fee_status: str
+    esim_fee: Optional[int] = None
+    esim_fee_status: Optional[str] = None
+    usim_delivery_fee: Optional[int] = None
+    usim_delivery_fee_status: Optional[str] = None
+    nfc_usim_delivery_fee: Optional[int] = None
+    nfc_usim_delivery_fee_status: Optional[str] = None
     fee: float
     original_fee: float
     discount_fee: float
-    discount_period: int
+    discount_period: Optional[int] = None
     post_discount_fee: float
     agreement: bool
-    agreement_period: int
-    agreement_type: str
+    agreement_period: Optional[int] = None
+    agreement_type: Optional[str] = None
     num_of_signup: int
-    mvno_rating: float
-    monthly_review_score: float
-    discount_percentage: float
+    mvno_rating: Union[float, str]  # Accept both float and string
+    monthly_review_score: Union[float, str]  # Accept both float and string
+    discount_percentage: Union[float, str]  # Accept both float and string
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
@@ -180,6 +182,9 @@ async def process_data(request: Request):
         X = processed_df[features_to_use]
         y = processed_df['original_fee']
         
+        # Record start time for training
+        training_start_time = time.time()
+        
         # Get XGBoost model
         model = get_model(
             'xgboost',
@@ -189,6 +194,46 @@ async def process_data(request: Request):
         
         # Train the model
         model.train(X, y)
+        
+        # Calculate training time
+        training_time = time.time() - training_start_time
+        
+        # Calculate model metrics
+        try:
+            # Make predictions on the same data to evaluate model performance
+            y_pred = model.predict(X)
+            
+            # Calculate various metrics
+            metrics = {
+                "rmse": np.sqrt(mean_squared_error(y, y_pred)),
+                "mae": mean_absolute_error(y, y_pred),
+                "r2": r2_score(y, y_pred),
+                "explained_variance": explained_variance_score(y, y_pred),
+                "training_time": training_time,
+                "num_features": len(features_to_use),
+                "num_samples": len(X)
+            }
+            
+            # Calculate MAPE but handle zeros appropriately
+            # Avoid division by zero by excluding zero values
+            non_zero_idx = y != 0
+            if non_zero_idx.sum() > 0:
+                metrics["mean_absolute_percentage_error"] = mean_absolute_percentage_error(
+                    y[non_zero_idx], y_pred[non_zero_idx]
+                )
+            else:
+                metrics["mean_absolute_percentage_error"] = 0.0
+                
+            print(f"Model metrics: {metrics}")
+        except Exception as e:
+            print(f"Error calculating metrics: {e}")
+            metrics = {
+                "note": "Failed to calculate metrics",
+                "error": str(e),
+                "training_time": training_time,
+                "num_features": len(features_to_use),
+                "num_samples": len(X)
+            }
         
         # Save the model
         model_path = model.save()
@@ -201,7 +246,8 @@ async def process_data(request: Request):
                 "input_source": "api",
                 "training_examples": len(X),
                 "feature_count": len(features_to_use),
-                "timestamp": timestamp
+                "timestamp": timestamp,
+                "metrics": metrics
             }
         )
         config_path = save_model_config(config)
@@ -215,7 +261,7 @@ async def process_data(request: Request):
         
         # Step 6: Generate report with the enhanced format
         timestamp_now = time.strftime("%Y-%m-%d_%H-%M-%S")
-        html_report = generate_html_report(df_with_rankings, "xgboost", timestamp_now)
+        html_report = generate_html_report(df_with_rankings, "xgboost", timestamp_now, metrics)
         report_path = save_report(html_report, "xgboost", "standard", "basic", timestamp_now)
         
         # Extract the top 10 plans for response, now sorting by value_ratio instead of ranking_score
@@ -240,7 +286,8 @@ async def process_data(request: Request):
                     "model_type": "xgboost",
                     "features_used": features_to_use,
                     "training_examples": len(data),
-                    "model_saved": model_path
+                    "model_saved": model_path,
+                    "metrics": metrics
                 },
                 "ranking": {
                     "report_generated": report_path,
