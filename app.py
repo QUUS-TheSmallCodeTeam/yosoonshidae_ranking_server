@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel
 import os
 import json
@@ -6,17 +6,28 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 from pathlib import Path
-import sys
 import time
+import gc  # Import garbage collector for memory cleanup
+from fastapi.responses import HTMLResponse
+
+# Import modules
+from modules import (
+    prepare_features,
+    get_model,
+    calculate_rankings,
+    generate_html_report,
+    save_report,
+    ensure_directories,
+    save_raw_data,
+    save_processed_data,
+    get_basic_feature_list,
+    format_model_config,
+    save_model_config
+)
 
 app = FastAPI()
 
-# Add parent directory to path to import from scripts
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from scripts.modules.models import get_model
-from scripts.update_rankings import calculate_rankings, generate_html_report, save_report
-
-# Define a model for the incoming data (adjust based on actual data structure from crawl-plans)
+# Define a model for the incoming data
 class PlanData(BaseModel):
     id: int
     plan_name: str
@@ -26,8 +37,8 @@ class PlanData(BaseModel):
     basic_data: float
     daily_data: float
     data_exhaustion: str
-    voice: float
-    message: float
+    voice: str
+    message: str
     additional_call: str
     data_sharing: bool
     roaming_support: bool
@@ -58,343 +69,105 @@ class PlanData(BaseModel):
     monthly_review_score: float
     discount_percentage: float
 
-def prepare_features(df):
-    """Prepare features for model development"""
-    # Make a copy to avoid modifying the original
-    processed_df = df.copy()
-    
-    # 1. Network type encoding
-    processed_df['is_5g'] = (processed_df['network'] == '5G').astype(int)
-    
-    # 2. Process data_exhaustion field - do this first to identify throttled unlimited plans
-    # Extract speed values from data_exhaustion field (e.g., "1Mbps" -> 1)
-    def extract_speed(value):
-        if pd.isna(value) or value is None:
-            return 0
-        if isinstance(value, str) and 'Mbps' in value:
-            try:
-                return float(value.replace('Mbps', '').strip())
-            except:
-                return 0
-        return 0
-    
-    processed_df['speed_when_exhausted'] = processed_df['data_exhaustion'].apply(extract_speed)
-    
-    # Flag plans with throttled unlimited data (finite quota but continues at reduced speed)
-    processed_df['has_throttled_data'] = (processed_df['speed_when_exhausted'] > 0).astype(int)
-    
-    # 3. Data allowance processing
-    # Handle special values in data fields
-    # Special values: 999, 9999 = unlimited, -1 = not applicable
-    
-    # Create flags for unlimited data (explicit unlimited values)
-    processed_df['basic_data_unlimited'] = processed_df['basic_data'].isin([999, 9999]).astype(int)
-    processed_df['daily_data_unlimited'] = processed_df['daily_data'].isin([999, 9999]).astype(int)
-    
-    # Find maximum finite values for basic_data and daily_data
-    # These will be used as replacements for unlimited values
-    max_basic_data = processed_df.loc[~processed_df['basic_data'].isin([999, 9999]), 'basic_data'].max()
-    max_daily_data = processed_df.loc[~processed_df['daily_data'].isin([999, 9999]), 'daily_data'].max()
-    
-    # Replace special values with maximum observed values for modeling
-    processed_df['basic_data_clean'] = processed_df['basic_data'].replace({999: max_basic_data, 9999: max_basic_data, -1: 0})
-    processed_df['daily_data_clean'] = processed_df['daily_data'].replace({999: max_daily_data, 9999: max_daily_data, -1: 0}).fillna(0)
-    
-    # Add binary feature for presence of daily data allocation
-    processed_df['has_daily_allocation'] = (processed_df['daily_data_clean'] > 0).astype(int)
-    
-    # Calculate total monthly data with cleaned values
-    # For unlimited basic data plans, use the maximum value
-    # For plans with unlimited daily data, multiply by 30 to get monthly equivalent
-    processed_df['total_data'] = np.where(
-        processed_df['basic_data_unlimited'] == 1,
-        max_basic_data,  # Maximum observed value for unlimited basic data
-        processed_df['basic_data_clean'] + (processed_df['daily_data_clean'] * 30)
-    )
-    
-    # Identify plans with unlimited data AND unlimited speed
-    # (unlimited data AND no speed throttling specified = unlimited speed)
-    processed_df['has_unlimited_data'] = ((processed_df['basic_data_unlimited'] == 1) | 
-                                          (processed_df['daily_data_unlimited'] == 1)).astype(int)
-    
-    processed_df['has_unlimited_speed'] = ((processed_df['has_unlimited_data'] == 1) & 
-                                          (processed_df['speed_when_exhausted'] == 0)).astype(int)
-    
-    # Flag for any type of unlimited data:
-    # 1. Explicitly unlimited (basic or daily data is 999/9999)
-    # 2. Throttled unlimited (has speed when exhausted)
-    processed_df['any_unlimited_data'] = ((processed_df['basic_data_unlimited'] == 1) | 
-                                         (processed_df['daily_data_unlimited'] == 1) |
-                                         (processed_df['has_throttled_data'] == 1)).astype(int)
-    
-    # Create a more nuanced unlimited type classification
-    processed_df['unlimited_type'] = np.where(
-        (processed_df['has_unlimited_data'] == 1) & (processed_df['has_unlimited_speed'] == 1),
-        'unlimited_speed',  # Both data and speed are unlimited
-        np.where(
-            processed_df['has_throttled_data'] == 1,
-            'throttled_unlimited',  # Throttled after quota
-            np.where(
-                (processed_df['has_unlimited_data'] == 1),
-                'unlimited_with_throttling',  # Unlimited data but with throttling
-                'limited'  # Truly limited
-            )
-        )
-    )
-    
-    # For regression, create numeric encoding of unlimited type
-    # UPDATED ORDER:
-    # 3 = unlimited_speed (unchanged) - Highest value: unlimited data AND speed
-    # 2 = throttled_unlimited (was 1) - High value: full speed until quota, then throttled
-    # 1 = unlimited_with_throttling (was 2) - Medium value: always throttled despite unlimited data
-    # 0 = limited (unchanged) - Lowest value: service stops after quota
-    processed_df['unlimited_type_numeric'] = np.where(
-        (processed_df['has_unlimited_data'] == 1) & (processed_df['has_unlimited_speed'] == 1),
-        3,  # Unlimited data and speed
-        np.where(
-            processed_df['has_throttled_data'] == 1,
-            2,  # Throttled after quota (was 1, now 2)
-            np.where(
-                (processed_df['has_unlimited_data'] == 1),
-                1,  # Unlimited data with throttling (was 2, now 1)
-                0   # Truly limited
-            )
-        )
-    )
-    
-    # 4. Additional feature for throttled speed - higher values are better
-    # Create a normalized speed value (0-1 range) for throttled plans
-    # Common speeds: 0.4, 1, 3, 5, 10 Mbps
-    max_throttle_speed = 10.0  # Maximum typical throttle speed in dataset
-    
-    processed_df['throttle_speed_normalized'] = np.where(
-        processed_df['has_throttled_data'] == 1,
-        np.minimum(processed_df['speed_when_exhausted'] / max_throttle_speed, 1.0),
-        np.where(
-            processed_df['has_unlimited_speed'] == 1,
-            1.0,  # Unlimited speed gets maximum value
-            0  # Not applicable for other plans
-        )
-    )
-    
-    # 5. Feature flags - ensure consistent numeric representation (0/1) instead of boolean (T/F)
-    for col in ['data_sharing', 'roaming_support', 'micro_payment', 'is_esim', 'signup_minor', 'signup_foreigner']:
-        if col in processed_df.columns:
-            # First convert to boolean (to handle any string 'True'/'False' values)
-            processed_df[col] = processed_df[col].fillna(False).astype(bool)
-            # Then convert to integer (0/1)
-            processed_df[f'{col}_numeric'] = processed_df[col].astype(int)
-    
-    # 6. Voice and message processing
-    # Handle special values:
-    # - Any number containing 3 or more consecutive 9s = unlimited (999, 9999, 9996, etc.)
-    # - -1 = not available/not applicable
-    # - Other values are treated as actual quotas
-    
-    def is_unlimited_marker(value):
-        """Check if a value contains 3 or more consecutive 9s (999 and up)"""
-        if pd.isna(value) or not isinstance(value, (int, float)):
-            return False
-        # Simple check - if it has '999' in it, it's unlimited
-        # This catches 999, 9999, 9996, etc.
-        return '999' in str(int(value))
-    
-    # Find maximum finite values for voice and message (excluding unlimited markers)
-    max_voice = processed_df.loc[~processed_df['voice'].apply(is_unlimited_marker) & (processed_df['voice'] != -1), 'voice'].max()
-    max_message = processed_df.loc[~processed_df['message'].apply(is_unlimited_marker) & (processed_df['message'] != -1), 'message'].max()
-    
-    # Create flags for unlimited and not applicable
-    for col in ['voice', 'message']:
-        if col in processed_df.columns:
-            # Create flag for unlimited (anything with 999 in it)
-            processed_df[f'{col}_unlimited'] = processed_df[col].apply(is_unlimited_marker).astype(int)
-            # Create flag for not applicable
-            processed_df[f'{col}_na'] = (processed_df[col] == -1).astype(int)
-            
-            # Clean values for modeling - replace special values
-            # For unlimited, use maximum observed values
-            # For not applicable (-1), use 0
-            # All other values are kept as is
-            max_val = max_voice if col == 'voice' else max_message
-            processed_df[f'{col}_clean'] = processed_df[col].copy()
-            # Replace unlimited markers with max value
-            unlimited_mask = processed_df[col].apply(is_unlimited_marker)
-            processed_df.loc[unlimited_mask, f'{col}_clean'] = max_val
-            # Replace NA with 0
-            na_mask = (processed_df[col] == -1)
-            processed_df.loc[na_mask, f'{col}_clean'] = 0
-    
-    # 7. USIM fee status processing
-    # Create binary features to distinguish between zero fees due to being unsupported vs. free
-    
-    # Process USIM delivery fee status
-    if 'usim_delivery_fee_status' in processed_df.columns:
-        # Create binary feature for whether USIM is supported
-        processed_df['usim_supported'] = (~(processed_df['usim_delivery_fee_status'] == 'UNSUPPORTED')).astype(int)
-        
-        # Create binary feature for whether USIM is free (when supported)
-        processed_df['usim_is_free'] = ((processed_df['usim_delivery_fee_status'].isin(['FREE', 'FREE_ON_ACTIVATION'])) & 
-                                        (processed_df['usim_supported'] == 1)).astype(int)
-    
-    # Process NFC USIM delivery fee status
-    if 'nfc_usim_delivery_fee_status' in processed_df.columns:
-        # Create binary feature for whether NFC USIM is supported
-        processed_df['nfc_usim_supported'] = (~(processed_df['nfc_usim_delivery_fee_status'] == 'UNSUPPORTED')).astype(int)
-        
-        # Create binary feature for whether NFC USIM is free (when supported)
-        processed_df['nfc_usim_is_free'] = ((processed_df['nfc_usim_delivery_fee_status'].isin(['FREE', 'FREE_ON_ACTIVATION'])) & 
-                                           (processed_df['nfc_usim_supported'] == 1)).astype(int)
-    
-    # Process eSIM fee status
-    if 'esim_fee_status' in processed_df.columns:
-        # Create binary feature for whether eSIM is supported (but we'll prefer is_esim_numeric)
-        # We still compute this for backward compatibility, but it will be removed during feature selection
-        processed_df['esim_supported'] = (~(processed_df['esim_fee_status'] == 'UNSUPPORTED')).astype(int)
-        
-        # Create binary feature for whether eSIM is free (when supported)
-        processed_df['esim_is_free'] = ((processed_df['esim_fee_status'].isin(['FREE', 'FREE_ON_ACTIVATION'])) & 
-                                       (processed_df['esim_supported'] == 1)).astype(int)
-    
-    # 8. Price features
-    # Calculate price per GB (only for plans with finite data)
-    processed_df['price_per_gb'] = np.where(
-        (processed_df['total_data'] > 0) & (processed_df['any_unlimited_data'] == 0),
-        processed_df['fee'] / processed_df['total_data'],
-        np.nan  # Don't calculate for unlimited plans
-    )
-    
-    # Calculate a different value metric for unlimited plans
-    # Price adjusted for unlimited type (more premium unlimited types are more valuable)
-    processed_df['price_unlimited_adjusted'] = np.where(
-        processed_df['unlimited_type'] == 'unlimited_speed',
-        processed_df['fee'] * 0.7,  # Better value for truly unlimited plans
-        np.where(
-            processed_df['unlimited_type'] == 'throttled_unlimited',
-            processed_df['fee'] * 0.8,  # Good value for throttled after quota (full speed initially)
-            np.where(
-                processed_df['unlimited_type'] == 'unlimited_with_throttling',
-                processed_df['fee'] * 0.9,  # Less attractive: always throttled despite unlimited data
-                np.nan  # Not applicable for limited plans
-            )
-        )
-    )
-    
-    # For all plans, calculate price per month directly
-    processed_df['monthly_price'] = processed_df['fee']
-    
-    # Calculate discount ratio
-    processed_df['discount_ratio'] = np.where(
-        processed_df['original_fee'] > 0,
-        1 - (processed_df['fee'] / processed_df['original_fee']),
-        0
-    )
-    
-    # Normalize original_fee
-    if 'discount_period' in processed_df.columns:
-        discount_period_filled = processed_df['discount_period'].fillna(-1)
-        original_fee_before = processed_df['original_fee'].copy()
-        
-        processed_df['original_fee'] = np.where(
-            discount_period_filled == 0,  # Condition 1: discount_period is 0
-            processed_df['fee'],  # Set original_fee = fee
-            # Condition 2 & 3: discount_period is not 0
-            np.where(
-                processed_df['original_fee'] <= 0,  # Condition 2: original_fee invalid
-                processed_df['fee'],  # Use fee as base price
-                processed_df['original_fee']  # Condition 3: original_fee valid, keep it
-            )
-        )
-    else:
-        processed_df['original_fee'] = np.where(
-            processed_df['original_fee'] <= 0,
-            processed_df['fee'], 
-            processed_df['original_fee'] 
-        )
-    
-    # 9. Agreement features
-    processed_df['has_agreement'] = processed_df['agreement'].fillna(False).astype(int)
-    processed_df['agreement_period'] = processed_df['agreement_period'].fillna(0)
-    
-    # 10. Clean up and handle missing values
-    # Replace infinities with NaN
-    processed_df.replace([np.inf, -np.inf], np.nan, inplace=True)
-    
-    # Basic imputation for remaining NaNs
-    numeric_cols = processed_df.select_dtypes(include=['float64', 'int64']).columns
-    for col in numeric_cols:
-        if col in processed_df.columns and processed_df[col].isna().any():
-            processed_df[col] = processed_df[col].fillna(processed_df[col].median())
-    
-    return processed_df
-
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 def read_root():
-    return {"message": "Welcome to the Moyo Ranking Model API"}
+    """
+    Serve the latest ranking HTML report if available,
+    otherwise return a simple welcome message.
+    """
+    # Look for the latest HTML report in the reports directory
+    reports_dir = Path("reports")
+    
+    if not reports_dir.exists():
+        return """
+        <html>
+            <head>
+                <title>Moyo Ranking Model API</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+                    h1 { color: #2c3e50; }
+                </style>
+            </head>
+            <body>
+                <h1>Welcome to the Moyo Ranking Model API</h1>
+                <p>No ranking reports are available yet. Use the <code>/process</code> endpoint to analyze data and generate rankings.</p>
+            </body>
+        </html>
+        """
+    
+    # Find the most recent HTML report
+    html_files = list(reports_dir.glob("*.html"))
+    if not html_files:
+        return """
+        <html>
+            <head>
+                <title>Moyo Ranking Model API</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+                    h1 { color: #2c3e50; }
+                </style>
+            </head>
+            <body>
+                <h1>Welcome to the Moyo Ranking Model API</h1>
+                <p>No ranking reports are available yet. Use the <code>/process</code> endpoint to analyze data and generate rankings.</p>
+            </body>
+        </html>
+        """
+    
+    # Get the latest report by modification time
+    latest_report = max(html_files, key=lambda x: x.stat().st_mtime)
+    
+    # Read and return the HTML content
+    with open(latest_report, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    
+    return html_content
 
 @app.post("/test")
 async def test_endpoint(request: Request):
-    #return request body
+    # Echo back the request body
     data = await request.json()
     return data
-    #return {"message": "Test successful. Endpoint is reachable."}
 
 @app.post("/process")
 async def process_data(request: Request):
     try:
+        # Step 0: Ensure all directories exist
+        ensure_directories()
+        
         # Step 1: Receive and validate data
         data = await request.json()
         if not isinstance(data, list):
             raise HTTPException(status_code=400, detail="Expected a list of plan data")
 
-        # Step 2: Save the received data
+        # Step 2: Save the received data (important to keep for audit trail)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        data_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "../data/raw"
-        processed_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "../data/processed"
-        models_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "../trained_models"
-        results_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "../results"
+        file_path = save_raw_data(data, timestamp)
         
-        # Create directories if they don't exist
-        os.makedirs(data_dir, exist_ok=True)
-        os.makedirs(processed_dir, exist_ok=True)
-        os.makedirs(models_dir / "xgboost" / "with_domain" / "basic" / "standard" / "model", exist_ok=True)
-        os.makedirs(models_dir / "xgboost" / "with_domain" / "basic" / "standard" / "config", exist_ok=True)
-        os.makedirs(results_dir / "latest", exist_ok=True)
-        
-        file_path = data_dir / f"received_data_{timestamp}.json"
-        with open(file_path, "w") as f:
-            json.dump(data, f, indent=2)
-
         # Step 3: Preprocess the data
-        df = pd.DataFrame(data)
-        if df.empty:
-            raise HTTPException(status_code=400, detail="No data to process")
+        try:
+            df = pd.DataFrame(data)
+            if df.empty:
+                raise HTTPException(status_code=400, detail="No data to process")
+            
+            # Process the data
+            processed_df = prepare_features(df)
+            
+            # Free memory from original dataframe
+            del df
+            gc.collect()
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=422, detail=f"Error preprocessing data: {str(e)}")
         
-        processed_df = prepare_features(df)
-        
-        # Save processed data
-        processed_timestamp = datetime.now().strftime("%Y%m%d")
-        processed_path = processed_dir / f"processed_data_{processed_timestamp}.csv"
-        latest_processed_path = processed_dir / "latest_processed_data.csv"
-        processed_df.to_csv(processed_path, index=False)
-        processed_df.to_csv(latest_processed_path, index=False)
+        # Save processed data (only latest version)
+        latest_path = save_processed_data(processed_df)[1]  # Use the second returned path (latest)
         
         # Step 4: Train XGBoost model
-        # Define basic feature set
-        basic_features = [
-            'is_5g',
-            'basic_data_clean',
-            'basic_data_unlimited',
-            'daily_data_clean',
-            'daily_data_unlimited',
-            'voice_clean',
-            'voice_unlimited',
-            'message_clean',
-            'message_unlimited',
-            'throttle_speed_normalized',
-            'tethering_gb',
-            'unlimited_type_numeric',
-            'additional_call'
-        ]
+        # Get basic feature list
+        basic_features = get_basic_feature_list()
         
         # Filter for features in the processed dataframe
         features_to_use = [f for f in basic_features if f in processed_df.columns]
@@ -405,9 +178,6 @@ async def process_data(request: Request):
         model = get_model(
             'xgboost',
             use_domain_knowledge=True,
-            dataset_type="standard",
-            relaxed_constraints=False,
-            use_gradient_penalty=False,
             feature_names=features_to_use
         )
         
@@ -415,66 +185,63 @@ async def process_data(request: Request):
         model.train(X, y)
         
         # Save the model
-        model_path = models_dir / "xgboost" / "with_domain" / "basic" / "standard" / "model" / "xgboost_with_domain_basic_standard_model.pkl"
-        config_path = models_dir / "xgboost" / "with_domain" / "basic" / "standard" / "config" / "xgboost_with_domain_basic_standard_config.json"
-        
-        model.save()
+        model_path = model.save()
         
         # Save model config
-        config = {
-            "model_type": "xgboost",
-            "feature_set": "basic",
-            "training_date": datetime.now().isoformat(),
-            "hyperparameters": getattr(model, 'get_params', lambda: "Not Available")(),
-            "feature_columns_used": features_to_use,
-            "monotonicity_constraints_applied": getattr(model, 'get_monotonicity_constraints', lambda: "Not Available")(),
-            "use_domain_knowledge": True,
-            "dataset_type": "standard",
-            "relaxed_constraints": False,
-            "use_gradient_penalty": False,
-            "training_data_info": {
+        config = format_model_config(
+            model,
+            features_to_use,
+            {
                 "input_source": "api",
                 "training_examples": len(X),
-                "feature_count": len(features_to_use)
+                "feature_count": len(features_to_use),
+                "timestamp": timestamp
             }
-        }
+        )
+        config_path = save_model_config(config)
         
-        with open(config_path, 'w') as f:
-            json.dump(config, f, indent=4)
-        
-        # Step 5: Calculate rankings
+        # Step 5: Calculate rankings using the updated logic from update_rankings.py
         df_with_rankings = calculate_rankings(processed_df, model)
         
-        # Step 6: Generate report
+        # Free memory from processed dataframe
+        del processed_df
+        gc.collect()
+        
+        # Step 6: Generate report with the enhanced format
         timestamp_now = time.strftime("%Y-%m-%d_%H-%M-%S")
         html_report = generate_html_report(df_with_rankings, "xgboost", timestamp_now)
         report_path = save_report(html_report, "xgboost", "standard", "basic", timestamp_now)
+        
+        # Extract the top 10 plans for response, now sorting by value_ratio instead of ranking_score
+        top_10_plans = df_with_rankings.sort_values("value_ratio", ascending=False).head(10)[
+            ["plan_name", "mvno", "fee", "value_ratio", "predicted_price"]
+        ].to_dict(orient="records")
+        
+        # Free remaining memory
+        del df_with_rankings, model, X, y
+        gc.collect()
         
         # Prepare response with all information
         response = {
             "message": "Data processing complete",
             "processing_steps": {
                 "data_received": len(data),
-                "data_saved": str(file_path),
+                "data_saved": file_path,
                 "preprocessing": {
-                    "records_processed": len(processed_df),
-                    "features_generated": len(processed_df.columns),
-                    "processed_data_saved": str(processed_path)
+                    "processed_data_saved": latest_path
                 },
                 "model_training": {
                     "model_type": "xgboost",
                     "features_used": features_to_use,
-                    "training_examples": len(X),
-                    "model_saved": str(model_path)
+                    "training_examples": len(data),
+                    "model_saved": model_path
                 },
                 "ranking": {
-                    "plans_ranked": len(df_with_rankings),
-                    "report_generated": str(report_path)
+                    "report_generated": report_path,
+                    "report_url": "/"  # Root endpoint now serves the report
                 }
             },
-            "top_10_plans": df_with_rankings.sort_values("ranking_score", ascending=False).head(10)[
-                ["plan_name", "mvno", "fee", "ranking_score"]
-            ].to_dict(orient="records")
+            "top_10_plans": top_10_plans
         }
         
         return response

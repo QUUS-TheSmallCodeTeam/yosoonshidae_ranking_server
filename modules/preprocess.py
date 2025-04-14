@@ -121,6 +121,10 @@ def prepare_features(df):
     )
     
     # 5. Feature flags - ensure consistent numeric representation (0/1) instead of boolean (T/F)
+    # IMPORTANT: We use astype(int) for all boolean features to ensure consistent 0/1 representation
+    # This is critical for machine learning models, especially when applying domain knowledge
+    # or monotonic constraints. Boolean True/False can cause issues with some ML libraries
+    # and makes feature importance interpretation more difficult.
     for col in ['data_sharing', 'roaming_support', 'micro_payment', 'is_esim', 'signup_minor', 'signup_foreigner']:
         if col in processed_df.columns:
             # First convert to boolean (to handle any string 'True'/'False' values)
@@ -133,6 +137,22 @@ def prepare_features(df):
     # - Any number containing 3 or more consecutive 9s = unlimited (999, 9999, 9996, etc.)
     # - -1 = not available/not applicable
     # - Other values are treated as actual quotas
+    
+    # Convert voice and message to numeric if they're strings
+    for col in ['voice', 'message']:
+        if col in processed_df.columns and processed_df[col].dtype == 'object':
+            # Try to convert strings to float/int, keeping NaN values
+            try:
+                processed_df[col] = pd.to_numeric(processed_df[col], errors='coerce')
+                # Fill NaN values with 0
+                processed_df[col] = processed_df[col].fillna(0)
+            except Exception as e:
+                print(f"Error converting {col} to numeric: {e}")
+                # If conversion fails, create a new column with defaults
+                processed_df[f'{col}_clean'] = 0
+                processed_df[f'{col}_unlimited'] = 0
+                processed_df[f'{col}_na'] = 1
+                continue
     
     def is_unlimited_marker(value):
         """Check if a value contains 3 or more consecutive 9s (999 and up)"""
@@ -232,27 +252,34 @@ def prepare_features(df):
         0
     )
     
-    # Normalize original_fee
+    # --- START: MODIFICATION TO NORMALIZE original_fee ---
+    # Ensure 'original_fee' consistently represents the base price.
+    # Condition 1: If discount_period is 0, assume no discount, so original_fee = fee.
+    # Condition 2: If discount_period is not 0 AND original_fee is missing/invalid (<=0), use 'fee' as base price.
+    # Condition 3: If discount_period is not 0 AND original_fee is valid (>0), keep original_fee.
+    
+    # Ensure discount_period exists and handle potential NaNs
     if 'discount_period' in processed_df.columns:
-        discount_period_filled = processed_df['discount_period'].fillna(-1)
-        original_fee_before = processed_df['original_fee'].copy()
+        discount_period_filled = processed_df['discount_period'].fillna(-1) # Fill NaN to avoid comparison issues
         
         processed_df['original_fee'] = np.where(
-            discount_period_filled == 0,  # Condition 1: discount_period is 0
-            processed_df['fee'],  # Set original_fee = fee
+            discount_period_filled == 0, # Condition 1: discount_period is 0
+            processed_df['fee'], # Set original_fee = fee
             # Condition 2 & 3: discount_period is not 0
             np.where(
-                processed_df['original_fee'] <= 0,  # Condition 2: original_fee invalid
-                processed_df['fee'],  # Use fee as base price
-                processed_df['original_fee']  # Condition 3: original_fee valid, keep it
+                processed_df['original_fee'] <= 0, # Condition 2: original_fee invalid
+                processed_df['fee'], # Use fee as base price
+                processed_df['original_fee'] # Condition 3: original_fee valid, keep it
             )
         )
     else:
+        # Fallback to simpler logic if discount_period column is missing
         processed_df['original_fee'] = np.where(
             processed_df['original_fee'] <= 0,
             processed_df['fee'], 
             processed_df['original_fee'] 
         )
+    # --- END: MODIFICATION TO NORMALIZE original_fee ---
     
     # 9. Agreement features
     processed_df['has_agreement'] = processed_df['agreement'].fillna(False).astype(int)
