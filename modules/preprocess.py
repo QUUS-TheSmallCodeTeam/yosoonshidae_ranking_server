@@ -6,6 +6,26 @@ def prepare_features(df):
     # Make a copy to avoid modifying the original
     processed_df = df.copy()
     
+    # Print the incoming data types for debugging
+    print("Data types before conversion:")
+    print(processed_df.dtypes.head(10))
+    
+    # IMPORTANT: Ensure numeric fields are actually numeric
+    # Convert basic_data and daily_data to numeric types first - ALWAYS DO THIS BEFORE ANY OPERATIONS
+    for col in ['basic_data', 'daily_data', 'tethering_gb', 'mvno_rating', 'monthly_review_score', 'discount_percentage']:
+        if col in processed_df.columns:
+            # Check if the column is not already numeric
+            if not pd.api.types.is_numeric_dtype(processed_df[col]):
+                # Convert strings to numeric, coerce errors to NaN
+                processed_df[col] = pd.to_numeric(processed_df[col], errors='coerce')
+                # Fill NaN values with 0
+                processed_df[col] = processed_df[col].fillna(0)
+                print(f"Converted {col} to numeric type")
+    
+    # Print data types after conversion for verification
+    print("Data types after conversion:")
+    print(processed_df.dtypes.head(10))
+    
     # 1. Network type encoding
     processed_df['is_5g'] = (processed_df['network'] == '5G').astype(int)
     
@@ -30,14 +50,41 @@ def prepare_features(df):
     # Handle special values in data fields
     # Special values: 999, 9999 = unlimited, -1 = not applicable
     
-    # Create flags for unlimited data (explicit unlimited values)
+    # Manual check before isin() operation to ensure they're compared as numbers
     processed_df['basic_data_unlimited'] = processed_df['basic_data'].isin([999, 9999]).astype(int)
-    processed_df['daily_data_unlimited'] = processed_df['daily_data'].isin([999, 9999]).astype(int)
+    # Extra safety for daily_data - ensure it's not None before comparison
+    processed_df['daily_data_unlimited'] = processed_df['daily_data'].fillna(0).isin([999, 9999]).astype(int)
     
     # Find maximum finite values for basic_data and daily_data
     # These will be used as replacements for unlimited values
-    max_basic_data = processed_df.loc[~processed_df['basic_data'].isin([999, 9999]), 'basic_data'].max()
-    max_daily_data = processed_df.loc[~processed_df['daily_data'].isin([999, 9999]), 'daily_data'].max()
+    # Use extra safety to avoid errors with mixed types
+    try:
+        max_basic_data = processed_df.loc[~processed_df['basic_data'].isin([999, 9999]), 'basic_data'].max()
+    except Exception as e:
+        print(f"Error getting max_basic_data: {e}")
+        max_basic_data = 100  # Default value
+    
+    try:
+        # Explicitly exclude nulls and handle with maximum care 
+        valid_daily_data = processed_df.loc[
+            (~processed_df['daily_data'].isin([999, 9999])) & 
+            (processed_df['daily_data'].notna()), 
+            'daily_data'
+        ]
+        max_daily_data = valid_daily_data.max() if not valid_daily_data.empty else 10
+    except Exception as e:
+        print(f"Error getting max_daily_data: {e}")
+        max_daily_data = 10  # Default value
+    
+    # Set default values if max_basic_data or max_daily_data is NaN
+    if pd.isna(max_basic_data):
+        max_basic_data = 100  # Default if no finite values found
+        print(f"Using default max_basic_data: {max_basic_data}")
+    if pd.isna(max_daily_data):
+        max_daily_data = 10   # Default if no finite values found
+        print(f"Using default max_daily_data: {max_daily_data}")
+    
+    print(f"Maximum values: basic_data={max_basic_data}, daily_data={max_daily_data}")
     
     # Replace special values with maximum observed values for modeling
     processed_df['basic_data_clean'] = processed_df['basic_data'].replace({999: max_basic_data, 9999: max_basic_data, -1: 0})
