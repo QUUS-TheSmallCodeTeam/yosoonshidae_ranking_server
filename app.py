@@ -209,6 +209,10 @@ def read_root():
 
     # --- Load and format logical test results FROM MEMORY CACHE --- 
     logical_test_failure_count = "N/A" # Default value
+    
+    # --> ADDED LOG: Log the cache value *before* trying to read from it
+    logger.info(f"Accessing '/' route. Current cache content: {latest_logical_test_results_cache}")
+    
     if latest_logical_test_results_cache:
         try:
             summary = latest_logical_test_results_cache.get("summary", {})
@@ -528,6 +532,8 @@ async def process_data(request: Request):
                 "failures_details": [r for r in logical_test_results if r['status'] == "❌"]
             }
             logger.info(f"[{request_id}] Updated in-memory cache for logical test results.")
+            # --> ADDED LOG: Log the actual cached value
+            logger.info(f"[{request_id}] Cache content after update: {latest_logical_test_results_cache}")
         except Exception as cache_err:
             logger.error(f"[{request_id}] Failed to update logical test results cache: {cache_err}")
             latest_logical_test_results_cache = None # Reset cache on error
