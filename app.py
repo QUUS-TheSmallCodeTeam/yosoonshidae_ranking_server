@@ -14,12 +14,20 @@ from typing import Optional, Union, List
 from fastapi.templating import Jinja2Templates
 import sys
 import logging
+import uuid # Import uuid for request IDs
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Add the project root to the Python path
+# --- Define Paths (relative to container root /app) ---
+APP_DIR = Path(__file__).parent # Should resolve to /app
+MODEL_DIR = APP_DIR / "model_files" # Assuming model files are copied here
+METADATA_PATH = MODEL_DIR / "xgboost_basic_without_domain_standard_model_metadata.json" # Specific metadata file
+LOGICAL_TEST_DATA_PATH = APP_DIR / "data" / "test" / "logical_model_test_set.json" # Path to logical test data
+REPORT_DIR_BASE = Path("/tmp/reports") # Use /tmp for reports in container
+
+# Add the project root to the Python path (Less relevant in container, but keep for now)
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, '..'))
 if project_root not in sys.path:
@@ -41,7 +49,8 @@ from modules import (
     save_processed_data,
     get_basic_feature_list,
     format_model_config,
-    save_model_config
+    save_model_config,
+    preprocess_input_data # Add missing import
 )
 # Keep data models
 from modules.data_models import PlanInput, FeatureDefinitions
@@ -194,6 +203,9 @@ async def test_endpoint(request: Request):
 
 @app.post("/process")
 async def process_data(request: Request):
+    start_process_time = time.time()
+    request_id = str(uuid.uuid4()) # Generate unique request ID
+    logger.info(f"[{request_id}] Received /process request.")
     try:
         # Step 0: Ensure all directories exist
         ensure_directories()
@@ -201,7 +213,10 @@ async def process_data(request: Request):
         # Step 1: Receive and validate data
         data = await request.json()
         if not isinstance(data, list):
+            logger.error(f"[{request_id}] Invalid input data type: {type(data)}. Expected list.")
             raise HTTPException(status_code=400, detail="Expected a list of plan data")
+
+        logger.info(f"[{request_id}] Received {len(data)} plans.")
 
         # Step 2: Save the received data (important to keep for audit trail)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
