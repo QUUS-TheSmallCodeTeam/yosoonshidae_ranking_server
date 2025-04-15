@@ -13,8 +13,19 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, e
 from typing import Optional, Union
 from fastapi.templating import Jinja2Templates
 import sys
+import logging
 
-# Import modules
+# Add the project root to the Python path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, '..'))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
+# Import necessary modules - Keep data loader, remove others if only used by /logical-test
+from modules.models import XGBoostModel
+# from modules.utils import setup_logging # Remove this import
+from modules.data import load_data_from_json # Keep for potential use
+# Need to re-import original processing/ranking functions if they were removed
 from modules import (
     prepare_features,
     get_model,
@@ -28,9 +39,7 @@ from modules import (
     format_model_config,
     save_model_config
 )
-from modules.models import XGBoostModel
-from modules.utils import setup_logging
-from modules.data import load_data_from_json
+# Keep data models
 from hf_server.modules.data_models import PlanInput, FeatureDefinitions
 
 app = FastAPI(title="Moyo Plan Ranking Model Server")
