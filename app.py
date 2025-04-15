@@ -37,6 +37,7 @@ if project_root not in sys.path:
 from modules.models import XGBoostModel
 # from modules.utils import setup_logging # Remove this import
 from modules.data import load_data_from_json # Keep for potential use
+from modules.preprocess import preprocess_input_data # Import specifically from preprocess
 # Need to re-import original processing/ranking functions if they were removed
 from modules import (
     prepare_features,
@@ -49,8 +50,7 @@ from modules import (
     save_processed_data,
     get_basic_feature_list,
     format_model_config,
-    save_model_config,
-    preprocess_input_data # Add missing import
+    save_model_config
 )
 # Keep data models
 from modules.data_models import PlanInput, FeatureDefinitions
