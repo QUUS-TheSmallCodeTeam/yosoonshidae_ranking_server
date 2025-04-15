@@ -409,10 +409,11 @@ async def process_data(request: Request):
                     logger.error(f"[{request_id}] {logical_test_error}")
                 else:
                     logger.info(f"[{request_id}] Loaded {len(df_logical_test)} plans for logical test.")
-                    # Prepare features using the *current* model's expected features
+                    # Prepare features using the model's expected features (from THIS training run)
                     required_model_features = features_to_use
                     if not required_model_features:
-                        logical_test_error = "Cannot run logical test: Model metadata missing feature names."
+                        # This case should be less likely now, but kept as safety
+                        logical_test_error = "Cannot run logical test: Feature list for current model is empty."
                         logger.error(f"[{request_id}] {logical_test_error}")
                     else:
                         df_logical_test_processed = None # Initialize
