@@ -37,7 +37,7 @@ if project_root not in sys.path:
 from modules.models import XGBoostModel
 # from modules.utils import setup_logging # Remove this import
 from modules.data import load_data_from_json # Keep for potential use
-from modules.preprocess import preprocess_input_data # Import specifically from preprocess
+# from modules.preprocess import preprocess_input_data # REMOVE this import
 # Need to re-import original processing/ranking functions if they were removed
 from modules import (
     prepare_features,
@@ -51,6 +51,7 @@ from modules import (
     get_basic_feature_list,
     format_model_config,
     save_model_config
+    # preprocess_input_data was already removed here
 )
 # Keep data models
 from modules.data_models import PlanInput, FeatureDefinitions
@@ -561,10 +562,28 @@ async def predict_plans(plans: List[PlanInput]):
     input_data = [plan.dict() for plan in plans]
     logger.info(f"Received {len(input_data)} plans for prediction.")
 
-    # Preprocess data
-    df_features = preprocess_input_data(input_data, feature_names)
+    # Preprocess data using prepare_features
+    # Convert list of dicts to DataFrame
+    df_input = pd.DataFrame(input_data)
+    if df_input.empty:
+        raise HTTPException(status_code=400, detail="Input data is empty.")
+    
+    # Use prepare_features (designed for raw data)
+    df_processed = prepare_features(df_input) 
+    
+    # Select only the features the model was trained on
+    # Ensure all required features exist after preprocessing
+    missing_features = [f for f in feature_names if f not in df_processed.columns]
+    if missing_features:
+        logger.error(f"Preprocessing did not generate required features: {missing_features}")
+        raise HTTPException(status_code=500, detail=f"Preprocessing failed to generate required features: {missing_features}")
+        
+    df_features = df_processed[feature_names].copy()
+
+    # df_features = preprocess_input_data(input_data, feature_names) # OLD: Incorrect call
     if df_features is None:
-        raise HTTPException(status_code=400, detail="Invalid input data or missing features.")
+        # This check might be redundant now if prepare_features raises errors
+        raise HTTPException(status_code=400, detail="Invalid input data or missing features after preprocessing.")
 
     # Predict
     try:
