@@ -107,30 +107,38 @@ model_metadata = {}
 def load_model_and_metadata():
     global model, model_metadata
     logger.info("Attempting to load model and metadata...")
+    model = None # Default to None
+    model_metadata = {} # Default to empty
     try:
-        # Load metadata first
+        # Try loading metadata first
         if os.path.exists(METADATA_PATH):
             with open(METADATA_PATH, 'r') as f:
                 model_metadata = json.load(f)
-            logger.info(f"Loaded metadata: {model_metadata.get('model_type', 'N/A')}, Features: {len(model_metadata.get('feature_names', []))}")
+            logger.info(f"Loaded metadata from {METADATA_PATH}: {model_metadata.get('model_type', 'N/A')}, Features: {len(model_metadata.get('feature_names', []))}")
         else:
-            logger.warning(f"Metadata file not found at {METADATA_PATH}")
-            model_metadata = {'feature_names': []} # Default empty
+            logger.warning(f"Metadata file not found at {METADATA_PATH}. Proceeding without pre-loaded metadata.")
+            model_metadata = {'feature_names': []} # Ensure feature_names exists but is empty
 
-        # Load model
-        model = XGBoostModel.load(model_path=MODEL_DIR)
-        if model:
-            logger.info("XGBoost model loaded successfully.")
+        # Try loading the model - Check if MODEL_DIR exists first
+        if os.path.exists(MODEL_DIR) and any(fname.endswith(('.pkl', '.json', '.txt', '.keras', '.h5', '.cbm')) for fname in os.listdir(MODEL_DIR)):
+            # Attempt to load only if directory exists and seems to contain model files
+            loaded_model_instance = XGBoostModel.load(model_path=MODEL_DIR) # Pass directory path
+            if loaded_model_instance:
+                model = loaded_model_instance # Assign to global variable only if successful
+                logger.info(f"XGBoost model loaded successfully from {MODEL_DIR}.")
+            else:
+                # This case might happen if .load() returns None for other reasons
+                logger.warning(f"XGBoostModel.load returned None when attempting to load from {MODEL_DIR}. Proceeding without pre-loaded model.")
         else:
-            logger.error("Failed to load XGBoost model. XGBoostModel.load returned None.")
-            raise HTTPException(status_code=500, detail="Model could not be loaded.")
+            logger.warning(f"Model directory {MODEL_DIR} not found or empty. Proceeding without pre-loaded model.")
 
     except FileNotFoundError:
-        logger.error(f"Model or metadata file not found in {MODEL_DIR}. Ensure model is trained and saved.")
-        raise HTTPException(status_code=500, detail="Model file not found. Train the model first.")
+        # This specific exception might be caught by the os.path.exists checks now, but kept for safety
+        logger.warning(f"Model or metadata file not found during startup loading attempt. This is expected if no model was bundled. Proceeding without pre-loaded model.")
     except Exception as e:
-        logger.exception(f"Error loading model: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error during model loading: {e}")
+        # Log other unexpected errors but don't crash the server
+        logger.exception(f"Unexpected error during optional model loading at startup: {e}")
+        logger.warning("Proceeding without pre-loaded model due to unexpected error.")
 
 @app.on_event("startup")
 async def startup_event():
@@ -549,18 +557,22 @@ async def root():
 async def predict_plans(plans: List[PlanInput]):
     """Predict prices for a list of mobile plans."""
     start_time = time.time()
+    # Check if model is loaded (might be None if /process hasn't run yet)
     if not model:
-        logger.error("Model not loaded during prediction request.")
-        raise HTTPException(status_code=500, detail="Model is not loaded.")
+        logger.error("Model not available for /predict. Run /process first.")
+        raise HTTPException(status_code=503, detail="Model not yet trained/available. Run /process first.")
 
+    logger.info(f"Received {len(input_data)} plans for prediction.") # Moved log after check
+
+    # Get features from metadata (should be loaded or defaulted by startup)
     feature_names = model_metadata.get('feature_names')
     if not feature_names:
-        logger.error("Feature names not found in model metadata.")
-        raise HTTPException(status_code=500, detail="Model metadata incomplete (missing feature names).")
+        logger.error("Feature names not found in model metadata (model might not be loaded/trained).")
+        raise HTTPException(status_code=500, detail="Model metadata incomplete (missing feature names). Run /process first.")
 
     # Convert Pydantic models to list of dicts
     input_data = [plan.dict() for plan in plans]
-    logger.info(f"Received {len(input_data)} plans for prediction.")
+    # logger.info(f"Received {len(input_data)} plans for prediction.") # Moved log up
 
     # Preprocess data using prepare_features
     # Convert list of dicts to DataFrame
@@ -609,11 +621,12 @@ async def predict_plans(plans: List[PlanInput]):
 @app.get("/features")
 async def get_features():
     """Return the list of features the loaded model expects."""
-    if not model:
-        raise HTTPException(status_code=500, detail="Model is not loaded.")
+    # Check if model/metadata is available
+    if not model or not model_metadata or not model_metadata.get('feature_names'):
+        logger.error("Model/Metadata not available for /features. Run /process first.")
+        raise HTTPException(status_code=503, detail="Model/Features not available. Run /process first.")
+        
     feature_names = model_metadata.get('feature_names')
-    if not feature_names:
-        raise HTTPException(status_code=500, detail="Feature names not available in model metadata.")
     return {"expected_features": feature_names}
 
 if __name__ == "__main__":
