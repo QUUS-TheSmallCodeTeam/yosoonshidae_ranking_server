@@ -415,81 +415,96 @@ async def process_data(request: Request):
                         logical_test_error = "Cannot run logical test: Model metadata missing feature names."
                         logger.error(f"[{request_id}] {logical_test_error}")
                     else:
-                        comparison_features = [
-                            'basic_data_clean', 'daily_data_clean', 'voice_clean', 
-                            'message_clean', 'throttle_speed_normalized', 'is_5g', 'tethering_gb'
-                        ]
-                        features_to_ensure = list(set(required_model_features + comparison_features))
-                        
-                        for feature in features_to_ensure:
-                            if feature not in df_logical_test.columns:
-                                 logger.warning(f"[{request_id}] Logical test data missing '{feature}', adding with 0.")
-                                 df_logical_test[feature] = 0 # Add missing with 0
-                                 
-                        X_logical_test = df_logical_test[required_model_features].copy()
-                        
-                        # Predict using the model that was just trained
-                        logical_predictions = model.predict(X_logical_test)
-                        df_logical_test['predicted_price'] = logical_predictions
-                        logger.info(f"[{request_id}] Generated predictions for logical test data.")
-                        
-                        # Compare (using the same logic as before)
-                        base_case_row = df_logical_test[df_logical_test['id'] == 'base']
-                        if base_case_row.empty:
-                            logical_test_error = "Base case id='base' not found in logical test data."
-                            logger.error(f"[{request_id}] {logical_test_error}")
-                        else:
-                            base_plan = base_case_row.iloc[0]
-                            base_price = base_plan['predicted_price']
-                            rules = {
-                                'basic_data_clean': 1, 'daily_data_clean': 1, 'voice_clean': 1,
-                                'message_clean': 1, 'throttle_speed_normalized': 1, 'tethering_gb': 1,
-                                'is_5g': 1 
-                            }
-                            tolerance = 1e-6
+                        df_logical_test_processed = None # Initialize
+                        X_logical_test = None
+                        logical_predictions = None
+                        try:
+                            # Preprocess the logical test data using the same prepare_features
+                            df_logical_test_processed = prepare_features(df_logical_test)
+                            logger.info(f"[{request_id}] Preprocessed logical test data.")
                             
-                            for _, variant in df_logical_test[df_logical_test['id'] != 'base'].iterrows():
-                                variant_price = variant['predicted_price']
-                                price_diff = variant_price - base_price
-                                comparison = {
-                                    "id": variant['id'], "name": variant['name'],
-                                    "base_price": round(base_price, 2), "variant_price": round(variant_price, 2),
-                                    "difference": round(price_diff, 2), "expected_change": "Unknown",
-                                    "status": "?", "reason": ""
-                                }
-                                changed_feature = None
-                                expected_direction = 0
-                                for feature, direction in rules.items():
-                                    if feature in base_plan.index and feature in variant.index:
-                                        base_val = base_plan[feature]
-                                        variant_val = variant[feature]
-                                        if not np.isclose(base_val, variant_val):
-                                            if variant_val > base_val:
-                                                changed_feature = f"{feature} increased"
-                                                expected_direction = direction
-                                                break
-                                            elif variant_val < base_val:
-                                                changed_feature = f"{feature} decreased"
-                                                expected_direction = -direction
-                                                break
+                            # Ensure all required features are present after preprocessing
+                            missing_logical_features = [f for f in required_model_features if f not in df_logical_test_processed.columns]
+                            if missing_logical_features:
+                                raise ValueError(f"Preprocessing logical test data failed to generate required features: {missing_logical_features}")
+                            
+                            X_logical_test = df_logical_test_processed[required_model_features].copy()
                                 
-                                if changed_feature:
-                                    comparison['expected_change'] = "Increase" if expected_direction == 1 else "Decrease" if expected_direction == -1 else "No Change/Unknown"
-                                    if expected_direction == 1:
-                                        if price_diff > tolerance: comparison['status'], comparison['reason'] = "✅", f"Passed: {changed_feature}, price increased."
-                                        elif abs(price_diff) <= tolerance: comparison['status'], comparison['reason'] = "⚠️", f"Warn: {changed_feature}, price did not change."
-                                        else: comparison['status'], comparison['reason'] = "❌", f"Failed: {changed_feature}, price decreased."
-                                    elif expected_direction == -1:
-                                        if price_diff < -tolerance: comparison['status'], comparison['reason'] = "✅", f"Passed: {changed_feature}, price decreased."
-                                        elif abs(price_diff) <= tolerance: comparison['status'], comparison['reason'] = "⚠️", f"Warn: {changed_feature}, price did not change."
-                                        else: comparison['status'], comparison['reason'] = "❌", f"Failed: {changed_feature}, price increased."
-                                    else: comparison['status'], comparison['reason'] = "?", f"Info: {changed_feature}, expected direction unknown."
-                                else: comparison['status'], comparison['reason'], comparison['expected_change'] = "?", "No significant feature change detected.", "-"
-                                logical_test_results.append(comparison)
+                            # Predict using the LOADED model
+                            logical_predictions = model.predict(X_logical_test)
+                            # Add predictions back to the original logical test df for comparison context
+                            df_logical_test['predicted_price'] = logical_predictions 
+                            logger.info(f"[{request_id}] Generated predictions for logical test data using loaded model.")
+
+                        except Exception as preprocess_predict_err:
+                             # Catch errors specifically during preprocessing or prediction of logical test data
+                             logical_test_error = f"Error during logical test preprocessing/prediction: {type(preprocess_predict_err).__name__} - {str(preprocess_predict_err)}"
+                             logger.error(f"[{request_id}] {logical_test_error}")
+                             # Log traceback for this specific error
+                             import traceback
+                             logger.error(f"[{request_id}] Traceback for logical test preprocess/predict error:\n{traceback.format_exc()}")
+                        
+                        # Only proceed to comparison if preprocessing and prediction succeeded
+                        if logical_predictions is not None and logical_test_error is None:
+                            # Compare (using the same logic as before)
+                            base_case_row = df_logical_test[df_logical_test['id'] == 'base']
+                            if base_case_row.empty:
+                                logical_test_error = "Base case id='base' not found in logical test data."
+                                logger.error(f"[{request_id}] {logical_test_error}")
+                            else:
+                                base_plan = base_case_row.iloc[0]
+                                base_price = base_plan['predicted_price']
+                                rules = {
+                                    'basic_data_clean': 1, 'daily_data_clean': 1, 'voice_clean': 1,
+                                    'message_clean': 1, 'throttle_speed_normalized': 1, 'tethering_gb': 1,
+                                    'is_5g': 1 
+                                }
+                                tolerance = 1e-6
+                                
+                                for _, variant in df_logical_test[df_logical_test['id'] != 'base'].iterrows():
+                                    variant_price = variant['predicted_price']
+                                    price_diff = variant_price - base_price
+                                    comparison = {
+                                        "id": variant['id'], "name": variant['name'],
+                                        "base_price": round(base_price, 2), "variant_price": round(variant_price, 2),
+                                        "difference": round(price_diff, 2), "expected_change": "Unknown",
+                                        "status": "?", "reason": ""
+                                    }
+                                    changed_feature = None
+                                    expected_direction = 0
+                                    for feature, direction in rules.items():
+                                        if feature in base_plan.index and feature in variant.index:
+                                            base_val = base_plan[feature]
+                                            variant_val = variant[feature]
+                                            if not np.isclose(base_val, variant_val):
+                                                if variant_val > base_val:
+                                                    changed_feature = f"{feature} increased"
+                                                    expected_direction = direction
+                                                    break
+                                                elif variant_val < base_val:
+                                                    changed_feature = f"{feature} decreased"
+                                                    expected_direction = -direction
+                                                    break
+                                    
+                                    if changed_feature:
+                                        comparison['expected_change'] = "Increase" if expected_direction == 1 else "Decrease" if expected_direction == -1 else "No Change/Unknown"
+                                        if expected_direction == 1:
+                                            if price_diff > tolerance: comparison['status'], comparison['reason'] = "✅", f"Passed: {changed_feature}, price increased."
+                                            elif abs(price_diff) <= tolerance: comparison['status'], comparison['reason'] = "⚠️", f"Warn: {changed_feature}, price did not change."
+                                            else: comparison['status'], comparison['reason'] = "❌", f"Failed: {changed_feature}, price decreased."
+                                        elif expected_direction == -1:
+                                            if price_diff < -tolerance: comparison['status'], comparison['reason'] = "✅", f"Passed: {changed_feature}, price decreased."
+                                            elif abs(price_diff) <= tolerance: comparison['status'], comparison['reason'] = "⚠️", f"Warn: {changed_feature}, price did not change."
+                                            else: comparison['status'], comparison['reason'] = "❌", f"Failed: {changed_feature}, price increased."
+                                        else: comparison['status'], comparison['reason'] = "?", f"Info: {changed_feature}, expected direction unknown."
+                                    else: comparison['status'], comparison['reason'], comparison['expected_change'] = "?", "No significant feature change detected.", "-"
+                                    logical_test_results.append(comparison)
         except Exception as e:
-            # Log the specific error occurring during the logical test
-            logger.exception(f"[{request_id}] Error during logical test execution: {type(e).__name__} - {str(e)}")
-            logical_test_error = f"Error during logical test: {type(e).__name__} - {str(e)}"
+            # Log the specific error occurring during the logical test (outer catch-all)
+            logger.exception(f"[{request_id}] Outer error during logical test execution: {type(e).__name__} - {str(e)}")
+            # Avoid overwriting more specific error from inner block if it exists
+            if not logical_test_error:
+                 logical_test_error = f"Outer error during logical test: {type(e).__name__} - {str(e)}"
             # Add detailed traceback log for debugging
             import traceback
             logger.error(f"[{request_id}] Traceback for logical test error:\n{traceback.format_exc()}")
