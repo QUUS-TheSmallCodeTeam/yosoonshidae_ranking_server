@@ -104,6 +104,9 @@ class PlanData(BaseModel):
 model = None
 model_metadata = {}
 
+# Global variable to cache latest results
+latest_logical_test_results_cache = None
+
 def load_model_and_metadata():
     global model, model_metadata
     logger.info("Attempting to load model and metadata...")
@@ -148,7 +151,7 @@ async def startup_event():
 def read_root():
     """
     Serve the latest ranking HTML report if available,
-    otherwise return a simple welcome message.
+    and display latest logical test failure count from memory cache.
     """
     # Look for the latest HTML report in the reports directory
     # Try both the regular app directory and the /tmp fallback
@@ -204,19 +207,16 @@ def read_root():
         </html>
         """
 
-    # --- Load and format logical test results --- 
+    # --- Load and format logical test results FROM MEMORY CACHE --- 
     logical_test_failure_count = "N/A" # Default value
-    logical_test_file_path = "/tmp/latest_logical_test_results.json"
-    if os.path.exists(logical_test_file_path):
+    if latest_logical_test_results_cache:
         try:
-            with open(logical_test_file_path, 'r') as f:
-                test_results = json.load(f)
-            summary = test_results.get("summary", {})
+            summary = latest_logical_test_results_cache.get("summary", {})
             # Get the failure count, default to 0 if not found
             logical_test_failure_count = summary.get('failures', 0) 
         except Exception as e:
-            logger.error(f"Error reading or parsing logical test results from {logical_test_file_path}: {e}")
-            logical_test_failure_count = "Error loading"
+            logger.error(f"Error processing cached logical test results: {e}")
+            logical_test_failure_count = "Error loading cache"
             
     # Format the simple failure count line
     logical_test_html = f"<p><b>Logical Test Failures:</b> {logical_test_failure_count}</p>"
@@ -513,6 +513,26 @@ async def process_data(request: Request):
             logger.error(f"[{request_id}] Traceback for logical test error:\n{traceback.format_exc()}")
             
         logger.info(f"[{request_id}] Logical pricing test finished.")
+        # --- Update logical test results CACHE --- 
+        global latest_logical_test_results_cache # Declare modification of global
+        try:
+            latest_logical_test_results_cache = {
+                "summary": {
+                    "status": "Error" if logical_test_error else "Completed",
+                    "error_message": logical_test_error,
+                    "tests_run": len(logical_test_results),
+                    "passes": sum(1 for r in logical_test_results if r['status'] == "✅"),
+                    "failures": sum(1 for r in logical_test_results if r['status'] == "❌"),
+                    "warnings": sum(1 for r in logical_test_results if r['status'] == "⚠️")
+                },
+                "failures_details": [r for r in logical_test_results if r['status'] == "❌"]
+            }
+            logger.info(f"[{request_id}] Updated in-memory cache for logical test results.")
+        except Exception as cache_err:
+            logger.error(f"[{request_id}] Failed to update logical test results cache: {cache_err}")
+            latest_logical_test_results_cache = None # Reset cache on error
+        # --- End cache update ---
+            
         # --- End of Logical Test Step --- 
 
         # Clean up memory (REMOVED fragile del statement)
@@ -562,15 +582,8 @@ async def process_data(request: Request):
                 "report_url": f"/reports/{Path(report_path).name}" # Relative URL
             },
             "model_metrics": metrics,
-            "logical_test_summary": {
-                "status": "Error" if logical_test_error else "Completed",
-                "error_message": logical_test_error,
-                "tests_run": len(logical_test_results),
-                "passes": sum(1 for r in logical_test_results if r['status'] == "✅"),
-                "failures": sum(1 for r in logical_test_results if r['status'] == "❌"),
-                "warnings": sum(1 for r in logical_test_results if r['status'] == "⚠️")
-            },
-            "logical_test_details": logical_test_results, # Include detailed results
+            "logical_test_summary": latest_logical_test_results_cache.get("summary") if latest_logical_test_results_cache else {"status": "Cache not populated"},
+            "logical_test_details": latest_logical_test_results_cache.get("failures_details", []) if latest_logical_test_results_cache else [],
             "top_10_plans": top_10_plans
         }
         return response
