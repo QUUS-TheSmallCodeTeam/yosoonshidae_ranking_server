@@ -410,42 +410,39 @@ async def process_data(request: Request):
                 else:
                     logger.info(f"[{request_id}] Loaded {len(df_logical_test)} plans for logical test.")
                     # Prepare features using the model's expected features (from THIS training run)
-                    required_model_features = features_to_use
+                    required_model_features = features_to_use # CORRECT: Use features from this request's training
                     if not required_model_features:
-                        # This case should be less likely now, but kept as safety
                         logical_test_error = "Cannot run logical test: Feature list for current model is empty."
                         logger.error(f"[{request_id}] {logical_test_error}")
                     else:
-                        df_logical_test_processed = None # Initialize
+                        # --- MODIFIED LOGIC: Do NOT re-preprocess logical test data --- 
                         X_logical_test = None
                         logical_predictions = None
                         try:
-                            # Preprocess the logical test data using the same prepare_features
-                            df_logical_test_processed = prepare_features(df_logical_test)
-                            logger.info(f"[{request_id}] Preprocessed logical test data.")
-                            
-                            # Ensure all required features are present after preprocessing
-                            missing_logical_features = [f for f in required_model_features if f not in df_logical_test_processed.columns]
+                            # Verify that logical test data contains all required features
+                            missing_logical_features = [f for f in required_model_features if f not in df_logical_test.columns]
                             if missing_logical_features:
-                                raise ValueError(f"Preprocessing logical test data failed to generate required features: {missing_logical_features}")
-                            
-                            X_logical_test = df_logical_test_processed[required_model_features].copy()
+                                raise ValueError(f"Logical test data is missing required model features: {missing_logical_features}")
                                 
+                            # Select required features directly from the loaded logical test data
+                            X_logical_test = df_logical_test[required_model_features].copy()
+                            logger.info(f"[{request_id}] Selected required features directly from logical test data.")
+                            
                             # Predict using the LOADED model
                             logical_predictions = model.predict(X_logical_test)
                             # Add predictions back to the original logical test df for comparison context
                             df_logical_test['predicted_price'] = logical_predictions 
                             logger.info(f"[{request_id}] Generated predictions for logical test data using loaded model.")
 
-                        except Exception as preprocess_predict_err:
-                             # Catch errors specifically during preprocessing or prediction of logical test data
-                             logical_test_error = f"Error during logical test preprocessing/prediction: {type(preprocess_predict_err).__name__} - {str(preprocess_predict_err)}"
+                        except Exception as logical_predict_err:
+                             # Catch errors specifically during feature selection or prediction of logical test data
+                             logical_test_error = f"Error during logical test feature selection/prediction: {type(logical_predict_err).__name__} - {str(logical_predict_err)}"
                              logger.error(f"[{request_id}] {logical_test_error}")
-                             # Log traceback for this specific error
                              import traceback
-                             logger.error(f"[{request_id}] Traceback for logical test preprocess/predict error:\n{traceback.format_exc()}")
-                        
-                        # Only proceed to comparison if preprocessing and prediction succeeded
+                             logger.error(f"[{request_id}] Traceback for logical test selection/predict error:\n{traceback.format_exc()}")
+                        # --- END MODIFIED LOGIC --- 
+
+                        # Only proceed to comparison if prediction succeeded
                         if logical_predictions is not None and logical_test_error is None:
                             # Compare (using the same logic as before)
                             base_case_row = df_logical_test[df_logical_test['id'] == 'base']
