@@ -641,24 +641,25 @@ async def process_data(request: Request):
 
 @app.post("/predict")
 async def predict_plans(plans: List[PlanInput]):
-    """Predict prices for a list of mobile plans."""
+    """
+    Predict prices for a list of mobile plans and 
+    return full rankings list with plan IDs, predicted prices, and ranks.
+    """
     start_time = time.time()
     # Check if model is loaded (might be None if /process hasn't run yet)
     if not model:
         logger.error("Model not available for /predict. Run /process first.")
         raise HTTPException(status_code=503, detail="Model not yet trained/available. Run /process first.")
 
-    logger.info(f"Received {len(input_data)} plans for prediction.") # Moved log after check
+    # Convert Pydantic models to list of dicts
+    input_data = [plan.dict() for plan in plans]
+    logger.info(f"Received {len(input_data)} plans for prediction.")
 
     # Get features from metadata (should be loaded or defaulted by startup)
     feature_names = model_metadata.get('feature_names')
     if not feature_names:
         logger.error("Feature names not found in model metadata (model might not be loaded/trained).")
         raise HTTPException(status_code=500, detail="Model metadata incomplete (missing feature names). Run /process first.")
-
-    # Convert Pydantic models to list of dicts
-    input_data = [plan.dict() for plan in plans]
-    # logger.info(f"Received {len(input_data)} plans for prediction.") # Moved log up
 
     # Preprocess data using prepare_features
     # Convert list of dicts to DataFrame
@@ -678,27 +679,43 @@ async def predict_plans(plans: List[PlanInput]):
         
     df_features = df_processed[feature_names].copy()
 
-    # df_features = preprocess_input_data(input_data, feature_names) # OLD: Incorrect call
     if df_features is None:
         # This check might be redundant now if prepare_features raises errors
         raise HTTPException(status_code=400, detail="Invalid input data or missing features after preprocessing.")
 
-    # Predict
     try:
+        # Predict
         predictions = model.predict(df_features)
         logger.info(f"Generated {len(predictions)} predictions.")
 
-        # Format results
-        results = []
-        for i, plan_dict in enumerate(input_data):
-            # Include original input features + prediction
-            result_item = plan_dict.copy()
-            result_item['predicted_price'] = round(float(predictions[i]), 2) # Round prediction
-            results.append(result_item)
-
+        # Calculate rankings for submitted plans
+        # Create a dataframe with predictions and the original plan information
+        df_with_predictions = df_processed.copy()
+        df_with_predictions['predicted_price'] = predictions
+        
+        # Calculate value ratio (predicted_price / fee)
+        df_with_predictions['value_ratio'] = df_with_predictions.apply(
+            lambda row: row['predicted_price'] / row['fee'] if row['fee'] > 0 
+                      else (float('inf') if row['predicted_price'] > 0 else 1.0), 
+            axis=1
+        )
+        
+        # Apply tied ranking calculation
+        df_ranked = calculate_rankings_with_ties(df_with_predictions, value_column='value_ratio')
+        
+        # Format the entire ranking list for response
+        rankings_list = []
+        for _, row in df_ranked.sort_values('rank').iterrows():
+            plan_id = row['id'] if 'id' in row else (row['plan_id'] if 'plan_id' in row else 'unknown')
+            rankings_list.append({
+                "plan_id": int(plan_id) if isinstance(plan_id, (int, float)) else plan_id,
+                "predicted_price": float(row['predicted_price']),
+                "rank": row['rank_display']  # Use the display format with 공동 notation
+            })
+        
         end_time = time.time()
         logger.info(f"Prediction completed in {end_time - start_time:.4f} seconds.")
-        return {"predictions": results}
+        return rankings_list
 
     except Exception as e:
         logger.exception(f"Error during prediction: {e}")
