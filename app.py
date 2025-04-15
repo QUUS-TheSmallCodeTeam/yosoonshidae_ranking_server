@@ -10,7 +10,7 @@ import time
 import gc  # Import garbage collector for memory cleanup
 from fastapi.responses import HTMLResponse
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, explained_variance_score, mean_absolute_percentage_error
-from typing import Optional, Union
+from typing import Optional, Union, List
 from fastapi.templating import Jinja2Templates
 import sys
 import logging
