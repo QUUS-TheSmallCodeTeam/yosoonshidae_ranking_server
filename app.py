@@ -184,10 +184,37 @@ def read_root():
     latest_report = max(html_files, key=lambda x: x.stat().st_mtime)
     print(f"Serving latest report: {latest_report}")
     
+    # Set the latest_report_path variable (was missing)
+    latest_report_path = f"/reports/{latest_report.name}"
+    
     # Read and return the HTML content
     try:
         with open(latest_report, "r", encoding="utf-8") as f:
             html_content = f.read()
+        # --- Load and format logical test results FROM MEMORY CACHE --- 
+        logical_test_failure_count = "N/A" # Default value
+        
+        # --> ADDED LOG: Log the cache value *before* trying to read from it
+        logger.info(f"Accessing '/' route. Current cache content: {latest_logical_test_results_cache}")
+        
+        if latest_logical_test_results_cache:
+            try:
+                summary = latest_logical_test_results_cache.get("summary", {})
+                # Get the failure count, default to 0 if not found
+                logical_test_failure_count = summary.get('failures', 0) 
+            except Exception as e:
+                logger.error(f"Error processing cached logical test results: {e}")
+                logical_test_failure_count = "Error loading cache"
+                
+        # Format the simple failure count line
+        logical_test_html = f"<p><b>Logical Test Failures:</b> {logical_test_failure_count}</p>"
+        
+        # Insert the logical test info into the HTML before the closing </body> tag
+        if '</body>' in html_content:
+            insert_pos = html_content.find('</body>')
+            html_content = html_content[:insert_pos] + f"<hr><h3>Model Quality Metrics</h3>{logical_test_html}" + html_content[insert_pos:]
+            logger.info(f"Added logical test failure count ({logical_test_failure_count}) to HTML report")
+            
         return html_content
     except Exception as e:
         print(f"Error reading HTML report: {e}")
@@ -207,6 +234,11 @@ def read_root():
         </html>
         """
 
+    # For cases where we don't have HTML files (used the early return above)
+    # Simple status check
+    model_status = "Loaded" if model else "Not Loaded (Run /process)"
+    num_features = len(model_metadata.get('feature_names', []))
+    
     # --- Load and format logical test results FROM MEMORY CACHE --- 
     logical_test_failure_count = "N/A" # Default value
     
@@ -225,12 +257,10 @@ def read_root():
     # Format the simple failure count line
     logical_test_html = f"<p><b>Logical Test Failures:</b> {logical_test_failure_count}</p>"
     # --- End logical test results --- 
-
-    # Simple status check
-    model_status = "Loaded" if model else "Not Loaded (Run /process)"
-    num_features = len(model_metadata.get('feature_names', []))
-    report_info = f'<p>Latest Report: <a href="{latest_report_path}">{latest_report.name}</a></p>' if latest_report_path else "<p>No reports available yet.</p>"
-
+    
+    # Report info for welcome page (no reports case)
+    report_info = "<p>No reports available yet.</p>"
+    
     return f"""
     <html>
         <head><title>Moyo Plan Ranker</title></head>
