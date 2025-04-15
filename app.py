@@ -59,6 +59,12 @@ from modules.data_models import PlanInput, FeatureDefinitions
 app = FastAPI(title="Moyo Plan Ranking Model Server")
 templates = Jinja2Templates(directory="templates")
 
+# Global variables for model and data
+model = None
+model_metadata = {}
+latest_logical_test_results_cache = None
+df_with_rankings = None  # Global variable to store the latest rankings
+
 # Define a model for the incoming data - adjusted to match test.json structure
 class PlanData(BaseModel):
     id: int
@@ -100,12 +106,6 @@ class PlanData(BaseModel):
     mvno_rating: Union[float, str]  # Accept both float and string
     monthly_review_score: Union[float, str]  # Accept both float and string
     discount_percentage: Union[float, str]  # Accept both float and string
-
-model = None
-model_metadata = {}
-
-# Global variable to cache latest results
-latest_logical_test_results_cache = None
 
 def load_model_and_metadata():
     global model, model_metadata
@@ -415,13 +415,18 @@ async def process_data(request: Request):
         config_path = save_model_config(config)
         
         # Step 5: Calculate rankings using the updated logic from update_rankings.py
-        df_with_rankings = calculate_rankings(processed_df, model)
+        df_with_rankings_local = calculate_rankings(processed_df, model)
         
         # Apply proper ranking with ties
-        df_with_rankings = calculate_rankings_with_ties(df_with_rankings, value_column='value_ratio')
+        df_with_rankings_local = calculate_rankings_with_ties(df_with_rankings_local, value_column='value_ratio')
+        
+        # Save rankings to global variable for later use by /rankings endpoint
+        global df_with_rankings
+        df_with_rankings = df_with_rankings_local.copy()  # Make a copy to ensure independence
         
         # Free memory from processed dataframe
         del processed_df
+        del df_with_rankings_local  # Clean up the local variable too
         gc.collect()
         
         # Step 6: Generate report with the enhanced format
@@ -709,6 +714,58 @@ async def get_features():
         
     feature_names = model_metadata.get('feature_names')
     return {"expected_features": feature_names}
+
+@app.get("/rankings")
+async def get_rankings():
+    """Return the complete list of ranked plans with IDs and predicted prices."""
+    # Check if model has been run to generate rankings
+    from pathlib import Path
+    report_dirs = [Path("./reports"), Path("/tmp/reports"), Path("/tmp")]
+    
+    latest_report = None
+    for reports_dir in report_dirs:
+        if reports_dir.exists():
+            html_files = list(reports_dir.glob("plan_rankings_*.html"))
+            if html_files:
+                latest_report = max(html_files, key=lambda x: x.stat().st_mtime)
+                break
+    
+    if not latest_report:
+        raise HTTPException(status_code=404, 
+                          detail="No rankings available. Run /process endpoint first to generate rankings.")
+    
+    # Load the ranked plans from memory or get from last process run
+    global df_with_rankings  # Using global variable to access the last rankings
+    
+    if 'df_with_rankings' not in globals() or df_with_rankings is None:
+        logger.warning("Rankings dataframe not in memory. Requested /rankings before processing or after server restart.")
+        raise HTTPException(status_code=503, 
+                          detail="Rankings not available in memory. Run /process endpoint first.")
+    
+    # Extract only the fields we need
+    try:
+        # Ensure the dataframe has all required columns
+        required_cols = ['id', 'predicted_price', 'rank', 'rank_display']
+        missing_cols = [col for col in required_cols if col not in df_with_rankings.columns]
+        
+        if missing_cols:
+            raise HTTPException(status_code=500, 
+                              detail=f"Missing required columns in rankings data: {', '.join(missing_cols)}")
+        
+        # Format response data - simpler format as requested
+        rankings_list = []
+        for _, row in df_with_rankings.sort_values('rank').iterrows():  # Sort by rank for easier consumption
+            rankings_list.append({
+                "plan_id": int(row['id']) if isinstance(row['id'], (int, float)) else row['id'],
+                "predicted_price": float(row['predicted_price']),
+                "rank": row['rank_display']  # Use the display format with 공동 notation
+            })
+        
+        return rankings_list  # Return just the array for simplicity
+        
+    except Exception as e:
+        logger.exception(f"Error generating rankings list: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generating rankings: {str(e)}")
 
 # Add function to calculate proper rankings with ties
 def calculate_rankings_with_ties(df, value_column='value_ratio', ascending=False):
