@@ -204,6 +204,55 @@ def read_root():
         </html>
         """
 
+    # --- Load and format logical test results --- 
+    logical_test_failure_count = "N/A" # Default value
+    logical_test_file_path = "/tmp/latest_logical_test_results.json"
+    if os.path.exists(logical_test_file_path):
+        try:
+            with open(logical_test_file_path, 'r') as f:
+                test_results = json.load(f)
+            summary = test_results.get("summary", {})
+            # Get the failure count, default to 0 if not found
+            logical_test_failure_count = summary.get('failures', 0) 
+        except Exception as e:
+            logger.error(f"Error reading or parsing logical test results from {logical_test_file_path}: {e}")
+            logical_test_failure_count = "Error loading"
+            
+    # Format the simple failure count line
+    logical_test_html = f"<p><b>Logical Test Failures:</b> {logical_test_failure_count}</p>"
+    # --- End logical test results --- 
+
+    # Simple status check
+    model_status = "Loaded" if model else "Not Loaded (Run /process)"
+    num_features = len(model_metadata.get('feature_names', []))
+    report_info = f'<p>Latest Report: <a href="{latest_report_path}">{latest_report.name}</a></p>' if latest_report_path else "<p>No reports available yet.</p>"
+
+    return f"""
+    <html>
+        <head><title>Moyo Plan Ranker</title></head>
+        <body>
+            <h1>Moyo Mobile Plan Ranking Model Server</h1>
+            <p>Status: <b>Ready</b></p>
+            <p>Model Type: XGBoost</p>
+            <p>Model Status: {model_status}</p>
+            <p>Expected Features: {num_features}</p>
+            {report_info}
+            <hr>
+            <h3>Logical Test Status</h3>
+            {logical_test_html}
+            <hr>
+            <h3>Endpoints</h3>
+            <ul>
+                <li><code>POST /process</code>: Submit plan data (JSON list) to preprocess, train, rank, and generate a report.</li>
+                <li><code>POST /predict</code>: Get price predictions for plan features (expects preprocessed features).</li>
+                <li><code>GET /features</code>: Get the list of features the model expects for /predict.</li>
+            </ul>
+            <hr>
+            <p><i>Navigate to /docs for API documentation (Swagger UI).</i></p>
+        </body>
+    </html>
+    """
+
 @app.post("/test")
 async def test_endpoint(request: Request):
     # Echo back the request body
@@ -508,54 +557,6 @@ async def process_data(request: Request):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error processing data: {str(e)}")
-
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    """ Basic HTML interface. """
-    # Look for the latest HTML report
-    report_dirs = [REPORT_DIR_BASE, Path("/tmp/reports"), Path("/tmp")]
-    html_files = []
-    for reports_dir in report_dirs:
-        if reports_dir.exists():
-            html_files.extend(list(reports_dir.glob("plan_rankings_*.html")))
-
-    latest_report_path = None
-    if html_files:
-        latest_report = max(html_files, key=lambda x: x.stat().st_mtime)
-        # Generate a relative URL path for the report
-        try:
-            # Construct path relative to potential base path or just filename
-            latest_report_path = f"/reports/{latest_report.name}" # Simple relative path
-        except Exception:
-            latest_report_path = None # Fallback if path generation fails
-
-    # Simple status check
-    model_status = "Loaded" if model else "Not Loaded"
-    num_features = len(model_metadata.get('feature_names', []))
-    report_info = f'<p>Latest Report: <a href="{latest_report_path}">{latest_report.name}</a></p>' if latest_report_path else "<p>No reports available yet.</p>"
-
-    return f"""
-    <html>
-        <head><title>Moyo Plan Ranker</title></head>
-        <body>
-            <h1>Moyo Mobile Plan Ranking Model Server</h1>
-            <p>Status: <b>Ready</b></p>
-            <p>Model Type: XGBoost</p>
-            <p>Model Status: {model_status}</p>
-            <p>Expected Features: {num_features}</p>
-            {report_info}
-            <hr>
-            <p>Endpoints:</p>
-            <ul>
-                <li><code>POST /process</code>: Submit plan data (JSON list) to preprocess, train, rank, and generate a report.</li>
-                <li><code>POST /predict</code>: Get price predictions for plan features (expects preprocessed features).</li>
-                <li><code>GET /features</code>: Get the list of features the model expects for /predict.</li>
-            </ul>
-            <hr>
-            <p><i>Navigate to /docs for API documentation (Swagger UI).</i></p>
-        </body>
-    </html>
-    """
 
 @app.post("/predict")
 async def predict_plans(plans: List[PlanInput]):
