@@ -605,11 +605,19 @@ async def process_data(request: Request):
                 top_10_plans = df_with_rankings.sort_values("value_ratio", ascending=False).head(10)[
                     ["plan_name", "mvno", "fee", "value_ratio", "predicted_price", "rank_display", "id"]
                 ].to_dict(orient="records")
-                logger.info(f"[{request_id}] Successfully extracted top 10 plans.")
+                
+                # Get all ranked plans for the complete ranking list
+                all_ranked_plans = df_with_rankings.sort_values("rank")[
+                    ["id", "predicted_price", "rank", "rank_display"]
+                ].to_dict(orient="records")
+                
+                logger.info(f"[{request_id}] Successfully extracted top 10 plans and all {len(all_ranked_plans)} ranked plans.")
             else:
                 logger.warning(f"[{request_id}] Report CSV not found at {report_path}, cannot extract top 10 plans.")
+                all_ranked_plans = []
         except Exception as e:
              logger.exception(f"[{request_id}] Error reading report CSV for top 10 plans.")
+             all_ranked_plans = []
 
         response = {
             "request_id": request_id,
@@ -627,7 +635,8 @@ async def process_data(request: Request):
             "model_metrics": metrics,
             "logical_test_summary": latest_logical_test_results_cache.get("summary") if latest_logical_test_results_cache else {"status": "Cache not populated"},
             "logical_test_details": latest_logical_test_results_cache.get("failures_details", []) if latest_logical_test_results_cache else [],
-            "top_10_plans": top_10_plans
+            "top_10_plans": top_10_plans,
+            "all_ranked_plans": all_ranked_plans
         }
         return response
     except Exception as e:
