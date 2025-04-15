@@ -33,8 +33,12 @@ def prepare_features(df):
     # === END ENHANCED LOGGING ===
     
     # 1. Network type encoding
-    processed_df['is_5g'] = (processed_df['network'] == '5G').astype(int)
-    print(f"Created is_5g feature: {processed_df['is_5g'].sum()} 5G plans found")
+    if 'network' in processed_df.columns:
+        processed_df['is_5g'] = (processed_df['network'] == '5G').astype(int)
+        print(f"Created is_5g feature: {processed_df['is_5g'].sum()} 5G plans found")
+    else:
+        processed_df['is_5g'] = 0 # Default to 0 if network column is missing
+        print("'network' column not found, setting is_5g to 0.")
     
     # 2. Process data_exhaustion field - do this first to identify throttled unlimited plans
     # Extract speed values from data_exhaustion field (e.g., "1Mbps" -> 1)

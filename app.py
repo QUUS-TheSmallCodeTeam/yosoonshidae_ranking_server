@@ -513,14 +513,13 @@ async def process_data(request: Request):
         logger.info(f"[{request_id}] Logical pricing test finished.")
         # --- End of Logical Test Step --- 
 
-        # Clean up memory
-        del processed_df, df_with_rankings, X, y
-        # Remove y_pred if it exists from metrics calculation
-        if 'y_pred' in locals():
-            del y_pred
-        if 'df_logical_test' in locals(): del df_logical_test
-        gc.collect()
-        logger.info(f"[{request_id}] Memory cleanup performed.")
+        # Clean up memory (REMOVED fragile del statement)
+        # Consider which dataframes are needed for the response
+        # del processed_df, df_with_rankings, X, y # REMOVED
+        # if 'df_logical_test' in locals(): del df_logical_test
+        # if 'df_logical_test_processed' in locals(): del df_logical_test_processed
+        # gc.collect()
+        # logger.info(f"[{request_id}] Memory cleanup performed.")
 
         # Step 7: Prepare final response
         end_process_time = time.time()
