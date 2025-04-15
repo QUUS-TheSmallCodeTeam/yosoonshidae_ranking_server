@@ -17,8 +17,11 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 # Copy app code
 COPY --chown=user . /app
 
-# Create necessary directories
-RUN mkdir -p /app/data/raw /app/data/processed /app/trained_models/xgboost/with_domain/basic/standard/model /app/trained_models/xgboost/with_domain/basic/standard/config /app/results/latest /app/results/archive
+# Copy logical test data (EXPECTING it to be in ./data/test relative to hf_server)
+COPY --chown=user ./data/test/logical_model_test_set.json /app/data/test/logical_model_test_set.json
+
+# Create necessary directories (including templates and data/test)
+RUN mkdir -p /app/data/raw /app/data/processed /app/data/test /app/trained_models/xgboost/with_domain/basic/standard/model /app/trained_models/xgboost/with_domain/basic/standard/config /app/results/latest /app/results/archive
 
 # Set environment variables
 ENV PYTHONPATH=/app

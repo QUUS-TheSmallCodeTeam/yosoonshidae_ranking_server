@@ -1,0 +1,560 @@
+[
+  {
+    "id": "base",
+    "name": "Base Plan (15GB LTE)",
+    "features": {
+      "basic_data_clean": 15,
+      "basic_data_unlimited": 0,
+      "daily_data_clean": 0,
+      "daily_data_unlimited": 0,
+      "has_daily_allocation": 0,
+      "voice_clean": 300,
+      "voice_unlimited": 0,
+      "message_clean": 300,
+      "message_unlimited": 0,
+      "is_5g": 0,
+      "tethering_gb": 0,
+      "throttle_speed_normalized": 0.3,
+      "unlimited_type_numeric": 2,
+      "data_sharing_numeric": 0,
+      "roaming_support_numeric": 1,
+      "micro_payment_numeric": 0,
+      "is_esim_numeric": 1,
+      "signup_minor_numeric": 1,
+      "signup_foreigner_numeric": 0,
+      "agreement_period": 0,
+      "usim_delivery_fee": 0,
+      "usim_supported": 1,
+      "usim_is_free": 1,
+      "nfc_usim_supported": 0,
+      "nfc_usim_is_free": 0,
+      "esim_is_free": 1,
+      "esim_fee": 0,
+      "additional_call": 0,
+      "nfc_usim_delivery_fee": 0,
+      "fee": 17000
+    }
+  },
+  {
+    "id": "data_1",
+    "name": "1GB Data",
+    "changed_features": {
+      "basic_data_clean": 1
+    }
+  },
+  {
+    "id": "data_3",
+    "name": "3GB Data",
+    "changed_features": {
+      "basic_data_clean": 3
+    }
+  },
+  {
+    "id": "data_5",
+    "name": "5GB Data",
+    "changed_features": {
+      "basic_data_clean": 5
+    }
+  },
+  {
+    "id": "data_7",
+    "name": "7GB Data",
+    "changed_features": {
+      "basic_data_clean": 7
+    }
+  },
+  {
+    "id": "data_10",
+    "name": "10GB Data",
+    "changed_features": {
+      "basic_data_clean": 10
+    }
+  },
+  {
+    "id": "data_20",
+    "name": "20GB Data",
+    "changed_features": {
+      "basic_data_clean": 20
+    }
+  },
+  {
+    "id": "data_25",
+    "name": "25GB Data",
+    "changed_features": {
+      "basic_data_clean": 25
+    }
+  },
+  {
+    "id": "data_30",
+    "name": "30GB Data",
+    "changed_features": {
+      "basic_data_clean": 30
+    }
+  },
+  {
+    "id": "data_50",
+    "name": "50GB Data",
+    "changed_features": {
+      "basic_data_clean": 50
+    }
+  },
+  {
+    "id": "data_100",
+    "name": "100GB Data",
+    "changed_features": {
+      "basic_data_clean": 100
+    }
+  },
+  {
+    "id": "data_150",
+    "name": "150GB Data",
+    "changed_features": {
+      "basic_data_clean": 150
+    }
+  },
+  {
+    "id": "data_200",
+    "name": "200GB Data",
+    "changed_features": {
+      "basic_data_clean": 200
+    }
+  },
+  {
+    "id": "data_250",
+    "name": "250GB Data",
+    "changed_features": {
+      "basic_data_clean": 250
+    }
+  },
+  {
+    "id": "data_300",
+    "name": "300GB Data",
+    "changed_features": {
+      "basic_data_clean": 300
+    }
+  },
+  {
+    "id": "data_unlimited_throttled",
+    "name": "Unlimited Data (Throttled)",
+    "changed_features": {
+      "basic_data_clean": 0,
+      "basic_data_unlimited": 1,
+      "unlimited_type_numeric": 1,
+      "throttle_speed_normalized": 0.3
+    }
+  },
+  {
+    "id": "data_unlimited_full",
+    "name": "Unlimited Data (Full Speed)",
+    "changed_features": {
+      "basic_data_clean": 300,
+      "basic_data_unlimited": 1,
+      "unlimited_type_numeric": 3,
+      "throttle_speed_normalized": 1.0
+    }
+  },
+  {
+    "id": "daily_0.5",
+    "name": "0.5GB Daily",
+    "changed_features": {
+      "daily_data_clean": 0.5,
+      "has_daily_allocation": 1
+    }
+  },
+  {
+    "id": "daily_1",
+    "name": "1GB Daily",
+    "changed_features": {
+      "daily_data_clean": 1,
+      "has_daily_allocation": 1
+    }
+  },
+  {
+    "id": "daily_2",
+    "name": "2GB Daily",
+    "changed_features": {
+      "daily_data_clean": 2,
+      "has_daily_allocation": 1
+    }
+  },
+  {
+    "id": "daily_3",
+    "name": "3GB Daily",
+    "changed_features": {
+      "daily_data_clean": 3,
+      "has_daily_allocation": 1
+    }
+  },
+  {
+    "id": "daily_5",
+    "name": "5GB Daily",
+    "changed_features": {
+      "daily_data_clean": 5,
+      "has_daily_allocation": 1
+    }
+  },
+  {
+    "id": "throttle_none",
+    "name": "No Throttling",
+    "changed_features": {
+      "throttle_speed_normalized": 0.0,
+      "unlimited_type_numeric": 0,
+      "basic_data_unlimited": 0
+    }
+  },
+  {
+    "id": "throttle_1mbps",
+    "name": "1Mbps Throttling",
+    "changed_features": {
+      "throttle_speed_normalized": 0.1,
+      "unlimited_type_numeric": 2,
+      "basic_data_unlimited": 0
+    }
+  },
+  {
+    "id": "throttle_5mbps",
+    "name": "5Mbps Throttling",
+    "changed_features": {
+      "throttle_speed_normalized": 0.5,
+      "unlimited_type_numeric": 2,
+      "basic_data_unlimited": 0
+    }
+  },
+  {
+    "id": "throttle_10mbps",
+    "name": "10Mbps Throttling",
+    "changed_features": {
+      "throttle_speed_normalized": 1.0,
+      "unlimited_type_numeric": 2,
+      "basic_data_unlimited": 0
+    }
+  },
+  {
+    "id": "tethering_1",
+    "name": "1GB Tethering",
+    "changed_features": {
+      "tethering_gb": 1
+    }
+  },
+  {
+    "id": "tethering_3",
+    "name": "3GB Tethering",
+    "changed_features": {
+      "tethering_gb": 3
+    }
+  },
+  {
+    "id": "tethering_5",
+    "name": "5GB Tethering",
+    "changed_features": {
+      "tethering_gb": 5
+    }
+  },
+  {
+    "id": "tethering_10",
+    "name": "10GB Tethering",
+    "changed_features": {
+      "tethering_gb": 10
+    }
+  },
+  {
+    "id": "tethering_20",
+    "name": "20GB Tethering",
+    "changed_features": {
+      "tethering_gb": 20
+    }
+  },
+  {
+    "id": "voice_100",
+    "name": "100min Voice",
+    "changed_features": {
+      "voice_clean": 100
+    }
+  },
+  {
+    "id": "voice_200",
+    "name": "200min Voice",
+    "changed_features": {
+      "voice_clean": 200
+    }
+  },
+  {
+    "id": "voice_500",
+    "name": "500min Voice",
+    "changed_features": {
+      "voice_clean": 500
+    }
+  },
+  {
+    "id": "voice_1000",
+    "name": "1000min Voice",
+    "changed_features": {
+      "voice_clean": 1000
+    }
+  },
+  {
+    "id": "voice_2000",
+    "name": "2000min Voice",
+    "changed_features": {
+      "voice_clean": 2000
+    }
+  },
+  {
+    "id": "voice_unlimited",
+    "name": "Unlimited Voice",
+    "changed_features": {
+      "voice_clean": 2000,
+      "voice_unlimited": 1
+    }
+  },
+  {
+    "id": "message_100",
+    "name": "100 Messages",
+    "changed_features": {
+      "message_clean": 100
+    }
+  },
+  {
+    "id": "message_200",
+    "name": "200 Messages",
+    "changed_features": {
+      "message_clean": 200
+    }
+  },
+  {
+    "id": "message_500",
+    "name": "500 Messages",
+    "changed_features": {
+      "message_clean": 500
+    }
+  },
+  {
+    "id": "message_1000",
+    "name": "1000 Messages",
+    "changed_features": {
+      "message_clean": 1000
+    }
+  },
+  {
+    "id": "message_2000",
+    "name": "2000 Messages",
+    "changed_features": {
+      "message_clean": 2000
+    }
+  },
+  {
+    "id": "message_unlimited",
+    "name": "Unlimited Messages",
+    "changed_features": {
+      "message_clean": 2000,
+      "message_unlimited": 1
+    }
+  },
+  {
+    "id": "5g_basic",
+    "name": "5G Network",
+    "changed_features": {
+      "is_5g": 1
+    }
+  },
+  {
+    "id": "data_sharing",
+    "name": "With Data Sharing",
+    "changed_features": {
+      "data_sharing_numeric": 1
+    }
+  },
+  {
+    "id": "no_roaming",
+    "name": "No Roaming",
+    "changed_features": {
+      "roaming_support_numeric": 0
+    }
+  },
+  {
+    "id": "with_micropayment",
+    "name": "With Micropayment",
+    "changed_features": {
+      "micro_payment_numeric": 1
+    }
+  },
+  {
+    "id": "no_esim",
+    "name": "No eSIM",
+    "changed_features": {
+      "is_esim_numeric": 0,
+      "esim_is_free": 0,
+      "esim_fee": 0
+    }
+  },
+  {
+    "id": "paid_esim",
+    "name": "Paid eSIM",
+    "changed_features": {
+      "is_esim_numeric": 1,
+      "esim_is_free": 0,
+      "esim_fee": 2750
+    }
+  },
+  {
+    "id": "paid_esim_high",
+    "name": "Paid eSIM (High)",
+    "changed_features": {
+      "is_esim_numeric": 1,
+      "esim_is_free": 0,
+      "esim_fee": 4400
+    }
+  },
+  {
+    "id": "foreigner_signup",
+    "name": "Foreigner Signup",
+    "changed_features": {
+      "signup_foreigner_numeric": 1
+    }
+  },
+  {
+    "id": "no_minor_signup",
+    "name": "No Minor Signup",
+    "changed_features": {
+      "signup_minor_numeric": 0
+    }
+  },
+  {
+    "id": "agreement_contract_1",
+    "name": "1 Month Agreement",
+    "changed_features": {
+      "agreement_period": 1
+    }
+  },
+  {
+    "id": "agreement_contract_3",
+    "name": "3 Month Agreement",
+    "changed_features": {
+      "agreement_period": 3
+    }
+  },
+  {
+    "id": "agreement_contract_6",
+    "name": "6 Month Agreement",
+    "changed_features": {
+      "agreement_period": 6
+    }
+  },
+  {
+    "id": "agreement_contract_12",
+    "name": "12 Month Agreement",
+    "changed_features": {
+      "agreement_period": 12
+    }
+  },
+  {
+    "id": "agreement_contract_24",
+    "name": "24 Month Agreement",
+    "changed_features": {
+      "agreement_period": 24
+    }
+  },
+  {
+    "id": "agreement_contract_36",
+    "name": "36 Month Agreement",
+    "changed_features": {
+      "agreement_period": 36
+    }
+  },
+  {
+    "id": "usim_paid_min",
+    "name": "Paid USIM (Min)",
+    "changed_features": {
+      "usim_delivery_fee": 2200,
+      "usim_is_free": 0
+    }
+  },
+  {
+    "id": "usim_paid_max",
+    "name": "Paid USIM (Max)",
+    "changed_features": {
+      "usim_delivery_fee": 6600,
+      "usim_is_free": 0
+    }
+  },
+  {
+    "id": "nfc_usim_min",
+    "name": "NFC USIM (Min)",
+    "changed_features": {
+      "nfc_usim_supported": 1,
+      "nfc_usim_is_free": 0,
+      "nfc_usim_delivery_fee": 4400
+    }
+  },
+  {
+    "id": "nfc_usim_max",
+    "name": "NFC USIM (Max)",
+    "changed_features": {
+      "nfc_usim_supported": 1,
+      "nfc_usim_is_free": 0,
+      "nfc_usim_delivery_fee": 8800
+    }
+  },
+  {
+    "id": "additional_call_30",
+    "name": "30min Additional Call",
+    "changed_features": {
+      "additional_call": 30
+    }
+  },
+  {
+    "id": "additional_call_60",
+    "name": "60min Additional Call",
+    "changed_features": {
+      "additional_call": 60
+    }
+  },
+  {
+    "id": "additional_call_100",
+    "name": "100min Additional Call",
+    "changed_features": {
+      "additional_call": 100
+    }
+  },
+  {
+    "id": "nfc_usim_fee_5000",
+    "name": "NFC USIM 5000 won",
+    "changed_features": {
+      "nfc_usim_delivery_fee": 5000,
+      "nfc_usim_supported": 1,
+      "nfc_usim_is_free": 0
+    }
+  },
+  {
+    "id": "nfc_usim_fee_8000",
+    "name": "NFC USIM 8000 won",
+    "changed_features": {
+      "nfc_usim_delivery_fee": 8000,
+      "nfc_usim_supported": 1,
+      "nfc_usim_is_free": 0
+    }
+  },
+  {
+    "id": "nfc_usim_fee_10000",
+    "name": "NFC USIM 10000 won",
+    "changed_features": {
+      "nfc_usim_delivery_fee": 10000,
+      "nfc_usim_supported": 1,
+      "nfc_usim_is_free": 0
+    }
+  },
+  {
+    "id": "micro_payment_enabled",
+    "name": "Micro Payment Enabled",
+    "changed_features": {
+      "micro_payment_numeric": 1
+    }
+  },
+  {
+    "id": "signup_minor_disabled",
+    "name": "Minor Signup Disabled",
+    "changed_features": {
+      "signup_minor_numeric": 0
+    }
+  }
+]
