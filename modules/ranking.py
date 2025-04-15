@@ -87,7 +87,38 @@ def calculate_rankings(df, model):
 
     # Sort by value_ratio (higher is better)
     ranking_df = ranking_df.sort_values(by='value_ratio', ascending=False)
-    ranking_df['rank'] = range(1, len(ranking_df) + 1)
+    
+    # Apply tied ranking calculation with 공동 notation
+    # Initialize variables for tracking
+    current_rank = 1
+    previous_value = None
+    tied_count = 0
+    ranks = []
+    rank_displays = []
+    
+    # Calculate ranks
+    for idx, row in ranking_df.iterrows():
+        current_value = row['value_ratio']
+        
+        # Check if this is a tie with the previous value
+        if previous_value is not None and abs(current_value - previous_value) < 1e-10:  # Use small epsilon for float comparison
+            tied_count += 1
+            # Keep the same rank number but mark as tied (공동)
+            ranks.append(current_rank - tied_count)
+            rank_displays.append(f"공동 {current_rank - tied_count}위")
+        else:
+            # New rank, accounting for any previous ties
+            current_rank += tied_count
+            ranks.append(current_rank)
+            rank_displays.append(f"{current_rank}위")
+            tied_count = 0
+            current_rank += 1
+            
+        previous_value = current_value
+    
+    # Add ranks back to the dataframe
+    ranking_df['rank'] = ranks
+    ranking_df['rank_display'] = rank_displays
     
     return ranking_df
 
@@ -454,7 +485,7 @@ def generate_html_report(df, model_name, timestamp, model_metrics=None):
         
         # Basic cells
         cells = [
-            str(row.get('rank', 'N/A')),
+            str(row.get('rank_display', row.get('rank', 'N/A'))),
             plan_name, 
             original_price, 
             discounted_price, 

@@ -417,6 +417,9 @@ async def process_data(request: Request):
         # Step 5: Calculate rankings using the updated logic from update_rankings.py
         df_with_rankings = calculate_rankings(processed_df, model)
         
+        # Apply proper ranking with ties
+        df_with_rankings = calculate_rankings_with_ties(df_with_rankings, value_column='value_ratio')
+        
         # Free memory from processed dataframe
         del processed_df
         gc.collect()
@@ -585,20 +588,19 @@ async def process_data(request: Request):
         logger.info(f"[{request_id}] Total processing time: {total_time:.4f} seconds.")
         
         # Get top 10 plans based on value_ratio
-        # Need to load the rankings back from the saved report CSV to get top plans
         top_10_plans = []
         try:
             if 'value_ratio' in df_with_rankings.columns:
-                 # Convert relevant columns to standard types before creating dict
-                 cols_to_convert = {'fee': float, 'value_ratio': float, 'predicted_price': float}
-                 for col, dtype in cols_to_convert.items():
-                     if col in df_with_rankings.columns:
-                         df_with_rankings[col] = df_with_rankings[col].astype(dtype)
+                # Convert relevant columns to standard types before creating dict
+                cols_to_convert = {'fee': float, 'value_ratio': float, 'predicted_price': float}
+                for col, dtype in cols_to_convert.items():
+                    if col in df_with_rankings.columns:
+                        df_with_rankings[col] = df_with_rankings[col].astype(dtype)
                          
-                 top_10_plans = df_with_rankings.sort_values("value_ratio", ascending=False).head(10)[ 
-                     ["plan_name", "mvno", "fee", "value_ratio", "predicted_price"] 
-                 ].to_dict(orient="records")
-                 logger.info(f"[{request_id}] Successfully extracted top 10 plans.")
+                top_10_plans = df_with_rankings.sort_values("value_ratio", ascending=False).head(10)[
+                    ["plan_name", "mvno", "fee", "value_ratio", "predicted_price", "rank_display", "id"]
+                ].to_dict(orient="records")
+                logger.info(f"[{request_id}] Successfully extracted top 10 plans.")
             else:
                 logger.warning(f"[{request_id}] Report CSV not found at {report_path}, cannot extract top 10 plans.")
         except Exception as e:
@@ -707,6 +709,59 @@ async def get_features():
         
     feature_names = model_metadata.get('feature_names')
     return {"expected_features": feature_names}
+
+# Add function to calculate proper rankings with ties
+def calculate_rankings_with_ties(df, value_column='value_ratio', ascending=False):
+    """
+    Calculate rankings with proper handling of ties.
+    For tied ranks, uses '공동 X위' (joint X rank) notation
+    and ensures the next rank after ties is correctly incremented.
+    
+    Args:
+        df: DataFrame containing the data
+        value_column: Column to rank by
+        ascending: Whether to rank in ascending order
+        
+    Returns:
+        DataFrame with new columns: 'rank' (numeric) and 'rank_display' (with 공동 notation)
+    """
+    # Sort the dataframe by the value column
+    df_sorted = df.sort_values(by=value_column, ascending=ascending).copy()
+    
+    # Initialize variables for tracking
+    current_rank = 1
+    previous_value = None
+    tied_count = 0
+    ranks = []
+    rank_displays = []
+    
+    # Calculate ranks
+    for idx, row in df_sorted.iterrows():
+        current_value = row[value_column]
+        
+        # Check if this is a tie with the previous value
+        if previous_value is not None and current_value == previous_value:
+            tied_count += 1
+            # Keep the same rank number but mark as tied (공동)
+            ranks.append(current_rank - tied_count)
+            rank_displays.append(f"공동 {current_rank - tied_count}위")
+        else:
+            # New rank, accounting for any previous ties
+            current_rank += tied_count
+            ranks.append(current_rank)
+            rank_displays.append(f"{current_rank}위")
+            tied_count = 0
+            current_rank += 1
+            
+        previous_value = current_value
+    
+    # Add ranks back to the dataframe
+    df_sorted['rank'] = ranks
+    df_sorted['rank_display'] = rank_displays
+    
+    # Return to original order
+    df_sorted = df_sorted.reindex(df.index)
+    return df_sorted
 
 if __name__ == "__main__":
     import uvicorn
