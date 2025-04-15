@@ -40,7 +40,7 @@ from modules import (
     save_model_config
 )
 # Keep data models
-from hf_server.modules.data_models import PlanInput, FeatureDefinitions
+from modules.data_models import PlanInput, FeatureDefinitions
 
 app = FastAPI(title="Moyo Plan Ranking Model Server")
 templates = Jinja2Templates(directory="templates")
@@ -333,7 +333,7 @@ async def process_data(request: Request):
                 else:
                     logger.info(f"[{request_id}] Loaded {len(df_logical_test)} plans for logical test.")
                     # Prepare features using the *current* model's expected features
-                    required_model_features = model_metadata.get('feature_names', [])
+                    required_model_features = features_to_use
                     if not required_model_features:
                         logical_test_error = "Cannot run logical test: Model metadata missing feature names."
                         logger.error(f"[{request_id}] {logical_test_error}")
