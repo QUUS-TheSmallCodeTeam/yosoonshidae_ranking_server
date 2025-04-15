@@ -41,22 +41,28 @@ def prepare_features(df):
         print("'network' column not found, setting is_5g to 0.")
     
     # 2. Process data_exhaustion field - do this first to identify throttled unlimited plans
-    # Extract speed values from data_exhaustion field (e.g., "1Mbps" -> 1)
-    def extract_speed(value):
-        if pd.isna(value) or value is None:
-            return 0
-        if isinstance(value, str) and 'Mbps' in value:
-            try:
-                return float(value.replace('Mbps', '').strip())
-            except:
+    if 'data_exhaustion' in processed_df.columns:
+        # Extract speed values from data_exhaustion field (e.g., "1Mbps" -> 1)
+        def extract_speed(value):
+            if pd.isna(value) or value is None:
                 return 0
-        return 0
-    
-    processed_df['speed_when_exhausted'] = processed_df['data_exhaustion'].apply(extract_speed)
-    
-    # Flag plans with throttled unlimited data (finite quota but continues at reduced speed)
-    processed_df['has_throttled_data'] = (processed_df['speed_when_exhausted'] > 0).astype(int)
-    print(f"Found {processed_df['has_throttled_data'].sum()} plans with throttled data")
+            if isinstance(value, str) and 'Mbps' in value:
+                try:
+                    return float(value.replace('Mbps', '').strip())
+                except:
+                    return 0
+            return 0
+        
+        processed_df['speed_when_exhausted'] = processed_df['data_exhaustion'].apply(extract_speed)
+        
+        # Flag plans with throttled unlimited data (finite quota but continues at reduced speed)
+        processed_df['has_throttled_data'] = (processed_df['speed_when_exhausted'] > 0).astype(int)
+        print(f"Found {processed_df['has_throttled_data'].sum()} plans with throttled data")
+    else:
+        # Default values if data_exhaustion column is missing
+        processed_df['speed_when_exhausted'] = 0
+        processed_df['has_throttled_data'] = 0
+        print("'data_exhaustion' column not found, setting speed_when_exhausted and has_throttled_data to 0.")
     
     # 3. Data allowance processing
     # Handle special values in data fields
