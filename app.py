@@ -451,7 +451,8 @@ async def process_data(request: Request):
                                 logger.error(f"[{request_id}] {logical_test_error}")
                             else:
                                 base_plan = base_case_row.iloc[0]
-                                base_price = base_plan['predicted_price']
+                                # Explicitly convert predicted prices to Python floats
+                                base_price = float(base_plan['predicted_price'])
                                 rules = {
                                     'basic_data_clean': 1, 'daily_data_clean': 1, 'voice_clean': 1,
                                     'message_clean': 1, 'throttle_speed_normalized': 1, 'tethering_gb': 1,
@@ -460,12 +461,16 @@ async def process_data(request: Request):
                                 tolerance = 1e-6
                                 
                                 for _, variant in df_logical_test[df_logical_test['id'] != 'base'].iterrows():
-                                    variant_price = variant['predicted_price']
-                                    price_diff = variant_price - base_price
+                                    # Explicitly convert variant price to Python float
+                                    variant_price = float(variant['predicted_price'])
+                                    price_diff = variant_price - base_price # Difference is now between Python floats
                                     comparison = {
                                         "id": variant['id'], "name": variant['name'],
-                                        "base_price": round(base_price, 2), "variant_price": round(variant_price, 2),
-                                        "difference": round(price_diff, 2), "expected_change": "Unknown",
+                                        # Ensure rounded values are also Python floats
+                                        "base_price": round(base_price, 2),
+                                        "variant_price": round(variant_price, 2),
+                                        "difference": round(price_diff, 2),
+                                        "expected_change": "Unknown",
                                         "status": "?", "reason": ""
                                     }
                                     changed_feature = None
@@ -527,15 +532,19 @@ async def process_data(request: Request):
         # Need to load the rankings back from the saved report CSV to get top plans
         top_10_plans = []
         try:
-            report_csv_path = report_path.replace(".html", ".csv") # Assuming CSV is saved alongside HTML
-            if os.path.exists(report_csv_path):
-                top_10_plans_df = pd.read_csv(report_csv_path)
-                top_10_plans = top_10_plans_df.sort_values("value_ratio", ascending=False).head(10)[
-                    ["plan_name", "mvno", "fee", "value_ratio", "predicted_price"]
-                ].to_dict(orient="records")
-                logger.info(f"[{request_id}] Successfully extracted top 10 plans from report CSV.")
+            if 'value_ratio' in df_with_rankings.columns:
+                 # Convert relevant columns to standard types before creating dict
+                 cols_to_convert = {'fee': float, 'value_ratio': float, 'predicted_price': float}
+                 for col, dtype in cols_to_convert.items():
+                     if col in df_with_rankings.columns:
+                         df_with_rankings[col] = df_with_rankings[col].astype(dtype)
+                         
+                 top_10_plans = df_with_rankings.sort_values("value_ratio", ascending=False).head(10)[ 
+                     ["plan_name", "mvno", "fee", "value_ratio", "predicted_price"] 
+                 ].to_dict(orient="records")
+                 logger.info(f"[{request_id}] Successfully extracted top 10 plans.")
             else:
-                logger.warning(f"[{request_id}] Report CSV not found at {report_csv_path}, cannot extract top 10 plans.")
+                logger.warning(f"[{request_id}] Report CSV not found at {report_path}, cannot extract top 10 plans.")
         except Exception as e:
              logger.exception(f"[{request_id}] Error reading report CSV for top 10 plans.")
 
