@@ -438,8 +438,12 @@ async def process_data(request: Request):
                                 else: comparison['status'], comparison['reason'], comparison['expected_change'] = "?", "No significant feature change detected.", "-"
                                 logical_test_results.append(comparison)
         except Exception as e:
-            logger.exception(f"[{request_id}] Error during logical test execution.")
-            logical_test_error = f"Error during logical test: {str(e)}"
+            # Log the specific error occurring during the logical test
+            logger.exception(f"[{request_id}] Error during logical test execution: {type(e).__name__} - {str(e)}")
+            logical_test_error = f"Error during logical test: {type(e).__name__} - {str(e)}"
+            # Add detailed traceback log for debugging
+            import traceback
+            logger.error(f"[{request_id}] Traceback for logical test error:\n{traceback.format_exc()}")
             
         logger.info(f"[{request_id}] Logical pricing test finished.")
         # --- End of Logical Test Step --- 
