@@ -571,8 +571,12 @@ async def process_data(request: Request):
         return response
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error processing data: {str(e)}")
+        # Log the type and message of the exception caught by the outer block
+        logger.exception(f"[{request_id}] Unhandled error in /process endpoint: {type(e).__name__} - {str(e)}")
+        # Log the full traceback for the outer exception
+        logger.error(f"[{request_id}] Traceback for unhandled error:\n{traceback.format_exc()}")
+        # Raise the HTTPException, embedding the specific error message
+        raise HTTPException(status_code=500, detail=f"Error processing data: {type(e).__name__} - {str(e)}")
 
 @app.post("/predict")
 async def predict_plans(plans: List[PlanInput]):
