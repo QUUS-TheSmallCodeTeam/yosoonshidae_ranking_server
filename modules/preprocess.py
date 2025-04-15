@@ -26,8 +26,15 @@ def prepare_features(df):
     print("Data types after conversion:")
     print(processed_df.dtypes.head(10))
     
+    # === BEGIN ENHANCED LOGGING ===
+    print("\n=== HF SERVER PREPROCESSING DETAILS ===")
+    print(f"Input DataFrame shape: {df.shape}")
+    print(f"Initial columns: {list(df.columns)}")
+    # === END ENHANCED LOGGING ===
+    
     # 1. Network type encoding
     processed_df['is_5g'] = (processed_df['network'] == '5G').astype(int)
+    print(f"Created is_5g feature: {processed_df['is_5g'].sum()} 5G plans found")
     
     # 2. Process data_exhaustion field - do this first to identify throttled unlimited plans
     # Extract speed values from data_exhaustion field (e.g., "1Mbps" -> 1)
@@ -45,6 +52,7 @@ def prepare_features(df):
     
     # Flag plans with throttled unlimited data (finite quota but continues at reduced speed)
     processed_df['has_throttled_data'] = (processed_df['speed_when_exhausted'] > 0).astype(int)
+    print(f"Found {processed_df['has_throttled_data'].sum()} plans with throttled data")
     
     # 3. Data allowance processing
     # Handle special values in data fields
@@ -54,6 +62,9 @@ def prepare_features(df):
     processed_df['basic_data_unlimited'] = processed_df['basic_data'].isin([999, 9999]).astype(int)
     # Extra safety for daily_data - ensure it's not None before comparison
     processed_df['daily_data_unlimited'] = processed_df['daily_data'].fillna(0).isin([999, 9999]).astype(int)
+    
+    print(f"Found {processed_df['basic_data_unlimited'].sum()} plans with unlimited basic data")
+    print(f"Found {processed_df['daily_data_unlimited'].sum()} plans with unlimited daily data")
     
     # Find maximum finite values for basic_data and daily_data
     # These will be used as replacements for unlimited values
@@ -338,8 +349,51 @@ def prepare_features(df):
     
     # Basic imputation for remaining NaNs
     numeric_cols = processed_df.select_dtypes(include=['float64', 'int64']).columns
+    nan_count_before = processed_df[numeric_cols].isna().sum().sum()
     for col in numeric_cols:
         if col in processed_df.columns and processed_df[col].isna().any():
             processed_df[col] = processed_df[col].fillna(processed_df[col].median())
+    nan_count_after = processed_df[numeric_cols].isna().sum().sum()
+    print(f"NaN values imputed: {nan_count_before} -> {nan_count_after}")
+    
+    # === BEGIN ENHANCED LOGGING ===
+    print("\n=== FINAL PREPROCESSING STATS ===")
+    print(f"Output DataFrame shape: {processed_df.shape}")
+    print(f"Features generated: {len(processed_df.columns)}")
+    
+    # Log the basic feature list that will be used for modeling
+    basic_features = [
+        'is_5g',
+        'basic_data_clean',
+        'basic_data_unlimited',
+        'daily_data_clean',
+        'daily_data_unlimited',
+        'voice_clean',
+        'voice_unlimited',
+        'message_clean',
+        'message_unlimited',
+        'throttle_speed_normalized',
+        'tethering_gb',
+        'unlimited_type_numeric',
+        'additional_call'
+    ]
+    
+    available_basic_features = [f for f in basic_features if f in processed_df.columns]
+    print(f"\nBasic features available ({len(available_basic_features)}/{len(basic_features)}):")
+    for feature in basic_features:
+        status = "✓" if feature in processed_df.columns else "✗" 
+        print(f"  {status} {feature}")
+    
+    # Check data quality of key features
+    print("\nKey feature statistics:")
+    key_features = ['basic_data_clean', 'daily_data_clean', 'voice_clean', 'message_clean', 
+                   'throttle_speed_normalized', 'unlimited_type_numeric',
+                   'original_fee']
+    
+    for feature in key_features:
+        if feature in processed_df.columns:
+            stats = processed_df[feature].describe()
+            print(f"  {feature}: min={stats['min']:.2f}, max={stats['max']:.2f}, mean={stats['mean']:.2f}, median={stats['50%']:.2f}")
+    # === END ENHANCED LOGGING ===
     
     return processed_df 
