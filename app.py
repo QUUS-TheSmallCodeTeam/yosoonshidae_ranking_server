@@ -607,7 +607,7 @@ async def process_data(request: Request):
                 
                 # Get all ranked plans for the complete ranking list
                 all_ranked_plans = df_with_rankings.sort_values("rank")[
-                    ["id", "predicted_price", "rank", "rank_display"]
+                    ["id", "predicted_price", "rank", "rank_display", "value_ratio"]
                 ].to_dict(orient="records")
                 
                 logger.info(f"[{request_id}] Successfully extracted top 10 plans and all {len(all_ranked_plans)} ranked plans.")
