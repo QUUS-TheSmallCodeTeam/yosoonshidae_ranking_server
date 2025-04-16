@@ -322,7 +322,7 @@ async def process_data(request: Request):
             
             # Process the data
             processed_df = prepare_features(df)
-            
+            logger.info(f"[{request_id}] Processed DataFrame shape: {processed_df.shape} (after preprocessing)")
             # Free memory from original dataframe
             del df
             gc.collect()
@@ -416,9 +416,10 @@ async def process_data(request: Request):
         
         # Step 5: Calculate rankings using the updated logic from update_rankings.py
         df_with_rankings_local = calculate_rankings(processed_df, model)
-        
+        logger.info(f"[{request_id}] DataFrame shape after calculate_rankings: {df_with_rankings_local.shape}")
         # Apply proper ranking with ties
         df_with_rankings_local = calculate_rankings_with_ties(df_with_rankings_local, value_column='value_ratio')
+        logger.info(f"[{request_id}] DataFrame shape after calculate_rankings_with_ties: {df_with_rankings_local.shape}")
         
         # Save rankings to global variable for later use by /rankings endpoint
         global df_with_rankings
@@ -569,9 +570,7 @@ async def process_data(request: Request):
                 },
                 "failures_details": [r for r in logical_test_results if r['status'] == "❌"]
             }
-            logger.info(f"[{request_id}] Updated in-memory cache for logical test results.")
-            # --> ADDED LOG: Log the actual cached value
-            logger.info(f"[{request_id}] Cache content after update: {latest_logical_test_results_cache}")
+            # Removed info log for logical test cache update
         except Exception as cache_err:
             logger.error(f"[{request_id}] Failed to update logical test results cache: {cache_err}")
             latest_logical_test_results_cache = None # Reset cache on error
