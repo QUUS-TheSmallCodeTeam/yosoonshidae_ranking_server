@@ -11,7 +11,6 @@ import gc  # Import garbage collector for memory cleanup
 from fastapi.responses import HTMLResponse
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, explained_variance_score, mean_absolute_percentage_error
 from typing import Optional, Union, List
-from fastapi.templating import Jinja2Templates
 import sys
 import logging
 import uuid # Import uuid for request IDs
@@ -57,7 +56,6 @@ from modules import (
 from modules.data_models import PlanInput, FeatureDefinitions
 
 app = FastAPI(title="Moyo Plan Ranking Model Server")
-templates = Jinja2Templates(directory="templates")
 
 # Global variables for model and data
 model = None
@@ -798,6 +796,7 @@ def calculate_rankings_with_ties(df, value_column='value_ratio', ascending=False
     Calculate rankings with proper handling of ties.
     For tied ranks, uses '공동 X위' (joint X rank) notation
     and ensures the next rank after ties is correctly incremented.
+    All tied plans should receive the '공동' label.
     
     Args:
         df: DataFrame containing the data
@@ -811,36 +810,32 @@ def calculate_rankings_with_ties(df, value_column='value_ratio', ascending=False
     df_sorted = df.sort_values(by=value_column, ascending=ascending).copy()
     
     # Initialize variables for tracking
-    current_rank = 1
-    previous_value = None
-    tied_count = 0
     ranks = []
     rank_displays = []
-    
-    # Calculate ranks
-    for idx, row in df_sorted.iterrows():
-        current_value = row[value_column]
-        
-        # Check if this is a tie with the previous value
-        if previous_value is not None and current_value == previous_value:
-            tied_count += 1
-            # Keep the same rank number but mark as tied (공동)
-            ranks.append(current_rank - tied_count)
-            rank_displays.append(f"공동 {current_rank - tied_count}위")
+    current_rank = 1
+    i = 0
+    n = len(df_sorted)
+    while i < n:
+        current_value = df_sorted.iloc[i][value_column]
+        # Find all tied indices
+        tie_indices = [i]
+        j = i + 1
+        while j < n and df_sorted.iloc[j][value_column] == current_value:
+            tie_indices.append(j)
+            j += 1
+        tie_count = len(tie_indices)
+        if tie_count > 1:
+            for _ in tie_indices:
+                ranks.append(current_rank)
+                rank_displays.append(f"공동 {current_rank}위")
         else:
-            # New rank, accounting for any previous ties
-            current_rank += tied_count
             ranks.append(current_rank)
             rank_displays.append(f"{current_rank}위")
-            tied_count = 0
-            current_rank += 1
-            
-        previous_value = current_value
-    
+        current_rank += tie_count
+        i += tie_count
     # Add ranks back to the dataframe
     df_sorted['rank'] = ranks
     df_sorted['rank_display'] = rank_displays
-    
     # Return to original order
     df_sorted = df_sorted.reindex(df.index)
     return df_sorted
