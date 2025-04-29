@@ -22,6 +22,38 @@ def prepare_features(df):
                 processed_df[col] = processed_df[col].fillna(0)
                 print(f"Converted {col} to numeric type")
     
+    # Process tethering data with unit conversion (similar to preprocess_data.py)
+    if 'tethering_data' in processed_df.columns and 'tethering_data_unit' in processed_df.columns:
+        # Convert tethering_data to numeric
+        processed_df['tethering_data'] = pd.to_numeric(processed_df['tethering_data'], errors='coerce').fillna(0)
+        
+        # Create tethering_gb column with proper unit conversion
+        processed_df['tethering_gb'] = np.where(
+            processed_df['tethering_status'] == 'PROVIDED',
+            np.where(
+                processed_df['tethering_data_unit'] == 'MB',
+                processed_df['tethering_data'] / 1000,  # Convert MB to GB
+                processed_df['tethering_data']  # Already in GB
+            ),
+            0  # Default to 0 if not provided
+        )
+        
+        print(f"Processed tethering data with unit conversion:")
+        print(f"  - Plans with tethering: {(processed_df['tethering_status'] == 'PROVIDED').sum()}")
+        print(f"  - Plans with MB unit: {(processed_df['tethering_data_unit'] == 'MB').sum()}")
+        print(f"  - Plans with GB unit: {(processed_df['tethering_data_unit'] == 'GB').sum()}")
+        print(f"  - Tethering range in GB: {processed_df['tethering_gb'].min()} - {processed_df['tethering_gb'].max()}")
+    else:
+        print("Tethering data or unit columns not found - using existing tethering_gb column if available")
+        if 'tethering_gb' in processed_df.columns:
+            # If tethering_gb already exists, ensure it's numeric
+            processed_df['tethering_gb'] = pd.to_numeric(processed_df['tethering_gb'], errors='coerce').fillna(0)
+            print(f"Using existing tethering_gb column (range: {processed_df['tethering_gb'].min()} - {processed_df['tethering_gb'].max()})")
+        else:
+            # If no tethering data available, create a default column with zeros
+            processed_df['tethering_gb'] = 0
+            print("No tethering data available, created default tethering_gb column with zeros")
+    
     # Print data types after conversion for verification
     print("Data types after conversion:")
     print(processed_df.dtypes.head(10))
