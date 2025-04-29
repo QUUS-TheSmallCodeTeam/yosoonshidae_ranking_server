@@ -364,7 +364,8 @@ def calculate_rankings_with_spearman(df, use_log_transform=True, rank_method='re
     df_result.attrs['used_features'] = list(weights.keys())
     df_result.attrs['feature_weights'] = weights
     df_result.attrs['feature_signs'] = rho_signs
-    df_result.attrs['ranking_method'] = 'spearman'
+    df_result.attrs['ranking_method'] = rank_method
+    df_result.attrs['use_log_transform'] = use_log_transform
     
     return df_result
 
@@ -426,6 +427,15 @@ def generate_html_report(df, timestamp):
     feature_weights = df.attrs.get('feature_weights', {})
     feature_signs = df.attrs.get('feature_signs', {})
     used_features = df.attrs.get('used_features', [])
+    ranking_method = df.attrs.get('ranking_method', 'relative')
+    use_log_transform = df.attrs.get('use_log_transform', True)
+    
+    # Get ranking method description
+    rank_method_desc = {
+        'relative': 'Relative Value (ΔP/fee)',
+        'absolute': 'Absolute Value (ΔP)',
+        'net': 'Net Value (ΔP-fee)'
+    }.get(ranking_method, 'Relative Value (ΔP/fee)')
     
     html = f"""
     <!DOCTYPE html>
@@ -443,6 +453,12 @@ def generate_html_report(df, timestamp):
             .bad-value {{ color: red; }}
             .container {{ max-width: 100%; overflow-x: auto; }}
             .note {{ background-color: #f8f9fa; padding: 10px; border-left: 4px solid #007bff; margin-bottom: 20px; }}
+            .button-group {{ margin-bottom: 15px; }}
+            button {{ padding: 10px 15px; background-color: #007bff; color: white; border: none; 
+                     border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px; }}
+            button:hover {{ background-color: #0056b3; }}
+            button.active {{ background-color: #28a745; }}
+            .hidden {{ display: none; }}
         </style>
     </head>
     <body>
@@ -459,10 +475,14 @@ def generate_html_report(df, timestamp):
                 <li>Normalize each feature to [0,1] range</li>
                 <li>Calculate weighted score with correlation signs for each plan</li>
                 <li>Scale scores to KRW range</li>
-                <li>Rank by value ratio (predicted price / fee)</li>
+                <li>Rank by {rank_method_desc}</li>
             </ol>
+            <p><strong>Options used:</strong> Ranking Method: {rank_method_desc}, Log Transform: {'On' if use_log_transform else 'Off'}</p>
         </div>
-        
+    """
+    
+    # Add feature weights section
+    html += """
         <h2>Feature Weights</h2>
         <div class="container">
             <table>
@@ -609,6 +629,12 @@ def read_root():
                     body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
                     h1 { color: #2c3e50; }
                     .method-info { background-color: #f8f9fa; padding: 15px; border-left: 4px solid #28a745; margin-bottom: 20px; }
+                    .button-group { margin-bottom: 15px; }
+                    button { padding: 10px 15px; background-color: #007bff; color: white; border: none; 
+                             border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px; }
+                    button:hover { background-color: #0056b3; }
+                    button.active { background-color: #28a745; }
+                    .hidden { display: none; }
                 </style>
             </head>
             <body>
@@ -629,6 +655,29 @@ def read_root():
                 </div>
                 
                 <p>No ranking reports are available yet. Use the <code>/process</code> endpoint to analyze data and generate rankings.</p>
+                
+                <h2>Ranking Options</h2>
+                <div class="button-group">
+                    <strong>Ranking Method:</strong><br>
+                    <button id="relative-btn" class="active" onclick="changeRankMethod('relative')">Relative Value (ΔP/fee)</button>
+                    <button id="absolute-btn" onclick="changeRankMethod('absolute')">Absolute Value (ΔP)</button>
+                    <button id="net-btn" onclick="changeRankMethod('net')">Net Value (ΔP-fee)</button>
+                </div>
+                
+                <div class="button-group">
+                    <strong>Fee Type:</strong><br>
+                    <button id="original-fee-btn" class="active" onclick="changeFeeType('original')">Original Fee</button>
+                    <button id="discounted-fee-btn" onclick="changeFeeType('discounted')">Discounted Fee</button>
+                </div>
+                
+                <div class="button-group">
+                    <strong>Log Transform:</strong><br>
+                    <button id="log-transform-on-btn" class="active" onclick="toggleLogTransform(true)">On</button>
+                    <button id="log-transform-off-btn" onclick="toggleLogTransform(false)">Off</button>
+                </div>
+                
+                <p class="method-info">Note: These options will be applied when you generate a new report using the <code>/process</code> endpoint.</p>
+                
                 <hr>
                 <h3>Endpoints</h3>
                 <ul>
@@ -640,6 +689,57 @@ def read_root():
                 </ul>
                 <hr>
                 <p><i>Navigate to /docs for API documentation (Swagger UI).</i></p>
+                
+                <script>
+                /* Current state */
+                let currentState = {
+                    rankMethod: "relative",
+                    feeType: "original",
+                    logTransform: true
+                };
+                
+                /* Change ranking method */
+                function changeRankMethod(method) {
+                    /* Update buttons */
+                    document.getElementById('relative-btn').classList.remove('active');
+                    document.getElementById('absolute-btn').classList.remove('active');
+                    document.getElementById('net-btn').classList.remove('active');
+                    document.getElementById(method + '-btn').classList.add('active');
+                    
+                    /* Update state */
+                    currentState.rankMethod = method;
+                    console.log("Ranking method changed to: " + method);
+                }
+                
+                /* Change fee type */
+                function changeFeeType(type) {
+                    /* Update buttons */
+                    document.getElementById('original-fee-btn').classList.remove('active');
+                    document.getElementById('discounted-fee-btn').classList.remove('active');
+                    document.getElementById(type + '-fee-btn').classList.add('active');
+                    
+                    /* Update state */
+                    currentState.feeType = type;
+                    console.log("Fee type changed to: " + type);
+                }
+                
+                /* Toggle log transform */
+                function toggleLogTransform(enabled) {
+                    /* Update buttons */
+                    document.getElementById('log-transform-on-btn').classList.remove('active');
+                    document.getElementById('log-transform-off-btn').classList.remove('active');
+                    
+                    if (enabled) {
+                        document.getElementById('log-transform-on-btn').classList.add('active');
+                    } else {
+                        document.getElementById('log-transform-off-btn').classList.add('active');
+                    }
+                    
+                    /* Update state */
+                    currentState.logTransform = enabled;
+                    console.log("Log transform set to: " + enabled);
+                }
+                </script>
             </body>
         </html>
         """
@@ -656,11 +756,11 @@ def read_root():
         with open(latest_report, "r", encoding="utf-8") as f:
             html_content = f.read()
             
-        # Insert additional info before the closing </body> tag
+        # Insert additional UI controls before the closing </body> tag
         if '</body>' in html_content:
-            method_info = """
+            interactive_controls = """
             <hr>
-            <div style="background-color: #f8f9fa; padding: 10px; border-left: 4px solid #28a745; margin-bottom: 20px;">
+            <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #28a745; margin: 20px 0;">
                 <h3>Spearman Correlation Ranking Method</h3>
                 <p>This report uses Spearman correlation coefficients to estimate plan value based on feature importance:</p>
                 <ol>
@@ -672,11 +772,164 @@ def read_root():
                     <li>Scale scores to KRW range</li>
                     <li>Rank by value ratio (predicted price / fee)</li>
                 </ol>
+                
+                <div style="margin-top: 20px;">
+                    <h3>Ranking Options</h3>
+                    <div style="margin-bottom: 15px;">
+                        <strong>Ranking Method:</strong><br>
+                        <button id="relative-btn" class="active" style="padding: 10px 15px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px;" onclick="changeRankMethod('relative')">Relative Value (ΔP/fee)</button>
+                        <button id="absolute-btn" style="padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px;" onclick="changeRankMethod('absolute')">Absolute Value (ΔP)</button>
+                        <button id="net-btn" style="padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px;" onclick="changeRankMethod('net')">Net Value (ΔP-fee)</button>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <strong>Fee Type:</strong><br>
+                        <button id="original-fee-btn" class="active" style="padding: 10px 15px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px;" onclick="changeFeeType('original')">Original Fee</button>
+                        <button id="discounted-fee-btn" style="padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px;" onclick="changeFeeType('discounted')">Discounted Fee</button>
+                    </div>
+                </div>
             </div>
+            
+            <script>
+            /* Current state */
+            let currentState = {
+                rankMethod: "relative",
+                feeType: "original"
+            };
+            
+            /* Store all table containers */
+            let tableContainers = {};
+            
+            /* Initialize on page load */
+            document.addEventListener('DOMContentLoaded', function() {
+                /* Find the main table in the document */
+                const mainTable = document.querySelector('table');
+                if (!mainTable) return;
+                
+                /* Create container divs for different views if they don't exist */
+                createRankingContainers(mainTable);
+                
+                /* Set up initial view */
+                updateVisibleContainer();
+            });
+            
+            /* Create containers for different ranking views */
+            function createRankingContainers(mainTable) {
+                /* Clone the table for each ranking method and fee type */
+                const rankMethods = ['relative', 'absolute', 'net'];
+                const feeTypes = ['original', 'discounted'];
+                
+                /* Get the parent of the main table */
+                const tableParent = mainTable.parentNode;
+                
+                /* Create container for all tables */
+                const rankingsContainer = document.createElement('div');
+                rankingsContainer.className = 'rankings-container';
+                tableParent.insertBefore(rankingsContainer, mainTable);
+                
+                /* Hide the original table */
+                mainTable.style.display = 'none';
+                
+                /* For each combination, create a container with a cloned table */
+                for (const method of rankMethods) {
+                    for (const feeType of feeTypes) {
+                        const containerId = `${method}-${feeType}`;
+                        const container = document.createElement('div');
+                        container.id = containerId;
+                        container.className = 'container';
+                        container.style.display = 'none'; /* Hide all initially */
+                        
+                        /* Clone the table for this view */
+                        const tableClone = mainTable.cloneNode(true);
+                        container.appendChild(tableClone);
+                        
+                        /* Add to the rankings container */
+                        rankingsContainer.appendChild(container);
+                        
+                        /* Store reference */
+                        tableContainers[containerId] = container;
+                    }
+                }
+                
+                /* Set the default view to visible */
+                if (tableContainers['relative-original']) {
+                    tableContainers['relative-original'].style.display = 'block';
+                }
+            }
+            
+            /* Change ranking method */
+            function changeRankMethod(method) {
+                /* Update buttons */
+                document.getElementById('relative-btn').classList.remove('active');
+                document.getElementById('absolute-btn').classList.remove('active');
+                document.getElementById('net-btn').classList.remove('active');
+                document.getElementById(method + '-btn').classList.add('active');
+                
+                /* Update button styles */
+                document.getElementById('relative-btn').style.backgroundColor = '#007bff';
+                document.getElementById('absolute-btn').style.backgroundColor = '#007bff';
+                document.getElementById('net-btn').style.backgroundColor = '#007bff';
+                document.getElementById(method + '-btn').style.backgroundColor = '#28a745';
+                
+                /* Update state */
+                currentState.rankMethod = method;
+                
+                /* Update visible container */
+                updateVisibleContainer();
+            }
+            
+            /* Change fee type */
+            function changeFeeType(type) {
+                /* Update buttons */
+                document.getElementById('original-fee-btn').classList.remove('active');
+                document.getElementById('discounted-fee-btn').classList.remove('active');
+                document.getElementById(type + '-fee-btn').classList.add('active');
+                
+                /* Update button styles */
+                document.getElementById('original-fee-btn').style.backgroundColor = '#007bff';
+                document.getElementById('discounted-fee-btn').style.backgroundColor = '#007bff';
+                document.getElementById(type + '-fee-btn').style.backgroundColor = '#28a745';
+                
+                /* Update state */
+                currentState.feeType = type;
+                
+                /* Update visible container */
+                updateVisibleContainer();
+            }
+            
+            /* Update visible container based on current state */
+            function updateVisibleContainer() {
+                /* Hide all containers */
+                for (const containerId in tableContainers) {
+                    tableContainers[containerId].style.display = 'none';
+                }
+                
+                /* Show the selected container */
+                const containerId = `${currentState.rankMethod}-${currentState.feeType}`;
+                if (tableContainers[containerId]) {
+                    tableContainers[containerId].style.display = 'block';
+                } else {
+                    /* Fallback to relative-original if the selected container doesn't exist */
+                    if (tableContainers['relative-original']) {
+                        tableContainers['relative-original'].style.display = 'block';
+                        
+                        /* Update state and buttons to match */
+                        currentState.rankMethod = 'relative';
+                        currentState.feeType = 'original';
+                        
+                        document.getElementById('relative-btn').classList.add('active');
+                        document.getElementById('original-fee-btn').classList.add('active');
+                        
+                        document.getElementById('relative-btn').style.backgroundColor = '#28a745';
+                        document.getElementById('original-fee-btn').style.backgroundColor = '#28a745';
+                    }
+                }
+            }
+            </script>
             """
             insert_pos = html_content.find('</body>')
-            html_content = html_content[:insert_pos] + method_info + html_content[insert_pos:]
-            logger.info(f"Added Spearman method information to HTML report")
+            html_content = html_content[:insert_pos] + interactive_controls + html_content[insert_pos:]
+            logger.info(f"Added interactive ranking controls to HTML report")
             
         return html_content
     except Exception as e:
@@ -689,6 +942,12 @@ def read_root():
                     body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }}
                     h1 {{ color: #e74c3c; }}
                     .method-info {{ background-color: #f8f9fa; padding: 15px; border-left: 4px solid #28a745; margin-bottom: 20px; }}
+                    .button-group {{ margin-bottom: 15px; }}
+                    button {{ padding: 10px 15px; background-color: #007bff; color: white; border: none; 
+                             border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px; }}
+                    button:hover {{ background-color: #0056b3; }}
+                    button.active {{ background-color: #28a745; }}
+                    .hidden {{ display: none; }}
                 </style>
             </head>
             <body>
@@ -711,6 +970,28 @@ def read_root():
                 <p>Error reading report: {str(e)}</p>
                 <p>Please try generating a new report using the <code>/process</code> endpoint.</p>
                 
+                <h2>Ranking Options</h2>
+                <div class="button-group">
+                    <strong>Ranking Method:</strong><br>
+                    <button id="relative-btn" class="active" onclick="changeRankMethod('relative')">Relative Value (ΔP/fee)</button>
+                    <button id="absolute-btn" onclick="changeRankMethod('absolute')">Absolute Value (ΔP)</button>
+                    <button id="net-btn" onclick="changeRankMethod('net')">Net Value (ΔP-fee)</button>
+                </div>
+                
+                <div class="button-group">
+                    <strong>Fee Type:</strong><br>
+                    <button id="original-fee-btn" class="active" onclick="changeFeeType('original')">Original Fee</button>
+                    <button id="discounted-fee-btn" onclick="changeFeeType('discounted')">Discounted Fee</button>
+                </div>
+                
+                <div class="button-group">
+                    <strong>Log Transform:</strong><br>
+                    <button id="log-transform-on-btn" class="active" onclick="toggleLogTransform(true)">On</button>
+                    <button id="log-transform-off-btn" onclick="toggleLogTransform(false)">Off</button>
+                </div>
+                
+                <p class="method-info">Note: These options will be applied when you generate a new report using the <code>/process</code> endpoint.</p>
+                
             <hr>
             <h3>Endpoints</h3>
             <ul>
@@ -720,6 +1001,57 @@ def read_root():
                     <li><code>GET /features</code>: Get the list of features used for ranking.</li>
                     <li><code>POST /test</code>: Echo back the request body (for debugging).</li>
             </ul>
+            
+            <script>
+            /* Current state */
+            let currentState = {{
+                rankMethod: "relative",
+                feeType: "original",
+                logTransform: true
+            }};
+            
+            /* Change ranking method */
+            function changeRankMethod(method) {{
+                /* Update buttons */
+                document.getElementById('relative-btn').classList.remove('active');
+                document.getElementById('absolute-btn').classList.remove('active');
+                document.getElementById('net-btn').classList.remove('active');
+                document.getElementById(method + '-btn').classList.add('active');
+                
+                /* Update state */
+                currentState.rankMethod = method;
+                console.log("Ranking method changed to: " + method);
+            }}
+            
+            /* Change fee type */
+            function changeFeeType(type) {{
+                /* Update buttons */
+                document.getElementById('original-fee-btn').classList.remove('active');
+                document.getElementById('discounted-fee-btn').classList.remove('active');
+                document.getElementById(type + '-fee-btn').classList.add('active');
+                
+                /* Update state */
+                currentState.feeType = type;
+                console.log("Fee type changed to: " + type);
+            }}
+            
+            /* Toggle log transform */
+            function toggleLogTransform(enabled) {{
+                /* Update buttons */
+                document.getElementById('log-transform-on-btn').classList.remove('active');
+                document.getElementById('log-transform-off-btn').classList.remove('active');
+                
+                if (enabled) {{
+                    document.getElementById('log-transform-on-btn').classList.add('active');
+                }} else {{
+                    document.getElementById('log-transform-off-btn').classList.add('active');
+                }}
+                
+                /* Update state */
+                currentState.logTransform = enabled;
+                console.log("Log transform set to: " + enabled);
+            }}
+            </script>
         </body>
     </html>
     """
@@ -735,12 +1067,35 @@ async def process_data(request: Request):
         # Step 1: Ensure directories exist
         ensure_directories()
         
-        # Step 2: Receive and validate data
-        data = await request.json()
+        # Step 2: Parse request data and options
+        request_json = await request.json()
+        
+        # Check if the request includes data and/or options
+        if isinstance(request_json, dict):
+            # Structure with options and data
+            options = request_json.get('options', {})
+            data = request_json.get('data', [])
+            
+            # If data is not in the expected format, assume the entire body is the data
+            if not isinstance(data, list):
+                data = request_json
+                options = {}
+        else:
+            # Assume the entire body is the data array
+            data = request_json
+            options = {}
+        
         if not isinstance(data, list):
             raise HTTPException(status_code=400, detail="Expected a list of plan data")
 
         logger.info(f"[{request_id}] Received {len(data)} plans")
+        
+        # Extract ranking options with defaults
+        rank_method = options.get('rankMethod', 'relative')
+        use_log_transform = options.get('logTransform', True)
+        fee_type = options.get('feeType', 'original')
+        
+        logger.info(f"[{request_id}] Using ranking options: method={rank_method}, fee_type={fee_type}, log_transform={use_log_transform}")
 
         # Step 3: Save raw data
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -762,11 +1117,11 @@ async def process_data(request: Request):
         processed_data_paths = save_processed_data(processed_df)
         latest_processed_path = processed_data_paths[1] if len(processed_data_paths) > 1 else processed_data_paths[0]
         
-        # Step 6: Apply Spearman ranking method
+        # Step 6: Apply Spearman ranking method with options
         df_ranked = calculate_rankings_with_spearman(
             processed_df,
-            use_log_transform=True,  # Enable log transform
-            rank_method='relative'    # Use relative ranking (value ratio)
+            use_log_transform=use_log_transform,
+            rank_method=rank_method
         )
         
         logger.info(f"[{request_id}] Ranked DataFrame shape: {df_ranked.shape}")
@@ -781,25 +1136,42 @@ async def process_data(request: Request):
         report_path = save_report(html_report, timestamp_now)
         
         # Step 8: Prepare response
-        # Get top 10 plans
+        # Get top 10 plans using the appropriate value ratio based on fee_type
+        value_ratio_col = f"value_ratio_{fee_type}" if fee_type in ['original', 'fee'] else "value_ratio"
+        
+        # For rank column, handle different ranking methods
+        if rank_method == 'absolute':
+            rank_col = "rank_absolute"
+        elif rank_method in ['relative', 'net']:
+            rank_col = f"rank_{rank_method}_{fee_type}"
+        else:
+            rank_col = "rank"  # fallback
+        
+        # Ensure the columns exist in the dataframe
+        if value_ratio_col not in df_ranked.columns:
+            value_ratio_col = "value_ratio"  # fallback
+        
+        if rank_col not in df_ranked.columns:
+            rank_col = "rank"  # fallback
+        
         top_10_plans = []
+        all_ranked_plans = []
         try:
-            columns_to_include = ["plan_name", "mvno", "fee", "value_ratio", "predicted_price", "rank_display", "id"]
+            columns_to_include = ["plan_name", "mvno", "fee", value_ratio_col, "predicted_price", "rank_display", "id"]
             available_columns = [col for col in columns_to_include if col in df_ranked.columns]
             
-            top_10_plans = df_ranked.sort_values("value_ratio", ascending=False).head(10)[available_columns].to_dict(orient="records")
+            top_10_plans = df_ranked.sort_values(value_ratio_col, ascending=False).head(10)[available_columns].to_dict(orient="records")
             
             # Get all ranked plans
-            rank_columns = ["id", "predicted_price", "rank", "rank_display", "value_ratio"]
+            rank_columns = ["id", "predicted_price", rank_col, "rank_display", value_ratio_col]
             available_rank_columns = [col for col in rank_columns if col in df_ranked.columns]
             
-            all_ranked_plans = df_ranked.sort_values("rank")[available_rank_columns].to_dict(orient="records")
+            all_ranked_plans = df_ranked.sort_values(rank_col)[available_rank_columns].to_dict(orient="records")
             
             logger.info(f"[{request_id}] Extracted top 10 plans and all {len(all_ranked_plans)} ranked plans")
         except Exception as e:
             logger.error(f"[{request_id}] Error extracting top plans: {e}")
-            all_ranked_plans = []
-
+        
         # Calculate timing
         end_time = time.time()
         processing_time = end_time - start_time
@@ -809,6 +1181,11 @@ async def process_data(request: Request):
             "message": "Data processing complete using Spearman correlation method",
             "status": "success",
             "processing_time_seconds": round(processing_time, 4),
+            "options": {
+                "rankMethod": rank_method,
+                "feeType": fee_type,
+                "logTransform": use_log_transform
+            },
             "results": {
                 "raw_data_path": raw_data_path,
                 "processed_data_path": latest_processed_path,
@@ -826,11 +1203,13 @@ async def process_data(request: Request):
         raise HTTPException(status_code=500, detail=f"Error processing data: {str(e)}")
 
 @app.post("/predict")
-async def predict_plans(plans: List[PlanInput]):
+async def predict_plans(plans: List[PlanInput], rank_method: str = 'relative', fee_type: str = 'original', use_log_transform: bool = True):
     """Predict and rank plans using the Spearman method."""
     start_time = time.time()
     request_id = str(uuid.uuid4())
+    
     logger.info(f"[{request_id}] Received {len(plans)} plans for prediction using Spearman method")
+    logger.info(f"[{request_id}] Using ranking options: method={rank_method}, fee_type={fee_type}, log_transform={use_log_transform}")
     
     try:
         # Convert input to list of dictionaries
@@ -845,18 +1224,36 @@ async def predict_plans(plans: List[PlanInput]):
         df_processed = prepare_features(df_input) 
         logger.info(f"[{request_id}] Processed {len(df_processed)} plans")
         
-        # Apply Spearman ranking
+        # Apply Spearman ranking with options
         df_ranked = calculate_rankings_with_spearman(
             df_processed,
-            use_log_transform=True,
-            rank_method='relative'
+            use_log_transform=use_log_transform,
+            rank_method=rank_method
         )
         
         logger.info(f"[{request_id}] Ranked {len(df_ranked)} plans using Spearman method")
         
+        # Get appropriate value ratio and ranking columns based on options
+        value_ratio_col = f"value_ratio_{fee_type}" if fee_type in ['original', 'fee'] else "value_ratio"
+        
+        # For rank column, handle different ranking methods
+        if rank_method == 'absolute':
+            rank_col = "rank_absolute"
+        elif rank_method in ['relative', 'net']:
+            rank_col = f"rank_{rank_method}_{fee_type}"
+        else:
+            rank_col = "rank"  # fallback
+        
+        # Ensure the columns exist in the dataframe
+        if value_ratio_col not in df_ranked.columns:
+            value_ratio_col = "value_ratio"  # fallback
+        
+        if rank_col not in df_ranked.columns:
+            rank_col = "rank"  # fallback
+        
         # Format results
         results = []
-        for _, row in df_ranked.sort_values("rank").iterrows():
+        for _, row in df_ranked.sort_values(rank_col).iterrows():
             plan_id = row["id"] if "id" in row else "unknown"
             plan_id = int(plan_id) if isinstance(plan_id, (int, float)) else plan_id
             
@@ -864,7 +1261,7 @@ async def predict_plans(plans: List[PlanInput]):
                 "plan_id": plan_id,
                 "predicted_price": float(row["predicted_price"]),
                 "rank": row["rank_display"],
-                "value_ratio": float(row["value_ratio"])
+                "value_ratio": float(row[value_ratio_col])
             })
         
         end_time = time.time()
@@ -876,8 +1273,8 @@ async def predict_plans(plans: List[PlanInput]):
         raise HTTPException(status_code=500, detail=f"Error predicting prices: {str(e)}")
 
 @app.get("/rankings")
-async def get_rankings():
-    """Return the complete list of ranked plans."""
+async def get_rankings(rank_method: str = 'relative', fee_type: str = 'original'):
+    """Return the complete list of ranked plans with specified ranking method."""
     # Check if we have rankings
     global df_with_rankings
     
@@ -885,9 +1282,27 @@ async def get_rankings():
         raise HTTPException(status_code=404, detail="No rankings available. Run /process endpoint first")
     
     try:
+        # Determine which columns to use based on parameters
+        if rank_method == 'absolute':
+            rank_col = "rank_absolute"
+        elif rank_method in ['relative', 'net']:
+            rank_col = f"rank_{rank_method}_{fee_type}"
+        else:
+            rank_col = "rank"  # fallback
+            
+        # Value ratio column based on fee_type
+        value_ratio_col = f"value_ratio_{fee_type}" if fee_type in ['original', 'fee'] else "value_ratio"
+            
+        # Ensure the columns exist in the dataframe
+        if value_ratio_col not in df_with_rankings.columns:
+            value_ratio_col = "value_ratio"  # fallback
+        
+        if rank_col not in df_with_rankings.columns:
+            rank_col = "rank"  # fallback
+        
         # Format response data
         rankings_list = []
-        for _, row in df_with_rankings.sort_values("rank").iterrows():
+        for _, row in df_with_rankings.sort_values(rank_col).iterrows():
             plan_id = row["id"] if "id" in row else "unknown"
             plan_id = int(plan_id) if isinstance(plan_id, (int, float)) else plan_id
             
@@ -895,12 +1310,16 @@ async def get_rankings():
                 "plan_id": plan_id,
                 "predicted_price": float(row["predicted_price"]),
                 "rank": row["rank_display"],
-                "value_ratio": float(row["value_ratio"])
+                "value_ratio": float(row[value_ratio_col])
             })
         
         # Add ranking method information
         response = {
             "ranking_method": "spearman",
+            "options": {
+                "rankMethod": rank_method,
+                "feeType": fee_type
+            },
             "rankings": rankings_list
         }
         
