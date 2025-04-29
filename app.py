@@ -64,6 +64,7 @@ class PlanData(BaseModel):
     has_nfc_usim: Optional[bool] = None
     tethering_gb: Union[float, str]  # Accept both float and string
     tethering_status: str
+    tethering_data_unit: Optional[str] = None  # Added field for tethering unit information
     esim_fee: Optional[int] = None
     esim_fee_status: Optional[str] = None
     usim_delivery_fee: Optional[int] = None
@@ -106,6 +107,7 @@ class PlanInput(BaseModel):
     has_nfc_usim: Optional[bool] = None
     tethering_gb: Union[float, str]
     tethering_status: str
+    tethering_data_unit: Optional[str] = None  # Added field for tethering unit information
     fee: float
     original_fee: float
     discount_fee: float
@@ -709,18 +711,18 @@ def read_root():
                 <p>Error reading report: {str(e)}</p>
                 <p>Please try generating a new report using the <code>/process</code> endpoint.</p>
                 
-                <hr>
-                <h3>Endpoints</h3>
-                <ul>
+            <hr>
+            <h3>Endpoints</h3>
+            <ul>
                     <li><code>POST /process</code>: Submit plan data (JSON list) to preprocess, rank using Spearman method, and generate a report.</li>
                     <li><code>POST /predict</code>: Get price predictions and rankings for plan features using Spearman method.</li>
                     <li><code>GET /rankings</code>: Get the latest list of ranked plans.</li>
                     <li><code>GET /features</code>: Get the list of features used for ranking.</li>
                     <li><code>POST /test</code>: Echo back the request body (for debugging).</li>
-                </ul>
-            </body>
-        </html>
-        """
+            </ul>
+        </body>
+    </html>
+    """
 
 @app.post("/process")
 async def process_data(request: Request):
@@ -737,9 +739,9 @@ async def process_data(request: Request):
         data = await request.json()
         if not isinstance(data, list):
             raise HTTPException(status_code=400, detail="Expected a list of plan data")
-        
+
         logger.info(f"[{request_id}] Received {len(data)} plans")
-        
+
         # Step 3: Save raw data
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         raw_data_path = save_raw_data(data, timestamp)
@@ -797,7 +799,7 @@ async def process_data(request: Request):
         except Exception as e:
             logger.error(f"[{request_id}] Error extracting top plans: {e}")
             all_ranked_plans = []
-        
+
         # Calculate timing
         end_time = time.time()
         processing_time = end_time - start_time
@@ -840,7 +842,7 @@ async def predict_plans(plans: List[PlanInput]):
             raise HTTPException(status_code=400, detail="Input data is empty")
         
         # Preprocess data
-        df_processed = prepare_features(df_input)
+        df_processed = prepare_features(df_input) 
         logger.info(f"[{request_id}] Processed {len(df_processed)} plans")
         
         # Apply Spearman ranking
@@ -867,7 +869,7 @@ async def predict_plans(plans: List[PlanInput]):
         
         end_time = time.time()
         logger.info(f"[{request_id}] Prediction completed in {end_time - start_time:.4f} seconds")
-        
+
         return results
     except Exception as e:
         logger.exception(f"[{request_id}] Error in /predict: {e}")
