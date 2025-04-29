@@ -297,19 +297,21 @@ def calculate_rankings_with_spearman(df, use_log_transform=True, rank_method='re
     df_result["predicted_price"] = worth  # Use predicted_price for consistency with model-based approach
     df_result["delta_krw"] = delta_krw
     
-    # Calculate metrics using original_fee
+    # Calculate value metrics for original fee
     df_result["value_ratio_original"] = df_result["predicted_price"] / df_result["original_fee"]
     df_result["net_value_original"] = df_result["delta_krw"] - df_result["original_fee"]
     
-    # Calculate metrics using fee (discounted price)
+    # Calculate value metrics for discounted fee
     df_result["value_ratio_fee"] = df_result["predicted_price"] / df_result["fee"]
     df_result["net_value_fee"] = df_result["delta_krw"] - df_result["fee"]
     
     # Calculate standard value ratio (for compatibility with existing code)
-    df_result["value_ratio"] = df_result["predicted_price"] / df_result["fee"]
+    df_result["value_ratio"] = df_result["value_ratio_fee"]
     
-    # Calculate rankings based on both original and discounted fees
-    # Absolute value ranking
+    # Calculate ALL ranking types regardless of specified rank_method
+    # This ensures we have data for all possible views in the UI
+    
+    # Absolute value ranking (same for all fee types)
     df_result["rank_absolute"] = df_result["delta_krw"].rank(ascending=False)
     
     # Relative value rankings
@@ -320,16 +322,24 @@ def calculate_rankings_with_spearman(df, use_log_transform=True, rank_method='re
     df_result["rank_net_original"] = df_result["net_value_original"].rank(ascending=False)
     df_result["rank_net_fee"] = df_result["net_value_fee"].rank(ascending=False)
     
-    # Set the primary rank_number based on method and fee type
+    # Set the primary rank column based on method and fee type
     if rank_method == 'absolute':
         df_result["rank"] = df_result["rank_absolute"]
         ranking_column = "delta_krw"
     elif rank_method == 'net':
-        df_result["rank"] = df_result["rank_net_original"]
-        ranking_column = "net_value_original"
+        if 'fee_type' in locals() and fee_type == 'fee':
+            df_result["rank"] = df_result["rank_net_fee"]
+            ranking_column = "net_value_fee"
+        else:
+            df_result["rank"] = df_result["rank_net_original"]
+            ranking_column = "net_value_original"
     else:  # relative (default)
-        df_result["rank"] = df_result["rank_relative_original"]
-        ranking_column = "value_ratio_original"
+        if 'fee_type' in locals() and fee_type == 'fee':
+            df_result["rank"] = df_result["rank_relative_fee"]
+            ranking_column = "value_ratio_fee"
+        else:
+            df_result["rank"] = df_result["rank_relative_original"]
+            ranking_column = "value_ratio_original"
     
     # Apply proper ranking with ties for display
     df_result = calculate_rankings_with_ties(df_result, value_column=ranking_column, ascending=(rank_method == 'absolute'))
@@ -358,7 +368,7 @@ def calculate_rankings_with_spearman(df, use_log_transform=True, rank_method='re
             logger.error(f"Error calculating contribution for {feature}: {e}")
             df_result[contribution_col] = np.nan
     
-    logger.info(f"Completed Spearman ranking for {len(df_result)} plans")
+    logger.info(f"Completed Spearman ranking for {len(df_result)} plans with all ranking types")
     
     # Store the feature weights in the dataframe attributes
     df_result.attrs['used_features'] = list(weights.keys())
@@ -421,27 +431,28 @@ def calculate_rankings_with_ties(df, value_column='value_ratio', ascending=False
 
 # Function to generate HTML report
 def generate_html_report(df, timestamp):
-    """Generate an HTML report of the Spearman rankings."""
+    """Generate an HTML report of the rankings.
     
-    # Get feature weights from dataframe attributes
-    feature_weights = df.attrs.get('feature_weights', {})
-    feature_signs = df.attrs.get('feature_signs', {})
-    used_features = df.attrs.get('used_features', [])
+    Args:
+        df: DataFrame with ranking data
+        timestamp: Timestamp for the report
+        
+    Returns:
+        HTML content as string
+    """
+    # Get ranking method and log transform from the dataframe attributes if available
     ranking_method = df.attrs.get('ranking_method', 'relative')
-    use_log_transform = df.attrs.get('use_log_transform', True)
+    use_log_transform = df.attrs.get('use_log_transform', False)
     
-    # Get ranking method description
-    rank_method_desc = {
-        'relative': 'Relative Value (ΔP/fee)',
-        'absolute': 'Absolute Value (ΔP)',
-        'net': 'Net Value (ΔP-fee)'
-    }.get(ranking_method, 'Relative Value (ΔP/fee)')
+    # Get current timestamp
+    timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
     
+    # Create HTML
     html = f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Mobile Plan Rankings - Spearman Method</title>
+        <title>Mobile Plan Rankings - {timestamp_str}</title>
         <style>
             body {{ font-family: Arial, sans-serif; margin: 20px; }}
             h1, h2 {{ color: #333; }}
@@ -462,120 +473,310 @@ def generate_html_report(df, timestamp):
         </style>
     </head>
     <body>
-        <h1>Mobile Plan Rankings (Spearman Correlation Method)</h1>
-        <p>Generated: {timestamp}</p>
+        <h1>Mobile Plan Rankings (Spearman Method)</h1>
+        <p>Generated: {timestamp_str}</p>
         
         <div class="note">
-            <h3>Ranking Methodology</h3>
-            <p>This report uses Spearman correlation coefficients to estimate plan value based on feature importance.</p>
-            <ol>
-                <li>Calculate Spearman correlation between each feature and the original plan fee</li>
-                <li>Apply log(1+x) transformation to non-categorical features</li>
-                <li>Normalize correlations to create feature weights</li>
-                <li>Normalize each feature to [0,1] range</li>
-                <li>Calculate weighted score with correlation signs for each plan</li>
-                <li>Scale scores to KRW range</li>
-                <li>Rank by {rank_method_desc}</li>
-            </ol>
-            <p><strong>Options used:</strong> Ranking Method: {rank_method_desc}, Log Transform: {'On' if use_log_transform else 'Off'}</p>
+            <strong>Instructions:</strong> Use the buttons below to toggle between different ranking methods,
+            fee types, and log transformation options.
+        </div>
+        
+        <h2>Control Panel</h2>
+        <div class="button-group">
+            <strong>Ranking Method:</strong><br>
+            <button id="relative-btn" {"class='active'" if ranking_method == 'relative' else ""} onclick="changeRankMethod('relative')">Relative Value (ΔP/fee)</button>
+            <button id="absolute-btn" {"class='active'" if ranking_method == 'absolute' else ""} onclick="changeRankMethod('absolute')">Absolute Value (ΔP)</button>
+            <button id="net-btn" {"class='active'" if ranking_method == 'net' else ""} onclick="changeRankMethod('net')">Net Value (ΔP-fee)</button>
+        </div>
+        
+        <div class="button-group">
+            <strong>Fee Type:</strong><br>
+            <button id="original-fee-btn" class="active" onclick="changeFeeType('original')">Original Fee</button>
+            <button id="discounted-fee-btn" onclick="changeFeeType('discounted')">Discounted Fee</button>
+        </div>
+        
+        <div class="button-group">
+            <strong>Log Transform:</strong><br>
+            <button id="log-transform-on-btn" {"class='active'" if use_log_transform else ""} onclick="toggleLogTransform(true)">On</button>
+            <button id="log-transform-off-btn" {"class='active'" if not use_log_transform else ""} onclick="toggleLogTransform(false)">Off</button>
         </div>
     """
     
-    # Add feature weights section
+    # Get feature weights
     html += """
         <h2>Feature Weights</h2>
-        <div class="container">
-            <table>
-                <tr>
-                    <th>Feature</th>
-                    <th>Weight</th>
-                    <th>Direction</th>
-                </tr>
+        <div id="feature-weights-container">
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>Weight</th>
+                <th>Average Contribution (KRW)</th>
+            </tr>
     """
     
-    # Add feature weights to the table
-    for feature, weight in sorted(feature_weights.items(), key=lambda x: abs(x[1]), reverse=True):
-        sign = feature_signs.get(feature, 0)
-        direction = "Positive (↑)" if sign > 0 else "Negative (↓)" if sign < 0 else "Neutral"
-        direction_class = "good-value" if sign > 0 else "bad-value" if sign < 0 else ""
+    # Get the feature weights from dataframe attributes
+    weights = df.attrs.get('feature_weights', {})
+    
+    # Get contribution columns
+    contribution_cols = [col for col in df.columns if col.startswith("contribution_")]
+    
+    # Sort contribution columns by average contribution (descending)
+    sorted_contribution_cols = sorted(
+        contribution_cols,
+        key=lambda x: df[x].mean() if not pd.isna(df[x].mean()) else -float('inf'),
+        reverse=True
+    )
+    
+    for col in sorted_contribution_cols:
+        feature_name = col.replace("contribution_", "")
+        avg_contrib = df[col].mean()
         
-        html += f"""
-                <tr>
-                    <td>{feature}</td>
-                    <td>{abs(weight):.4f}</td>
-                    <td class="{direction_class}">{direction}</td>
-                </tr>
+        # Get the corresponding weight for this feature
+        feature_weight = weights.get(feature_name, np.nan)
+        
+        if pd.isna(avg_contrib):
+            if pd.isna(feature_weight):
+                html += f"""
+        <tr>
+            <td>{feature_name}</td>
+            <td>N/A</td>
+            <td>N/A</td>
+        </tr>
         """
-    
-    html += """
-            </table>
-        </div>
-        
-        <h2>Plan Rankings</h2>
-        <div class="container">
-            <table>
-                <tr>
-                    <th>Rank</th>
-                    <th>Plan Name</th>
-                    <th>MVNO</th>
-                    <th>Original Fee</th>
-                    <th>Fee</th>
-                    <th>Predicted Worth</th>
-                    <th>Value Ratio</th>
-    """
-    
-    # Add feature columns
-    for feature in used_features:
-        html += f"<th>{feature}</th>"
-    
-    html += """
-                </tr>
-    """
-    
-    # Add plan rows
-    for i, row in df.sort_values('rank').iterrows():
-        plan_name = row.get('plan_name', f"Plan {row.get('id', i)}")
-        mvno = row.get('mvno', 'N/A')
-        original_fee = f"{int(row['original_fee']):,}" if 'original_fee' in row else 'N/A'
-        fee = f"{int(row['fee']):,}" if 'fee' in row else original_fee
-        predicted_price = f"{int(row['predicted_price']):,}" if 'predicted_price' in row else 'N/A'
-        
-        value_ratio = row.get('value_ratio', 0)
-        value_class = "good-value" if value_ratio > 1.1 else "bad-value" if value_ratio < 0.9 else ""
-        
-        html += f"""
-                <tr>
-                    <td>{row.get('rank_display', i+1)}</td>
-                    <td>{plan_name}</td>
-                    <td>{mvno}</td>
-                    <td>{original_fee}</td>
-                    <td>{fee}</td>
-                    <td>{predicted_price}</td>
-                    <td class="{value_class}">{value_ratio:.2f}</td>
-        """
-        
-        # Add feature values
-        for feature in used_features:
-            if feature in row:
-                value = row[feature]
-                if isinstance(value, bool):
-                    value = "Yes" if value else "No"
-                elif isinstance(value, (int, float)):
-                    if feature in ['is_5g', 'basic_data_unlimited', 'daily_data_unlimited', 'voice_unlimited', 'message_unlimited']:
-                        value = "Yes" if value == 1 else "No"
-                    else:
-                        value = f"{value:.1f}" if value % 1 != 0 else f"{int(value)}"
-                html += f"<td>{value}</td>"
             else:
-                html += "<td>N/A</td>"
-        
-        html += """
-                </tr>
+                html += f"""
+        <tr>
+            <td>{feature_name}</td>
+            <td>{feature_weight:.4f}</td>
+            <td>N/A</td>
+        </tr>
+        """
+        else:
+            if pd.isna(feature_weight):
+                html += f"""
+        <tr>
+            <td>{feature_name}</td>
+            <td>N/A</td>
+            <td>{int(avg_contrib):,} KRW</td>
+        </tr>
+        """
+            else:
+                html += f"""
+        <tr>
+            <td>{feature_name}</td>
+            <td>{feature_weight:.4f}</td>
+            <td>{int(avg_contrib):,} KRW</td>
+        </tr>
         """
     
     html += """
-            </table>
+        </table>
         </div>
+    """
+    
+    # Add main data table
+    html += """
+        <h2>Plan Rankings</h2>
+        <div class="container" id="main-table-container">
+        <table id="main-table">
+            <tr>
+                <th>Rank</th>
+                <th>Plan Name</th>
+                <th>Original Fee</th>
+                <th>Discounted Fee</th>
+                <th>Worth Estimate</th>
+                <th>Value Ratio</th>
+                <th>Operator</th>
+                <th>Basic Data</th>
+                <th>Voice</th>
+                <th>Data Quality</th>
+            </tr>
+    """
+    
+    # Add rows for each plan
+    for i, (_, row) in enumerate(df.sort_values('rank').iterrows()):
+        plan_name = str(row.get('plan_name', f"Plan {row.get('id', i)}"))
+        if len(plan_name) > 30:
+            plan_name = plan_name[:27] + "..."
+            
+        original_fee = f"{int(row.get('original_fee', 0)):,}"
+        discounted_fee = f"{int(row.get('fee', 0)):,}"
+        predicted_price = f"{int(row.get('predicted_price', 0)):,}"
+        
+        # Value ratio
+        value_ratio = row.get('value_ratio_original', row.get('value_ratio', 0))
+        if pd.isna(value_ratio):
+            value_ratio_str = "N/A"
+            value_class = ""
+        else:
+            value_ratio_str = f"{value_ratio:.2f}"
+            value_class = "good-value" if value_ratio > 1.1 else ("bad-value" if value_ratio < 0.9 else "")
+            
+        operator = row.get('mvno', "Unknown")
+        basic_data = f"{row.get('basic_data', 'N/A')}"
+        voice = f"{row.get('voice', 'N/A')}"
+        data_quality = row.get('data_exhaustion', 'N/A')
+        
+        html += f"""
+        <tr>
+            <td>{int(row.get('rank_display', i+1))}</td>
+            <td>{plan_name}</td>
+            <td>{original_fee}</td>
+            <td>{discounted_fee}</td>
+            <td>{predicted_price}</td>
+            <td class="{value_class}">{value_ratio_str}</td>
+            <td>{operator}</td>
+            <td>{basic_data}</td>
+            <td>{voice}</td>
+            <td>{data_quality}</td>
+        </tr>
+        """
+    
+    html += """
+        </table>
+        </div>
+    """
+    
+    # Add JavaScript for interactive controls
+    html += """
+    <script>
+    /* Current state */
+    let currentState = {
+        rankMethod: "relative",
+        feeType: "original",
+        logTransform: true
+    };
+    
+    /* Store all table containers */
+    let tableContainers = {};
+    
+    /* Initialize on page load */
+    document.addEventListener('DOMContentLoaded', function() {
+        /* Find the main table in the document */
+        const mainTable = document.getElementById('main-table');
+        if (!mainTable) return;
+        
+        /* Create container divs for different views if they don't exist */
+        createTableContainers();
+        
+        /* Set up initial view */
+        setTimeout(function() {
+            updateVisibleContainer();
+        }, 200);
+    });
+    
+    /* Create containers for different ranking views */
+    function createTableContainers() {
+        /* Clone the table for each ranking method and fee type */
+        const rankMethods = ['relative', 'absolute', 'net'];
+        const feeTypes = ['original', 'discounted'];
+        
+        /* Get the parent of the main table */
+        const mainTableContainer = document.getElementById('main-table-container');
+        
+        /* Create container for all tables */
+        const container = document.createElement('div');
+        container.className = 'rankings-container';
+        mainTableContainer.parentNode.insertBefore(container, mainTableContainer);
+        
+        /* Hide the original table */
+        mainTableContainer.style.display = 'none';
+        
+        /* For each combination, create a container with a cloned table */
+        rankMethods.forEach(method => {
+            feeTypes.forEach(feeType => {
+                const containerId = `${method}-${feeType}`;
+                const newContainer = document.createElement('div');
+                newContainer.id = containerId;
+                newContainer.className = 'container hidden';
+                newContainer.innerHTML = mainTableContainer.innerHTML;
+                container.appendChild(newContainer);
+                
+                tableContainers[containerId] = newContainer;
+            });
+        });
+        
+        /* Set the default view to visible */
+        const defaultContainer = document.getElementById('relative-original');
+        if (defaultContainer) {
+            defaultContainer.classList.remove('hidden');
+        }
+    }
+    
+    /* Change ranking method */
+    function changeRankMethod(method) {
+        /* Update buttons */
+        document.getElementById('relative-btn').classList.remove('active');
+        document.getElementById('absolute-btn').classList.remove('active');
+        document.getElementById('net-btn').classList.remove('active');
+        
+        /* Update button styles */
+        document.getElementById(method + '-btn').classList.add('active');
+        
+        /* Update state */
+        currentState.rankMethod = method;
+        
+        /* Update visible container */
+        updateVisibleContainer();
+    }
+    
+    /* Change fee type */
+    function changeFeeType(type) {
+        /* Update buttons */
+        document.getElementById('original-fee-btn').classList.remove('active');
+        document.getElementById('discounted-fee-btn').classList.remove('active');
+        
+        /* Update button styles */
+        document.getElementById(type + '-fee-btn').classList.add('active');
+        
+        /* Update state */
+        currentState.feeType = type;
+        
+        /* Update visible container */
+        updateVisibleContainer();
+    }
+    
+    /* Toggle log transform */
+    function toggleLogTransform(enabled) {
+        document.getElementById('log-transform-on-btn').classList.remove('active');
+        document.getElementById('log-transform-off-btn').classList.remove('active');
+        
+        if (enabled) {
+            document.getElementById('log-transform-on-btn').classList.add('active');
+        } else {
+            document.getElementById('log-transform-off-btn').classList.add('active');
+        }
+        
+        currentState.logTransform = enabled;
+        
+        // Note: In a real implementation, this would trigger a recalculation
+        alert("Changing log transform would require recalculating all rankings. This feature is shown for UI demonstration only.");
+    }
+    
+    /* Update visible container based on current state */
+    function updateVisibleContainer() {
+        /* Hide all containers */
+        const containers = document.querySelectorAll('.rankings-container .container');
+        containers.forEach(container => {
+            container.classList.add('hidden');
+        });
+        
+        /* Show the selected container */
+        const containerId = `${currentState.rankMethod}-${currentState.feeType}`;
+        const containerElement = document.getElementById(containerId);
+        if (containerElement) {
+            containerElement.classList.remove('hidden');
+        } else {
+            /* Fallback to relative-original if the selected container doesn't exist */
+            document.getElementById('relative-original').classList.remove('hidden');
+            /* Update state and buttons to match */
+            currentState.rankMethod = 'relative';
+            currentState.feeType = 'original';
+            document.getElementById('relative-btn').classList.add('active');
+            document.getElementById('original-fee-btn').classList.add('active');
+        }
+    }
+    </script>
     </body>
     </html>
     """
@@ -1118,6 +1319,7 @@ async def process_data(request: Request):
         latest_processed_path = processed_data_paths[1] if len(processed_data_paths) > 1 else processed_data_paths[0]
         
         # Step 6: Apply Spearman ranking method with options
+        # Note: calculate_rankings_with_spearman now calculates ALL ranking types internally
         df_ranked = calculate_rankings_with_spearman(
             processed_df,
             use_log_transform=use_log_transform,
@@ -1135,40 +1337,48 @@ async def process_data(request: Request):
         html_report = generate_html_report(df_ranked, timestamp_now)
         report_path = save_report(html_report, timestamp_now)
         
-        # Step 8: Prepare response
-        # Get top 10 plans using the appropriate value ratio based on fee_type
-        value_ratio_col = f"value_ratio_{fee_type}" if fee_type in ['original', 'fee'] else "value_ratio"
+        # Step 8: Prepare response with complete ranking data
+        # Include all ranking types in the response
+        all_rankings = {}
         
-        # For rank column, handle different ranking methods
+        # Group plans by each ranking method
+        ranking_methods = {
+            'absolute': ('rank_absolute', 'delta_krw'),
+            'relative_original': ('rank_relative_original', 'value_ratio_original'),
+            'relative_fee': ('rank_relative_fee', 'value_ratio_fee'),
+            'net_original': ('rank_net_original', 'net_value_original'),
+            'net_fee': ('rank_net_fee', 'net_value_fee')
+        }
+        
+        # Get all plans for all ranking types
+        for rank_type, (rank_col, value_col) in ranking_methods.items():
+            if rank_col in df_ranked.columns and value_col in df_ranked.columns:
+                columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
+                                     "predicted_price", rank_col, "rank_display", value_col]
+                available_columns = [col for col in columns_to_include if col in df_ranked.columns]
+                
+                # Sort by the ranking column and convert to records
+                all_rankings[rank_type] = df_ranked.sort_values(rank_col)[available_columns].to_dict(orient="records")
+                logger.info(f"[{request_id}] Included {rank_type} rankings with {len(all_rankings[rank_type])} plans")
+        
+        # Get top 10 by the primary requested method
+        top_10_value_col = "value_ratio_original"
         if rank_method == 'absolute':
-            rank_col = "rank_absolute"
-        elif rank_method in ['relative', 'net']:
-            rank_col = f"rank_{rank_method}_{fee_type}"
-        else:
-            rank_col = "rank"  # fallback
+            top_10_value_col = "delta_krw"
+        elif rank_method == 'net':
+            top_10_value_col = f"net_value_{fee_type}"
+        elif rank_method == 'relative':
+            top_10_value_col = f"value_ratio_{fee_type}"
         
-        # Ensure the columns exist in the dataframe
-        if value_ratio_col not in df_ranked.columns:
-            value_ratio_col = "value_ratio"  # fallback
-        
-        if rank_col not in df_ranked.columns:
-            rank_col = "rank"  # fallback
-        
+        # Get top 10 plans
         top_10_plans = []
-        all_ranked_plans = []
         try:
-            columns_to_include = ["plan_name", "mvno", "fee", value_ratio_col, "predicted_price", "rank_display", "id"]
+            columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
+                                 "predicted_price", "rank_display", top_10_value_col]
             available_columns = [col for col in columns_to_include if col in df_ranked.columns]
             
-            top_10_plans = df_ranked.sort_values(value_ratio_col, ascending=False).head(10)[available_columns].to_dict(orient="records")
-            
-            # Get all ranked plans
-            rank_columns = ["id", "predicted_price", rank_col, "rank_display", value_ratio_col]
-            available_rank_columns = [col for col in rank_columns if col in df_ranked.columns]
-            
-            all_ranked_plans = df_ranked.sort_values(rank_col)[available_rank_columns].to_dict(orient="records")
-            
-            logger.info(f"[{request_id}] Extracted top 10 plans and all {len(all_ranked_plans)} ranked plans")
+            top_10_plans = df_ranked.sort_values(top_10_value_col, ascending=False).head(10)[available_columns].to_dict(orient="records")
+            logger.info(f"[{request_id}] Extracted top 10 plans based on {top_10_value_col}")
         except Exception as e:
             logger.error(f"[{request_id}] Error extracting top plans: {e}")
         
@@ -1194,7 +1404,7 @@ async def process_data(request: Request):
             },
             "ranking_method": "spearman",
             "top_10_plans": top_10_plans,
-            "all_ranked_plans": all_ranked_plans
+            "all_rankings": all_rankings
         }
         
         return response
