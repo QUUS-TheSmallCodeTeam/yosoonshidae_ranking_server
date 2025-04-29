@@ -463,6 +463,9 @@ def generate_html_report(df, timestamp):
     ranking_method = df.attrs.get('ranking_method', 'relative')
     use_log_transform = df.attrs.get('use_log_transform', False)
     
+    # Get the features used for Spearman calculation
+    used_features = df.attrs.get('used_features', [])
+    
     # Get current timestamp
     timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
     
@@ -601,14 +604,20 @@ def generate_html_report(df, timestamp):
             <tr>
                 <th>Rank</th>
                 <th>Plan Name</th>
+                <th>Operator</th>
                 <th>Original Fee</th>
                 <th>Discounted Fee</th>
                 <th>Worth Estimate</th>
                 <th>Value Ratio</th>
-                <th>Operator</th>
-                <th>Basic Data</th>
-                <th>Voice</th>
-                <th>Data Quality</th>
+    """
+    
+    # Add headers for all features used in the calculation
+    for feature in used_features:
+        # Clean up feature name for display
+        display_name = feature.replace('_clean', '').replace('_', ' ').title()
+        html += f"<th>{display_name}</th>"
+    
+    html += """
             </tr>
     """
     
@@ -632,9 +641,6 @@ def generate_html_report(df, timestamp):
             value_class = "good-value" if value_ratio > 1.1 else ("bad-value" if value_ratio < 0.9 else "")
             
         operator = row.get('mvno', "Unknown")
-        basic_data = f"{row.get('basic_data', 'N/A')}"
-        voice = f"{row.get('voice', 'N/A')}"
-        data_quality = row.get('data_exhaustion', 'N/A')
         
         # Don't try to convert rank_display to int since it may contain Korean characters
         rank_display = row.get('rank_display', f"{i+1}")
@@ -643,16 +649,44 @@ def generate_html_report(df, timestamp):
         <tr>
             <td>{rank_display}</td>
             <td>{plan_name}</td>
+            <td>{operator}</td>
             <td>{original_fee}</td>
             <td>{discounted_fee}</td>
             <td>{predicted_price}</td>
             <td class="{value_class}">{value_ratio_str}</td>
-            <td>{operator}</td>
-            <td>{basic_data}</td>
-            <td>{voice}</td>
-            <td>{data_quality}</td>
-        </tr>
         """
+        
+        # Add values for all features
+        for feature in used_features:
+            if feature in row:
+                # Format the feature value based on its type
+                if isinstance(row[feature], bool):
+                    value = "Yes" if row[feature] else "No"
+                elif isinstance(row[feature], (int, float)):
+                    if feature in ['is_5g', 'basic_data_unlimited', 'daily_data_unlimited', 'voice_unlimited', 'message_unlimited']:
+                        value = "Yes" if row[feature] == 1 else "No"
+                    elif feature == 'unlimited_type_numeric':
+                        # Map unlimited type numeric to descriptive text
+                        unlimited_types = {
+                            0: "Limited",
+                            1: "Throttled",
+                            2: "Throttled+",
+                            3: "Unlimited"
+                        }
+                        value = unlimited_types.get(row[feature], str(row[feature]))
+                    else:
+                        # Format with commas if it's a whole number
+                        if row[feature] == int(row[feature]):
+                            value = f"{int(row[feature]):,}"
+                        else:
+                            value = f"{row[feature]:.2f}"
+                else:
+                    value = str(row[feature])
+                html += f"<td>{value}</td>"
+            else:
+                html += "<td>N/A</td>"
+        
+        html += "</tr>"
     
     html += """
         </table>
