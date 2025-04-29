@@ -395,39 +395,58 @@ def calculate_rankings_with_ties(df, value_column='value_ratio', ascending=False
     Returns:
         DataFrame with new columns: 'rank' (numeric) and 'rank_display' (with 공동 notation)
     """
-    # Sort the dataframe by the value column
-    df_sorted = df.sort_values(by=value_column, ascending=ascending).copy()
+    logger.info(f"Calculating rankings based on {value_column} (ascending={ascending})")
+    
+    # Make a copy to avoid modifying the original
+    df_result = df.copy()
+    
+    # Calculate numeric ranks
+    df_result['rank'] = df_result[value_column].rank(ascending=ascending, method='min')
+    
+    # Sort by the value column
+    df_sorted = df_result.sort_values(by=value_column, ascending=ascending).copy()
     
     # Initialize variables for tracking
+    current_rank = 1
+    previous_value = None
+    tied_count = 0
     ranks = []
     rank_displays = []
-    current_rank = 1
-    i = 0
-    n = len(df_sorted)
-    while i < n:
-        current_value = df_sorted.iloc[i][value_column]
-        # Find all tied indices
-        tie_indices = [i]
-        j = i + 1
-        while j < n and df_sorted.iloc[j][value_column] == current_value:
-            tie_indices.append(j)
-            j += 1
-        tie_count = len(tie_indices)
-        if tie_count > 1:
-            for _ in tie_indices:
-                ranks.append(current_rank)
-                rank_displays.append(f"공동 {current_rank}위")
+    
+    # Calculate ranks with ties
+    for idx, row in df_sorted.iterrows():
+        current_value = row[value_column]
+        
+        # Check if this is a tie with the previous value
+        if previous_value is not None and abs(current_value - previous_value) < 1e-10:  # Use small epsilon for float comparison
+            tied_count += 1
+            # Keep the same rank number but mark as tied (공동)
+            ranks.append(current_rank - tied_count)
+            rank_displays.append(f"공동 {current_rank - tied_count}위")
         else:
+            # New rank, accounting for any previous ties
+            current_rank += tied_count
             ranks.append(current_rank)
             rank_displays.append(f"{current_rank}위")
-        current_rank += tie_count
-        i += tie_count
+            tied_count = 0
+            current_rank += 1
+            
+        previous_value = current_value
+    
     # Add ranks back to the dataframe
     df_sorted['rank'] = ranks
     df_sorted['rank_display'] = rank_displays
-    # Return to original order
-    df_sorted = df_sorted.reindex(df.index)
-    return df_sorted
+    
+    # Merge back to the original order
+    df_result = df_result.merge(
+        df_sorted[['rank_display']], 
+        left_index=True, 
+        right_index=True, 
+        how='left',
+        suffixes=('', '_new')
+    )
+    
+    return df_result
 
 # Function to generate HTML report
 def generate_html_report(df, timestamp):
@@ -617,9 +636,12 @@ def generate_html_report(df, timestamp):
         voice = f"{row.get('voice', 'N/A')}"
         data_quality = row.get('data_exhaustion', 'N/A')
         
+        # Don't try to convert rank_display to int since it may contain Korean characters
+        rank_display = row.get('rank_display', f"{i+1}")
+        
         html += f"""
         <tr>
-            <td>{int(row.get('rank_display', i+1))}</td>
+            <td>{rank_display}</td>
             <td>{plan_name}</td>
             <td>{original_fee}</td>
             <td>{discounted_fee}</td>
