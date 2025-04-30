@@ -117,7 +117,7 @@ class PlanInput(BaseModel):
 # Spearman Method Implementation
 def calculate_rankings_with_spearman(df, use_log_transform=True, rank_method='relative'):
     """
-    Generate worth estimates and rankings using Spearman correlation method.
+    Generate worth estimates and rankings using Spearman correlation method with hybrid normalization.
     
     Args:
         df: DataFrame with preprocessed plan data
@@ -127,7 +127,7 @@ def calculate_rankings_with_spearman(df, use_log_transform=True, rank_method='re
     Returns:
         DataFrame with added worth estimates and rankings
     """
-    logger.info(f"Calculating rankings with Spearman method (rank method: {rank_method}, log transform: {use_log_transform})")
+    logger.info(f"Calculating rankings with Spearman hybrid method (rank method: {rank_method}, log transform: {use_log_transform})")
     
     # Check if we have fee (discounted price) in the data
     has_fee = 'fee' in df.columns
@@ -242,32 +242,71 @@ def calculate_rankings_with_spearman(df, use_log_transform=True, rank_method='re
     # Store correlation signs for later use
     rho_signs = {feat: np.sign(rhos[feat]) for feat in rhos.keys()}
     
-    # Normalize each feature to [0,1]
-    norm = {}  # a dict of arrays
+    # Identify binary/dummy features vs continuous features
+    binary_features = []
+    continuous_features = []
+    
     for feature in weights.keys():
-        # Create a mask for non-NaN values
-        valid_mask = ~np.isnan(df_analysis[feature].values)
-        
-        if valid_mask.sum() == 0:
-            logger.warning(f"Feature '{feature}' has all NaN values - skipping")
-            continue
-        
-        # Get min and max from valid values only
-        min_v = df_analysis[feature].loc[valid_mask].min()
-        max_v = df_analysis[feature].loc[valid_mask].max()
-        
-        # Handle the case where min and max are the same
-        if max_v == min_v:
-            logger.info(f"Feature '{feature}' has min=max={min_v}, setting normalized values to 0.5")
-            # Create array with 0.5 for valid values, NaN for invalid
-            norm_values = np.full(len(df_analysis), 0.5)
-            norm_values[~valid_mask] = np.nan
-            norm[feature] = norm_values
-        else:
-            # Create normalized array, preserving NaN
+        # Check if feature is binary or categorical (0/1 or stepped values)
+        if feature in df_analysis.columns:
+            unique_values = df_analysis[feature].dropna().unique()
+            # If feature has only 0/1 values or has small number of unique integers
+            if set(unique_values).issubset({0, 1}) or (
+                len(unique_values) <= 5 and all(float(x).is_integer() for x in unique_values if not pd.isna(x))
+            ):
+                binary_features.append(feature)
+            else:
+                continuous_features.append(feature)
+    
+    logger.info(f"Identified {len(binary_features)} binary/categorical features and {len(continuous_features)} continuous features")
+    
+    # Normalize features using hybrid approach
+    norm = {}  # a dict of arrays
+    
+    # 1. For binary/categorical features: keep as is
+    for feature in binary_features:
+        if feature in df_analysis.columns:
+            # Create a mask for non-NaN values
+            valid_mask = ~np.isnan(df_analysis[feature].values)
+            
+            if valid_mask.sum() == 0:
+                logger.warning(f"Feature '{feature}' has all NaN values - skipping")
+                continue
+            
+            # Use the feature values directly without normalization
             norm_values = np.full(len(df_analysis), np.nan)
-            norm_values[valid_mask] = (df_analysis[feature].loc[valid_mask] - min_v) / (max_v - min_v)
+            norm_values[valid_mask] = df_analysis[feature].loc[valid_mask]
             norm[feature] = norm_values
+            logger.info(f"Binary feature '{feature}' kept as is without normalization")
+    
+    # 2. For continuous features: use z-score normalization
+    for feature in continuous_features:
+        if feature in df_analysis.columns:
+            # Create a mask for non-NaN values
+            valid_mask = ~np.isnan(df_analysis[feature].values)
+            
+            if valid_mask.sum() == 0:
+                logger.warning(f"Feature '{feature}' has all NaN values - skipping")
+                continue
+            
+            # Get valid values only
+            valid_values = df_analysis[feature].loc[valid_mask]
+            
+            # Check if the feature has variation
+            if valid_values.std() == 0:
+                logger.info(f"Feature '{feature}' has zero standard deviation, setting normalized values to 0")
+                norm_values = np.full(len(df_analysis), 0.0)
+                norm_values[~valid_mask] = np.nan
+                norm[feature] = norm_values
+            else:
+                # Apply z-score normalization: (x - mean) / std
+                mean_value = valid_values.mean()
+                std_value = valid_values.std()
+                
+                norm_values = np.full(len(df_analysis), np.nan)
+                norm_values[valid_mask] = (valid_values - mean_value) / std_value
+                norm[feature] = norm_values
+                logger.info(f"Continuous feature '{feature}' normalized using z-score")
     
     # Apply sign(ρ) in scoring
     # Compute each plan's raw score S_j = Σ_i sign(ρ_i) * w_i * n_ij
@@ -280,17 +319,14 @@ def calculate_rankings_with_spearman(df, use_log_transform=True, rank_method='re
                 S_j += rho_signs[feature] * weights[feature] * norm[feature][j]
         scores.append(S_j)
     
-    # Calculate delta_krw directly from the score
-    # ΔP_j = S_j × (P_max - P_min)
-    P_min = df["original_fee"].min()
-    P_max = df["original_fee"].max()
-    price_range = P_max - P_min
+    # Calculate delta_krw using standard deviation instead of price range
+    # ΔP_j = S_j × σ(price)
+    price_std = df["original_fee"].std()
+    delta_krw = [S_j * price_std for S_j in scores]
     
-    delta_krw = [S_j * price_range for S_j in scores]
-    
-    # Linearly scale scores back into KRW range for worth_estimate
-    # worth_estimate = P_min + ΔP_j
-    worth = [P_min + delta for delta in delta_krw]
+    # Calculate worth estimate using the mean price as a baseline
+    price_mean = df["original_fee"].mean()
+    worth = [price_mean + delta for delta in delta_krw]
     
     # Attach estimates back to the DataFrame
     df_result = df.copy()
@@ -360,22 +396,27 @@ def calculate_rankings_with_spearman(df, use_log_transform=True, rank_method='re
             valid_mask = ~np.isnan(norm[feature])
             
             if valid_mask.sum() > 0:
-                # Direct contribution calculation with sign
-                contribution[valid_mask] = rho_signs[feature] * weights[feature] * norm[feature][valid_mask] * price_range
+                # Use standard deviation for contribution calculation
+                contribution[valid_mask] = rho_signs[feature] * weights[feature] * norm[feature][valid_mask] * price_std
             
             df_result[contribution_col] = contribution
         except Exception as e:
             logger.error(f"Error calculating contribution for {feature}: {e}")
             df_result[contribution_col] = np.nan
     
-    logger.info(f"Completed Spearman ranking for {len(df_result)} plans with all ranking types")
+    logger.info(f"Completed Spearman hybrid ranking for {len(df_result)} plans with all ranking types")
     
-    # Store the feature weights in the dataframe attributes
+    # Store the feature weights and normalization information in the dataframe attributes
     df_result.attrs['used_features'] = list(weights.keys())
     df_result.attrs['feature_weights'] = weights
     df_result.attrs['feature_signs'] = rho_signs
     df_result.attrs['ranking_method'] = rank_method
     df_result.attrs['use_log_transform'] = use_log_transform
+    df_result.attrs['binary_features'] = binary_features
+    df_result.attrs['continuous_features'] = continuous_features
+    df_result.attrs['normalization_method'] = 'hybrid_z_score'
+    df_result.attrs['price_std'] = price_std
+    df_result.attrs['price_mean'] = price_mean
     
     return df_result
 
