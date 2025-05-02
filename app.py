@@ -33,6 +33,10 @@ if project_root not in sys.path:
 # Import necessary modules
 from modules.data import load_data_from_json  # For loading test data if needed
 from modules import prepare_features, ensure_directories, save_raw_data, save_processed_data
+from modules.models import get_basic_feature_list  # Import directly to avoid circular imports
+
+# Import the calculate_rankings function for Spearman method
+from modules.ranking import calculate_rankings, generate_html_report, save_report
 
 # Initialize FastAPI
 app = FastAPI(title="Moyo Plan Ranking Model Server - Spearman Method")
