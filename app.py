@@ -980,9 +980,6 @@ def read_root():
                 <h3>Endpoints</h3>
                 <ul>
                     <li><code>POST /process</code>: Submit plan data (JSON list) to preprocess, rank using Spearman method, and generate a report.</li>
-                    <li><code>POST /predict</code>: Get price predictions and rankings for plan features using Spearman method.</li>
-                    <li><code>GET /rankings</code>: Get the latest list of ranked plans.</li>
-                    <li><code>GET /features</code>: Get the list of features used for ranking.</li>
                     <li><code>POST /test</code>: Echo back the request body (for debugging).</li>
                 </ul>
                 <hr>
@@ -1294,9 +1291,6 @@ def read_root():
             <h3>Endpoints</h3>
             <ul>
                     <li><code>POST /process</code>: Submit plan data (JSON list) to preprocess, rank using Spearman method, and generate a report.</li>
-                    <li><code>POST /predict</code>: Get price predictions and rankings for plan features using Spearman method.</li>
-                    <li><code>GET /rankings</code>: Get the latest list of ranked plans.</li>
-                    <li><code>GET /features</code>: Get the list of features used for ranking.</li>
                     <li><code>POST /test</code>: Echo back the request body (for debugging).</li>
             </ul>
             
@@ -1509,160 +1503,10 @@ async def process_data(request: Request):
         logger.exception(f"[{request_id}] Error in /process: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing data: {str(e)}")
 
-@app.post("/predict")
-async def predict_plans(plans: List[PlanInput], rank_method: str = 'relative', fee_type: str = 'original', use_log_transform: bool = True):
-    """Predict and rank plans using the Spearman method."""
-    start_time = time.time()
-    request_id = str(uuid.uuid4())
-    
-    logger.info(f"[{request_id}] Received {len(plans)} plans for prediction using Spearman method")
-    logger.info(f"[{request_id}] Using ranking options: method={rank_method}, fee_type={fee_type}, log_transform={use_log_transform}")
-    
-    try:
-        # Convert input to list of dictionaries
-        input_data = [plan.dict() for plan in plans]
-        
-        # Convert to DataFrame
-        df_input = pd.DataFrame(input_data)
-        if df_input.empty:
-            raise HTTPException(status_code=400, detail="Input data is empty")
-        
-        # Preprocess data
-        df_processed = prepare_features(df_input) 
-        logger.info(f"[{request_id}] Processed {len(df_processed)} plans")
-        
-        # Apply Spearman ranking with options
-        df_ranked = calculate_rankings_with_spearman(
-            df_processed,
-            use_log_transform=use_log_transform,
-            rank_method=rank_method
-        )
-        
-        logger.info(f"[{request_id}] Ranked {len(df_ranked)} plans using Spearman method")
-        
-        # Get appropriate value ratio and ranking columns based on options
-        value_ratio_col = f"value_ratio_{fee_type}" if fee_type in ['original', 'fee'] else "value_ratio"
-        
-        # For rank column, handle different ranking methods
-        if rank_method == 'absolute':
-            rank_col = "rank_absolute"
-        elif rank_method in ['relative', 'net']:
-            rank_col = f"rank_{rank_method}_{fee_type}"
-        else:
-            rank_col = "rank"  # fallback
-        
-        # Ensure the columns exist in the dataframe
-        if value_ratio_col not in df_ranked.columns:
-            value_ratio_col = "value_ratio"  # fallback
-        
-        if rank_col not in df_ranked.columns:
-            rank_col = "rank"  # fallback
-        
-        # Format results
-        results = []
-        for _, row in df_ranked.sort_values(rank_col).iterrows():
-            plan_id = row["id"] if "id" in row else "unknown"
-            plan_id = int(plan_id) if isinstance(plan_id, (int, float)) else plan_id
-            
-            results.append({
-                "plan_id": plan_id,
-                "predicted_price": float(row["predicted_price"]),
-                "rank": row["rank_display"],
-                "value_ratio": float(row[value_ratio_col])
-            })
-        
-        end_time = time.time()
-        logger.info(f"[{request_id}] Prediction completed in {end_time - start_time:.4f} seconds")
-
-        return results
-    except Exception as e:
-        logger.exception(f"[{request_id}] Error in /predict: {e}")
-        raise HTTPException(status_code=500, detail=f"Error predicting prices: {str(e)}")
-
-@app.get("/rankings")
-async def get_rankings(rank_method: str = 'relative', fee_type: str = 'original'):
-    """Return the complete list of ranked plans with specified ranking method."""
-    # Check if we have rankings
-    global df_with_rankings
-    
-    if df_with_rankings is None:
-        raise HTTPException(status_code=404, detail="No rankings available. Run /process endpoint first")
-    
-    try:
-        # Determine which columns to use based on parameters
-        if rank_method == 'absolute':
-            rank_col = "rank_absolute"
-        elif rank_method in ['relative', 'net']:
-            rank_col = f"rank_{rank_method}_{fee_type}"
-        else:
-            rank_col = "rank"  # fallback
-            
-        # Value ratio column based on fee_type
-        value_ratio_col = f"value_ratio_{fee_type}" if fee_type in ['original', 'fee'] else "value_ratio"
-            
-        # Ensure the columns exist in the dataframe
-        if value_ratio_col not in df_with_rankings.columns:
-            value_ratio_col = "value_ratio"  # fallback
-        
-        if rank_col not in df_with_rankings.columns:
-            rank_col = "rank"  # fallback
-        
-        # Format response data
-        rankings_list = []
-        for _, row in df_with_rankings.sort_values(rank_col).iterrows():
-            plan_id = row["id"] if "id" in row else "unknown"
-            plan_id = int(plan_id) if isinstance(plan_id, (int, float)) else plan_id
-            
-            rankings_list.append({
-                "plan_id": plan_id,
-                "predicted_price": float(row["predicted_price"]),
-                "rank": row["rank_display"],
-                "value_ratio": float(row[value_ratio_col])
-            })
-        
-        # Add ranking method information
-        response = {
-            "ranking_method": "spearman",
-            "options": {
-                "rankMethod": rank_method,
-                "feeType": fee_type
-            },
-            "rankings": rankings_list
-        }
-        
-        return response
-    except Exception as e:
-        logger.exception(f"Error generating rankings list: {e}")
-        raise HTTPException(status_code=500, detail=f"Error generating rankings: {str(e)}")
-
 @app.post("/test")
 def test(request: dict = Body(...)):
     """Simple echo endpoint for testing (returns the provided data)."""
-    return request
-
-@app.get("/features")
-def get_features():
-    """Return the list of features used in the ranking model."""
-    try:
-        # Try to get features from the processed data
-        if df_with_rankings is not None and not df_with_rankings.empty:
-            numeric_features = list(df_with_rankings.select_dtypes(include=['number']).columns)
-            features = [f for f in numeric_features if f not in ['id', 'rank', 'predicted_price', 'value_ratio']]
-            return {"features": features}
-        
-        # If no data is available, return supported features
-        supported_features = [
-            "basic_data", "daily_data", "voice", "message", "additional_call", 
-            "data_sharing", "roaming_support", "micro_payment", "is_esim", 
-            "signup_minor", "signup_foreigner", "tethering_gb", "fee", 
-            "original_fee", "discount_fee", "discount_period", "post_discount_fee", 
-            "agreement", "agreement_period", "num_of_signup", "mvno_rating", 
-            "monthly_review_score", "discount_percentage"
-        ]
-        return {"features": supported_features}
-    except Exception as e:
-        logger.error(f"Error retrieving features: {e}")
-        return {"error": str(e)}
+    return {"received": request}
 
 # Run the application
 if __name__ == "__main__":
