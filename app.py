@@ -445,50 +445,51 @@ def calculate_rankings_with_ties(df, value_column='value_ratio', ascending=False
     # Make a copy to avoid modifying the original
     df_result = df.copy()
     
-    # Calculate numeric ranks
-    df_result['rank'] = df_result[value_column].rank(ascending=ascending, method='min')
-    
     # Sort by the value column
     df_sorted = df_result.sort_values(by=value_column, ascending=ascending).copy()
     
-    # Initialize variables for tracking
-    current_rank = 1
-    previous_value = None
-    tied_count = 0
-    ranks = []
-    rank_displays = []
+    # Group by value to identify ties
+    # Use round to handle floating point precision issues
+    value_groups = df_sorted.groupby(df_sorted[value_column].round(10)).indices
     
-    # Calculate ranks with ties
-    for idx, row in df_sorted.iterrows():
-        current_value = row[value_column]
+    # Initialize lists for ranks and display ranks
+    numeric_ranks = [0] * len(df_sorted)
+    display_ranks = [""] * len(df_sorted)
+    
+    # Current rank counter
+    current_rank = 1
+    
+    # Process each group of values
+    for value, indices in sorted(value_groups.items(), 
+                               key=lambda x: x[0], 
+                               reverse=(not ascending)):
+        # If multiple plans with the same value (tied)
+        is_tied = len(indices) > 1
         
-        # Check if this is a tie with the previous value
-        if previous_value is not None and abs(current_value - previous_value) < 1e-10:  # Use small epsilon for float comparison
-            tied_count += 1
-            # Keep the same rank number but mark as tied (공동)
-            ranks.append(current_rank - tied_count)
-            rank_displays.append(f"공동 {current_rank - tied_count}위")
-        else:
-            # New rank, accounting for any previous ties
-            current_rank += tied_count
-            ranks.append(current_rank)
-            rank_displays.append(f"{current_rank}위")
-            tied_count = 0
-            current_rank += 1
+        # Assign the same rank to all tied items
+        for idx in indices:
+            numeric_ranks[idx] = current_rank
             
-        previous_value = current_value
+            # If tied, all plans in the group get the 공동 prefix
+            if is_tied:
+                display_ranks[idx] = f"공동 {current_rank}위"
+            else:
+                display_ranks[idx] = f"{current_rank}위"
+        
+        # Move to the next rank, skipping the positions used by the current group
+        current_rank += len(indices)
     
     # Add ranks back to the dataframe
-    df_sorted['rank'] = ranks
-    df_sorted['rank_display'] = rank_displays
+    df_sorted['rank'] = numeric_ranks
+    df_sorted['rank_display'] = display_ranks
     
     # Merge back to the original order
     df_result = df_result.merge(
-        df_sorted[['rank_display']], 
+        df_sorted[['rank', 'rank_display']], 
         left_index=True, 
         right_index=True, 
         how='left',
-        suffixes=('', '_new')
+        suffixes=('_old', '')
     )
     
     return df_result
