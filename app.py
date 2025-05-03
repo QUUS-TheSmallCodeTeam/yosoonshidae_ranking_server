@@ -1469,13 +1469,41 @@ async def process_data(request: Request):
         top_10_plans = []
         try:
             columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
-                                 "predicted_price", "rank_display", top_10_value_col]
+                               "predicted_price", "rank_display", "rank", top_10_value_col]
             available_columns = [col for col in columns_to_include if col in df_ranked.columns]
             
             top_10_plans = df_ranked.sort_values(top_10_value_col, ascending=False).head(10)[available_columns].to_dict(orient="records")
             logger.info(f"[{request_id}] Extracted top 10 plans based on {top_10_value_col}")
         except Exception as e:
             logger.error(f"[{request_id}] Error extracting top plans: {e}")
+            
+        # Create all_ranked_plans (structured for edge function compatibility)
+        all_ranked_plans = []
+        try:
+            # Use the same columns as top_10_plans but include value_ratio explicitly for DB upsert
+            columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
+                               "predicted_price", "rank_display", "rank"]
+                               
+            # If we have a value_ratio column available, include it
+            if top_10_value_col in df_ranked.columns:
+                columns_to_include.append(top_10_value_col)
+            elif "value_ratio" in df_ranked.columns:
+                columns_to_include.append("value_ratio")
+                
+            available_columns = [col for col in columns_to_include if col in df_ranked.columns]
+            
+            # Get all plans, sorted by the current ranking method
+            all_ranked_plans = df_ranked.sort_values(top_10_value_col, ascending=False)[available_columns].to_dict(orient="records")
+            
+            # Ensure each plan has a value_ratio field (required for edge function DB upsert)
+            for plan in all_ranked_plans:
+                # If we don't already have value_ratio, add it from the appropriate column
+                if "value_ratio" not in plan and top_10_value_col in plan:
+                    plan["value_ratio"] = plan[top_10_value_col]
+            
+            logger.info(f"[{request_id}] Prepared all_ranked_plans with {len(all_ranked_plans)} plans")
+        except Exception as e:
+            logger.error(f"[{request_id}] Error preparing all_ranked_plans: {e}")
         
         # Calculate timing
         end_time = time.time()
@@ -1499,7 +1527,7 @@ async def process_data(request: Request):
             },
             "ranking_method": "spearman",
             "top_10_plans": top_10_plans,
-            "all_rankings": all_rankings
+            "all_ranked_plans": all_ranked_plans
         }
         
         return response
