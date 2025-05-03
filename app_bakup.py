@@ -32,12 +32,11 @@ if project_root not in sys.path:
 
 # Import necessary modules
 from modules.data import load_data_from_json  # For loading test data if needed
-from modules import (
-    prepare_features, ensure_directories, save_raw_data, save_processed_data,
-    calculate_rankings_with_spearman, calculate_rankings_with_ties,
-    generate_html_report, save_report
-)
+from modules import prepare_features, ensure_directories, save_raw_data, save_processed_data
 from modules.models import get_basic_feature_list  # Import directly to avoid circular imports
+
+# Import the calculate_rankings function for Spearman method
+from modules.ranking import calculate_rankings, generate_html_report, save_report
 
 # Initialize FastAPI
 app = FastAPI(title="Moyo Plan Ranking Model Server - Spearman Method")
@@ -119,10 +118,794 @@ class PlanInput(BaseModel):
     discount_period: Optional[int] = None
     post_discount_fee: float
 
-# Spearman ranking calculation is now imported from the modules.spearman module
-# calculate_rankings_with_ties function is now imported from the modules.ranking module
+# Spearman Method Implementation
+def calculate_rankings_with_spearman(df, use_log_transform=True, rank_method='relative'):
+    """
+    Generate worth estimates and rankings using Spearman correlation method with hybrid normalization.
+    
+    Args:
+        df: DataFrame with preprocessed plan data
+        use_log_transform: Whether to apply log transformation to non-categorical features
+        rank_method: Method to use for ranking ('relative', 'absolute', or 'net')
+        
+    Returns:
+        DataFrame with added worth estimates and rankings
+    """
+    logger.info(f"Calculating rankings with Spearman hybrid method (rank method: {rank_method}, log transform: {use_log_transform})")
+    
+    # Check if we have fee (discounted price) in the data
+    has_fee = 'fee' in df.columns
+    if has_fee:
+        logger.info("Found 'fee' column - will calculate rankings for both original_fee and fee")
+    else:
+        logger.info("No 'fee' column found - using only original_fee for rankings")
+        # Create a copy of original_fee as fee to simplify subsequent code
+        df = df.copy()
+        df['fee'] = df['original_fee']
+    
+    # Define basic features to include
+    features = [
+        'is_5g',
+        'basic_data_clean', 
+        'basic_data_unlimited',
+        'daily_data_clean', 
+        'daily_data_unlimited',
+        'voice_clean', 
+        'voice_unlimited',
+        'message_clean',
+        'message_unlimited',
+        'throttle_speed_normalized', 
+        'tethering_gb', 
+        'unlimited_type_numeric', 
+        'additional_call'
+    ]
+    
+    # Only keep features that are actually in the dataframe
+    available_features = [f for f in features if f in df.columns]
+    logger.info(f"Using {len(available_features)}/{len(features)} available basic features")
+        
+    # Apply log transformation to non-categorical features if requested
+    if use_log_transform:
+        # Features to transform - non-binary, non-normalized numeric features
+        features_to_transform = [
+            'basic_data_clean',
+            'daily_data_clean',
+            'voice_clean',
+            'message_clean', 
+            'tethering_gb',
+            'additional_call'
+        ]
+        
+        # Filter to only include available features
+        features_to_transform = [f for f in features_to_transform if f in available_features]
+        
+        # Apply log transformation
+        df_analysis = df.copy()
+        for feature in features_to_transform:
+            if feature in df.columns:
+                df_analysis[feature] = np.log1p(df[feature])
+        logger.info("Log transformation applied to non-categorical features")
+    else:
+        df_analysis = df.copy()
+        logger.info("Using original feature values without log transformation")
+    
+    # Compute Spearman ρ for each feature vs. original_fee
+    rhos = {}
+    logger.info("Computing Spearman correlations")
+    
+    # First check which features are constant (have only one unique value)
+    constant_features = []
+    for feature in available_features:
+        if df_analysis[feature].nunique() <= 1:
+            logger.warning(f"Feature '{feature}' is constant with value {df_analysis[feature].iloc[0]} - skipping")
+            constant_features.append(feature)
+    
+    # Remove constant features from available_features
+    valid_features = [f for f in available_features if f not in constant_features]
+    
+    if not valid_features:
+        logger.error("No valid features found after removing constant features!")
+        return df  # Return original dataframe if no valid features
+    
+    # Calculate correlations for valid features
+    for feature in valid_features:
+        # Drop rows with NaN values in either feature or original_fee
+        sub = df_analysis.dropna(subset=[feature, 'original_fee'])
+        
+        try:
+            # Compute Spearman correlation
+            rho, pval = spearmanr(sub[feature], sub['original_fee'])
+            
+            # Handle possible NaN from correlation
+            if np.isnan(rho):
+                logger.warning(f"Feature '{feature}' has NaN correlation - skipping")
+                continue
+                
+            # Store the signed correlation value
+            rhos[feature] = rho
+            logger.info(f"Feature '{feature}': ρ = {rho:.4f} (p = {pval:.4f})")
+        except Exception as e:
+            logger.error(f"Error calculating correlation for {feature}: {e} - skipping")
+    
+    # Check if we have any valid correlations
+    if not rhos:
+        logger.error("No valid correlations found!")
+        return df  # Return original dataframe if no valid correlations
+    
+    # Use absolute values for normalization
+    total_abs_rho = sum(abs(rho) for rho in rhos.values())
+    
+    # Check if total_abs_rho is valid
+    if np.isnan(total_abs_rho) or total_abs_rho == 0:
+        logger.error("Sum of absolute correlations is invalid (NaN or zero)!")
+        return df
+    
+    # Calculate absolute-value weights
+    weights = {feat: abs(rhos[feat]) / total_abs_rho for feat in rhos.keys()}
+    
+    # Store correlation signs for later use
+    rho_signs = {feat: np.sign(rhos[feat]) for feat in rhos.keys()}
+    
+    # Identify binary/dummy features vs continuous features
+    binary_features = []
+    continuous_features = []
+    
+    for feature in weights.keys():
+        # Check if feature is binary or categorical (0/1 or stepped values)
+        if feature in df_analysis.columns:
+            unique_values = df_analysis[feature].dropna().unique()
+            # If feature has only 0/1 values or has small number of unique integers
+            if set(unique_values).issubset({0, 1}) or (
+                len(unique_values) <= 5 and all(float(x).is_integer() for x in unique_values if not pd.isna(x))
+            ):
+                binary_features.append(feature)
+            else:
+                continuous_features.append(feature)
+    
+    logger.info(f"Identified {len(binary_features)} binary/categorical features and {len(continuous_features)} continuous features")
+    
+    # Normalize features using hybrid approach
+    norm = {}  # a dict of arrays
+    
+    # 1. For binary/categorical features: keep as is
+    for feature in binary_features:
+        if feature in df_analysis.columns:
+            # Create a mask for non-NaN values
+            valid_mask = ~np.isnan(df_analysis[feature].values)
+            
+            if valid_mask.sum() == 0:
+                logger.warning(f"Feature '{feature}' has all NaN values - skipping")
+                continue
+            
+            # Use the feature values directly without normalization
+            norm_values = np.full(len(df_analysis), np.nan)
+            norm_values[valid_mask] = df_analysis[feature].loc[valid_mask]
+            norm[feature] = norm_values
+            logger.info(f"Binary feature '{feature}' kept as is without normalization")
+    
+    # 2. For continuous features: use z-score normalization
+    for feature in continuous_features:
+        if feature in df_analysis.columns:
+            # Create a mask for non-NaN values
+            valid_mask = ~np.isnan(df_analysis[feature].values)
+            
+            if valid_mask.sum() == 0:
+                logger.warning(f"Feature '{feature}' has all NaN values - skipping")
+                continue
+            
+            # Get valid values only
+            valid_values = df_analysis[feature].loc[valid_mask]
+            
+            # Check if the feature has variation
+            if valid_values.std() == 0:
+                logger.info(f"Feature '{feature}' has zero standard deviation, setting normalized values to 0")
+                norm_values = np.full(len(df_analysis), 0.0)
+                norm_values[~valid_mask] = np.nan
+                norm[feature] = norm_values
+            else:
+                # Apply z-score normalization: (x - mean) / std
+                mean_value = valid_values.mean()
+                std_value = valid_values.std()
+                
+                norm_values = np.full(len(df_analysis), np.nan)
+                norm_values[valid_mask] = (valid_values - mean_value) / std_value
+                norm[feature] = norm_values
+                logger.info(f"Continuous feature '{feature}' normalized using z-score")
+    
+    # Apply sign(ρ) in scoring
+    # Compute each plan's raw score S_j = Σ_i sign(ρ_i) * w_i * n_ij
+    scores = []
+    for j in range(len(df_analysis)):
+        S_j = 0
+        for feature in weights.keys():
+            if feature in norm and not np.isnan(norm[feature][j]):
+                # Apply sign of correlation in the scoring
+                S_j += rho_signs[feature] * weights[feature] * norm[feature][j]
+        scores.append(S_j)
+    
+    # Calculate delta_krw using standard deviation instead of price range
+    # ΔP_j = S_j × σ(price)
+    price_std = df["original_fee"].std()
+    delta_krw = [S_j * price_std for S_j in scores]
+    
+    # Calculate worth estimate using the mean price as a baseline
+    price_mean = df["original_fee"].mean()
+    worth = [price_mean + delta for delta in delta_krw]
+    
+    # Attach estimates back to the DataFrame
+    df_result = df.copy()
+    df_result["predicted_price"] = worth  # Use predicted_price for consistency with model-based approach
+    df_result["delta_krw"] = delta_krw
+    
+    # Calculate value metrics for original fee
+    df_result["value_ratio_original"] = df_result["predicted_price"] / df_result["original_fee"]
+    df_result["net_value_original"] = df_result["delta_krw"] - df_result["original_fee"]
+    
+    # Calculate value metrics for discounted fee
+    df_result["value_ratio_fee"] = df_result["predicted_price"] / df_result["fee"]
+    df_result["net_value_fee"] = df_result["delta_krw"] - df_result["fee"]
+    
+    # Calculate standard value ratio (for compatibility with existing code)
+    df_result["value_ratio"] = df_result["value_ratio_fee"]
+    
+    # Calculate ALL ranking types regardless of specified rank_method
+    # This ensures we have data for all possible views in the UI
+    
+    # Absolute value ranking (same for all fee types)
+    df_result["rank_absolute"] = df_result["delta_krw"].rank(ascending=False)
+    
+    # Relative value rankings
+    df_result["rank_relative_original"] = df_result["value_ratio_original"].rank(ascending=False)
+    df_result["rank_relative_fee"] = df_result["value_ratio_fee"].rank(ascending=False)
+    
+    # Net value rankings
+    df_result["rank_net_original"] = df_result["net_value_original"].rank(ascending=False)
+    df_result["rank_net_fee"] = df_result["net_value_fee"].rank(ascending=False)
+    
+    # Set the primary rank column based on method and fee type
+    if rank_method == 'absolute':
+        df_result["rank"] = df_result["rank_absolute"]
+        ranking_column = "delta_krw"
+    elif rank_method == 'net':
+        if 'fee_type' in locals() and fee_type == 'fee':
+            df_result["rank"] = df_result["rank_net_fee"]
+            ranking_column = "net_value_fee"
+        else:
+            df_result["rank"] = df_result["rank_net_original"]
+            ranking_column = "net_value_original"
+    else:  # relative (default)
+        if 'fee_type' in locals() and fee_type == 'fee':
+            df_result["rank"] = df_result["rank_relative_fee"]
+            ranking_column = "value_ratio_fee"
+        else:
+            df_result["rank"] = df_result["rank_relative_original"]
+            ranking_column = "value_ratio_original"
+    
+    # Apply proper ranking with ties for display
+    df_result = calculate_rankings_with_ties(df_result, value_column=ranking_column, ascending=(rank_method == 'absolute'))
+    
+    # Calculate feature-level contribution with sign
+    for feature in weights.keys():
+        if feature not in norm:
+            logger.warning(f"Feature '{feature}' not in normalized features, skipping contribution calculation")
+            continue
+            
+        contribution_col = f"contribution_{feature}"
+        try:
+            # Calculate contributions with sign
+            contribution = np.zeros(len(df_result))
+            contribution[:] = np.nan  # Start with all NaN
+            
+            # Create mask for valid values
+            valid_mask = ~np.isnan(norm[feature])
+            
+            if valid_mask.sum() > 0:
+                # Use standard deviation for contribution calculation
+                contribution[valid_mask] = rho_signs[feature] * weights[feature] * norm[feature][valid_mask] * price_std
+            
+            df_result[contribution_col] = contribution
+        except Exception as e:
+            logger.error(f"Error calculating contribution for {feature}: {e}")
+            df_result[contribution_col] = np.nan
+    
+    logger.info(f"Completed Spearman hybrid ranking for {len(df_result)} plans with all ranking types")
+    
+    # Store the feature weights and normalization information in the dataframe attributes
+    df_result.attrs['used_features'] = list(weights.keys())
+    df_result.attrs['feature_weights'] = weights
+    df_result.attrs['feature_signs'] = rho_signs
+    df_result.attrs['ranking_method'] = rank_method
+    df_result.attrs['use_log_transform'] = use_log_transform
+    df_result.attrs['binary_features'] = binary_features
+    df_result.attrs['continuous_features'] = continuous_features
+    df_result.attrs['normalization_method'] = 'hybrid_z_score'
+    df_result.attrs['price_std'] = price_std
+    df_result.attrs['price_mean'] = price_mean
+    
+    return df_result
 
-# HTML report generation and saving is now handled by the modules.report module
+# Function to calculate rankings with proper tie handling (공동 notation)
+def calculate_rankings_with_ties(df, value_column='value_ratio', ascending=False):
+    """
+    Calculate rankings with proper handling of ties.
+    For tied ranks, uses '공동 X위' (joint X rank) notation
+    and ensures the next rank after ties is correctly incremented.
+    All tied plans should receive the '공동' label.
+    
+    Args:
+        df: DataFrame containing the data
+        value_column: Column to rank by
+        ascending: Whether to rank in ascending order
+        
+    Returns:
+        DataFrame with new columns: 'rank' (numeric) and 'rank_display' (with 공동 notation)
+    """
+    logger.info(f"Calculating rankings based on {value_column} (ascending={ascending})")
+    
+    # Make a copy to avoid modifying the original
+    df_result = df.copy()
+    
+    # Sort by the value column
+    df_sorted = df_result.sort_values(by=value_column, ascending=ascending).copy()
+    
+    # Group by value to identify ties
+    # Use round to handle floating point precision issues
+    value_groups = df_sorted.groupby(df_sorted[value_column].round(10)).indices
+    
+    # Initialize lists for ranks and display ranks
+    numeric_ranks = [0] * len(df_sorted)
+    display_ranks = [""] * len(df_sorted)
+    
+    # Current rank counter
+    current_rank = 1
+    
+    # Process each group of values
+    for value, indices in sorted(value_groups.items(), 
+                               key=lambda x: x[0], 
+                               reverse=(not ascending)):
+        # If multiple plans with the same value (tied)
+        is_tied = len(indices) > 1
+        
+        # Assign the same rank to all tied items
+        for idx in indices:
+            numeric_ranks[idx] = current_rank
+            
+            # If tied, all plans in the group get the 공동 prefix
+            if is_tied:
+                display_ranks[idx] = f"공동 {current_rank}위"
+            else:
+                display_ranks[idx] = f"{current_rank}위"
+        
+        # Move to the next rank, skipping the positions used by the current group
+        current_rank += len(indices)
+    
+    # Add ranks back to the dataframe
+    df_sorted['rank'] = numeric_ranks
+    df_sorted['rank_display'] = display_ranks
+    
+    # Merge back to the original order
+    df_result = df_result.merge(
+        df_sorted[['rank', 'rank_display']], 
+        left_index=True, 
+        right_index=True, 
+        how='left',
+        suffixes=('_old', '')
+    )
+    
+    return df_result
+
+# Function to generate HTML report
+def generate_html_report(df, timestamp):
+    """Generate an HTML report of the rankings.
+    
+    Args:
+        df: DataFrame with ranking data
+        timestamp: Timestamp for the report
+        
+    Returns:
+        HTML content as string
+    """
+    # Get ranking method and log transform from the dataframe attributes if available
+    ranking_method = df.attrs.get('ranking_method', 'relative')
+    use_log_transform = df.attrs.get('use_log_transform', False)
+    
+    # Get the features used for Spearman calculation
+    used_features = df.attrs.get('used_features', [])
+    
+    # Get current timestamp
+    timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Create HTML
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Mobile Plan Rankings - {timestamp_str}</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; }}
+            h1, h2 {{ color: #333; }}
+            table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
+            th, td {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
+            th {{ background-color: #f2f2f2; position: sticky; top: 0; }}
+            tr:hover {{ background-color: #f5f5f5; }}
+            .good-value {{ color: green; }}
+            .bad-value {{ color: red; }}
+            .container {{ max-width: 100%; overflow-x: auto; }}
+            .note {{ background-color: #f8f9fa; padding: 10px; border-left: 4px solid #007bff; margin-bottom: 20px; }}
+            .button-group {{ margin-bottom: 15px; }}
+            button {{ padding: 10px 15px; background-color: #007bff; color: white; border: none; 
+                     border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px; }}
+            button:hover {{ background-color: #0056b3; }}
+            button.active {{ background-color: #28a745; }}
+            .hidden {{ display: none; }}
+        </style>
+    </head>
+    <body>
+        <h1>Mobile Plan Rankings (Spearman Method)</h1>
+        <p>Generated: {timestamp_str}</p>
+        
+        <div class="note">
+            <strong>Instructions:</strong> Use the buttons below to toggle between different ranking methods,
+            fee types, and log transformation options.
+        </div>
+        
+        <h2>Control Panel</h2>
+        <div class="button-group">
+            <strong>Ranking Method:</strong><br>
+            <button id="relative-btn" {"class='active'" if ranking_method == 'relative' else ""} onclick="changeRankMethod('relative')">Relative Value (ΔP/fee)</button>
+            <button id="absolute-btn" {"class='active'" if ranking_method == 'absolute' else ""} onclick="changeRankMethod('absolute')">Absolute Value (ΔP)</button>
+            <button id="net-btn" {"class='active'" if ranking_method == 'net' else ""} onclick="changeRankMethod('net')">Net Value (ΔP-fee)</button>
+        </div>
+        
+        <div class="button-group">
+            <strong>Fee Type:</strong><br>
+            <button id="original-fee-btn" class="active" onclick="changeFeeType('original')">Original Fee</button>
+            <button id="discounted-fee-btn" onclick="changeFeeType('discounted')">Discounted Fee</button>
+        </div>
+        
+        <div class="button-group">
+            <strong>Log Transform:</strong><br>
+            <button id="log-transform-on-btn" {"class='active'" if use_log_transform else ""} onclick="toggleLogTransform(true)">On</button>
+            <button id="log-transform-off-btn" {"class='active'" if not use_log_transform else ""} onclick="toggleLogTransform(false)">Off</button>
+        </div>
+    """
+    
+    # Get feature weights
+    html += """
+        <h2>Feature Weights</h2>
+        <div id="feature-weights-container">
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>Weight</th>
+                <th>Average Contribution (KRW)</th>
+            </tr>
+    """
+    
+    # Get the feature weights from dataframe attributes
+    weights = df.attrs.get('feature_weights', {})
+    
+    # Get contribution columns
+    contribution_cols = [col for col in df.columns if col.startswith("contribution_")]
+    
+    # Sort contribution columns by average contribution (descending)
+    sorted_contribution_cols = sorted(
+        contribution_cols,
+        key=lambda x: df[x].mean() if not pd.isna(df[x].mean()) else -float('inf'),
+        reverse=True
+    )
+    
+    for col in sorted_contribution_cols:
+        feature_name = col.replace("contribution_", "")
+        avg_contrib = df[col].mean()
+        
+        # Get the corresponding weight for this feature
+        feature_weight = weights.get(feature_name, np.nan)
+        
+        if pd.isna(avg_contrib):
+            if pd.isna(feature_weight):
+                html += f"""
+        <tr>
+            <td>{feature_name}</td>
+            <td>N/A</td>
+            <td>N/A</td>
+        </tr>
+        """
+            else:
+                html += f"""
+        <tr>
+            <td>{feature_name}</td>
+            <td>{feature_weight:.4f}</td>
+            <td>N/A</td>
+        </tr>
+        """
+        else:
+            if pd.isna(feature_weight):
+                html += f"""
+        <tr>
+            <td>{feature_name}</td>
+            <td>N/A</td>
+            <td>{int(avg_contrib):,} KRW</td>
+        </tr>
+        """
+            else:
+                html += f"""
+        <tr>
+            <td>{feature_name}</td>
+            <td>{feature_weight:.4f}</td>
+            <td>{int(avg_contrib):,} KRW</td>
+        </tr>
+        """
+    
+    html += """
+        </table>
+        </div>
+    """
+    
+    # Add main data table
+    html += """
+        <h2>Plan Rankings</h2>
+        <div class="container" id="main-table-container">
+        <table id="main-table">
+            <tr>
+                <th>Rank</th>
+                <th>Plan Name</th>
+                <th>Operator</th>
+                <th>Original Fee</th>
+                <th>Discounted Fee</th>
+                <th>Worth Estimate</th>
+                <th>Value Ratio</th>
+    """
+    
+    # Add headers for all features used in the calculation
+    for feature in used_features:
+        # Clean up feature name for display
+        display_name = feature.replace('_clean', '').replace('_', ' ').title()
+        html += f"<th>{display_name}</th>"
+    
+    html += """
+            </tr>
+    """
+    
+    # Add rows for each plan
+    for i, (_, row) in enumerate(df.sort_values('rank').iterrows()):
+        plan_name = str(row.get('plan_name', f"Plan {row.get('id', i)}"))
+        if len(plan_name) > 30:
+            plan_name = plan_name[:27] + "..."
+            
+        original_fee = f"{int(row.get('original_fee', 0)):,}"
+        discounted_fee = f"{int(row.get('fee', 0)):,}"
+        predicted_price = f"{int(row.get('predicted_price', 0)):,}"
+        
+        # Value ratio
+        value_ratio = row.get('value_ratio_original', row.get('value_ratio', 0))
+        if pd.isna(value_ratio):
+            value_ratio_str = "N/A"
+            value_class = ""
+        else:
+            value_ratio_str = f"{value_ratio:.2f}"
+            value_class = "good-value" if value_ratio > 1.1 else ("bad-value" if value_ratio < 0.9 else "")
+            
+        operator = row.get('mvno', "Unknown")
+        
+        # Don't try to convert rank_display to int since it may contain Korean characters
+        rank_display = row.get('rank_display', f"{i+1}")
+        
+        html += f"""
+        <tr>
+            <td>{rank_display}</td>
+            <td>{plan_name}</td>
+            <td>{operator}</td>
+            <td>{original_fee}</td>
+            <td>{discounted_fee}</td>
+            <td>{predicted_price}</td>
+            <td class="{value_class}">{value_ratio_str}</td>
+        """
+        
+        # Add values for all features
+        for feature in used_features:
+            if feature in row:
+                # Format the feature value based on its type
+                if isinstance(row[feature], bool):
+                    value = "Yes" if row[feature] else "No"
+                elif isinstance(row[feature], (int, float)):
+                    if feature in ['is_5g', 'basic_data_unlimited', 'daily_data_unlimited', 'voice_unlimited', 'message_unlimited']:
+                        value = "Yes" if row[feature] == 1 else "No"
+                    elif feature == 'unlimited_type_numeric':
+                        # Map unlimited type numeric to descriptive text
+                        unlimited_types = {
+                            0: "Limited",
+                            1: "Throttled",
+                            2: "Throttled+",
+                            3: "Unlimited"
+                        }
+                        value = unlimited_types.get(row[feature], str(row[feature]))
+                    else:
+                        # Format with commas if it's a whole number
+                        if row[feature] == int(row[feature]):
+                            value = f"{int(row[feature]):,}"
+                        else:
+                            value = f"{row[feature]:.2f}"
+                else:
+                    value = str(row[feature])
+                html += f"<td>{value}</td>"
+            else:
+                html += "<td>N/A</td>"
+        
+        html += "</tr>"
+    
+    html += """
+        </table>
+        </div>
+    """
+    
+    # Add JavaScript for interactive controls
+    html += """
+    <script>
+    /* Current state */
+    let currentState = {
+        rankMethod: "relative",
+        feeType: "original",
+        logTransform: true
+    };
+    
+    /* Store all table containers */
+    let tableContainers = {};
+    
+    /* Initialize on page load */
+    document.addEventListener('DOMContentLoaded', function() {
+        /* Find the main table in the document */
+        const mainTable = document.getElementById('main-table');
+        if (!mainTable) return;
+        
+        /* Create container divs for different views if they don't exist */
+        createTableContainers();
+        
+        /* Set up initial view */
+        setTimeout(function() {
+            updateVisibleContainer();
+        }, 200);
+    });
+    
+    /* Create containers for different ranking views */
+    function createTableContainers() {
+        /* Clone the table for each ranking method and fee type */
+        const rankMethods = ['relative', 'absolute', 'net'];
+        const feeTypes = ['original', 'discounted'];
+        
+        /* Get the parent of the main table */
+        const mainTableContainer = document.getElementById('main-table-container');
+        
+        /* Create container for all tables */
+        const container = document.createElement('div');
+        container.className = 'rankings-container';
+        mainTableContainer.parentNode.insertBefore(container, mainTableContainer);
+        
+        /* Hide the original table */
+        mainTableContainer.style.display = 'none';
+        
+        /* For each combination, create a container with a cloned table */
+        rankMethods.forEach(method => {
+            feeTypes.forEach(feeType => {
+                const containerId = `${method}-${feeType}`;
+                const newContainer = document.createElement('div');
+                newContainer.id = containerId;
+                newContainer.className = 'container hidden';
+                newContainer.innerHTML = mainTableContainer.innerHTML;
+                container.appendChild(newContainer);
+                
+                tableContainers[containerId] = newContainer;
+            });
+        });
+        
+        /* Set the default view to visible */
+        const defaultContainer = document.getElementById('relative-original');
+        if (defaultContainer) {
+            defaultContainer.classList.remove('hidden');
+        }
+    }
+    
+    /* Change ranking method */
+    function changeRankMethod(method) {
+        /* Update buttons */
+        document.getElementById('relative-btn').classList.remove('active');
+        document.getElementById('absolute-btn').classList.remove('active');
+        document.getElementById('net-btn').classList.remove('active');
+        
+        /* Update button styles */
+        document.getElementById(method + '-btn').classList.add('active');
+        
+        /* Update state */
+        currentState.rankMethod = method;
+        
+        /* Update visible container */
+        updateVisibleContainer();
+    }
+    
+    /* Change fee type */
+    function changeFeeType(type) {
+        /* Update buttons */
+        document.getElementById('original-fee-btn').classList.remove('active');
+        document.getElementById('discounted-fee-btn').classList.remove('active');
+        
+        /* Update button styles */
+        document.getElementById(type + '-fee-btn').classList.add('active');
+        
+        /* Update state */
+        currentState.feeType = type;
+        
+        /* Update visible container */
+        updateVisibleContainer();
+    }
+    
+    /* Toggle log transform */
+    function toggleLogTransform(enabled) {
+        document.getElementById('log-transform-on-btn').classList.remove('active');
+        document.getElementById('log-transform-off-btn').classList.remove('active');
+        
+        if (enabled) {
+            document.getElementById('log-transform-on-btn').classList.add('active');
+        } else {
+            document.getElementById('log-transform-off-btn').classList.add('active');
+        }
+        
+        currentState.logTransform = enabled;
+        
+        // Note: In a real implementation, this would trigger a recalculation
+        alert("Changing log transform would require recalculating all rankings. This feature is shown for UI demonstration only.");
+    }
+    
+    /* Update visible container based on current state */
+    function updateVisibleContainer() {
+        /* Hide all containers */
+        const containers = document.querySelectorAll('.rankings-container .container');
+        containers.forEach(container => {
+            container.classList.add('hidden');
+        });
+        
+        /* Show the selected container */
+        const containerId = `${currentState.rankMethod}-${currentState.feeType}`;
+        const containerElement = document.getElementById(containerId);
+        if (containerElement) {
+            containerElement.classList.remove('hidden');
+        } else {
+            /* Fallback to relative-original if the selected container doesn't exist */
+            document.getElementById('relative-original').classList.remove('hidden');
+            /* Update state and buttons to match */
+            currentState.rankMethod = 'relative';
+            currentState.feeType = 'original';
+            document.getElementById('relative-btn').classList.add('active');
+            document.getElementById('original-fee-btn').classList.add('active');
+        }
+    }
+    </script>
+    </body>
+    </html>
+    """
+    
+    return html
+
+# Function to save a report
+def save_report(html_content, timestamp):
+    """Save an HTML report to the reports directory."""
+    timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
+    
+    # Ensure report directory exists
+    for report_dir in [Path("./reports"), REPORT_DIR_BASE]:
+        os.makedirs(report_dir, exist_ok=True)
+        report_path = report_dir / f"plan_rankings_spearman_{timestamp_str}.html"
+        
+        try:
+            with open(report_path, "w", encoding="utf-8") as f:
+                f.write(html_content)
+            logger.info(f"Report saved to {report_path}")
+            return str(report_path)
+        except Exception as e:
+            logger.error(f"Failed to save report to {report_path}: {e}")
+    
+    # If we get here, all save attempts failed
+    logger.error("Failed to save report to any location")
+    return None
 
 # Define FastAPI endpoints
 @app.get("/", response_class=HTMLResponse)

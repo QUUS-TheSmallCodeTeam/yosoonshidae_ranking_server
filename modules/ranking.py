@@ -4,123 +4,13 @@ import os
 from pathlib import Path
 import time
 from datetime import datetime
+import logging
 
-def calculate_rankings(df, model):
-    """
-    Calculate rankings for mobile plans based on model predictions and feature weights,
-    using the value ratio approach from update_rankings.py.
-    
-    Args:
-        df: DataFrame containing plan data with features
-        model: Trained model for price predictions
-        
-    Returns:
-        DataFrame with added ranking scores and rankings
-    """
-    # Make a copy to avoid modifying the original
-    ranking_df = df.copy()
-    
-    # Extract relevant features for prediction
-    if hasattr(model, 'feature_names') and model.feature_names:
-        required_features = model.feature_names
-        # Check if all required features are in the dataframe
-        missing_features = [f for f in required_features if f not in ranking_df.columns]
-        if missing_features:
-            # Allow missing 'additional_call' for now as it might be missing in some datasets
-            if missing_features == ['additional_call']:
-                print("Warning: Feature 'additional_call' missing from input data. Proceeding without it.")
-                required_features = [f for f in required_features if f != 'additional_call']
-            else:
-                print(f"Input data is missing features required by the model: {missing_features}")
-                # Use whatever features are available
-                available_features = [f for f in required_features if f in ranking_df.columns]
-                required_features = available_features
-                
-        # Select only the features the model was trained on
-        X = ranking_df[required_features].copy()
-    else:
-        # Fallback: If feature names aren't loaded with the model, 
-        # use all available columns
-        X = ranking_df.copy()
+# Configure logging
+logger = logging.getLogger(__name__)
 
-    # Get predictions from the model
-    predicted_prices = model.predict(X)
-    ranking_df['predicted_price'] = predicted_prices
-    
-    # --- Updated Value Calculation (using value ratio approach from update_rankings.py) ---
-    
-    # Store both original and discounted fees for reference
-    ranking_df['original_price'] = ranking_df['original_fee'] if 'original_fee' in ranking_df.columns else ranking_df['fee']
-    ranking_df['discounted_price'] = ranking_df['fee'] if 'fee' in ranking_df.columns else ranking_df['original_price']
-    
-    # Calculate discount amount per month
-    ranking_df['monthly_discount'] = ranking_df['original_price'] - ranking_df['discounted_price']
-    
-    # Now use the discounted price for value comparison
-    comparison_price_col = 'discounted_price'
-    
-    # 1. Calculate price difference (backward compatibility)
-    ranking_df['price_difference'] = ranking_df['predicted_price'] - ranking_df[comparison_price_col]
-    
-    # 2. Calculate value ratio (predicted_price / discounted_price)
-    # Value ratio > 1 means good value, < 1 means poor value
-    ranking_df['value_ratio'] = ranking_df.apply(
-        lambda row: row['predicted_price'] / row[comparison_price_col] 
-                  if row[comparison_price_col] > 0 
-                  else (float('inf') if row['predicted_price'] > 0 else 1.0), 
-        axis=1
-    )
-    
-    # For backward compatibility
-    ranking_df['price_difference_percentage'] = np.where(
-        ranking_df[comparison_price_col] > 0,  # Condition: comparison price > 0?
-        np.clip((ranking_df['price_difference'] / ranking_df[comparison_price_col]), -1.0, 5.0), # Value if True, capped at reasonable range
-        # Value if False (comparison price is 0): use nested np.where
-        np.where(ranking_df['price_difference'] > 0, 5.0, # If diff > 0, use max percentage
-                np.where(ranking_df['price_difference'] < 0, -1.0, 0.0)) # If diff < 0, use min percentage, else 0
-    )
-    
-    # Also calculate the old value score for compatibility with other code
-    ranking_df['value_score'] = np.clip(ranking_df['value_ratio'] - 1, -1, 1)
-    
-    # --- End Updated Value Calculation ---
-
-    # Sort by value_ratio (higher is better)
-    ranking_df = ranking_df.sort_values(by='value_ratio', ascending=False)
-    
-    # Apply tied ranking calculation with 공동 notation
-    # Initialize variables for tracking
-    current_rank = 1
-    previous_value = None
-    tied_count = 0
-    ranks = []
-    rank_displays = []
-    
-    # Calculate ranks
-    for idx, row in ranking_df.iterrows():
-        current_value = row['value_ratio']
-        
-        # Check if this is a tie with the previous value
-        if previous_value is not None and abs(current_value - previous_value) < 1e-10:  # Use small epsilon for float comparison
-            tied_count += 1
-            # Keep the same rank number but mark as tied (공동)
-            ranks.append(current_rank - tied_count)
-            rank_displays.append(f"공동 {current_rank - tied_count}위")
-        else:
-            # New rank, accounting for any previous ties
-            current_rank += tied_count
-            ranks.append(current_rank)
-            rank_displays.append(f"{current_rank}위")
-            tied_count = 0
-            current_rank += 1
-            
-        previous_value = current_value
-    
-    # Add ranks back to the dataframe
-    ranking_df['rank'] = ranks
-    ranking_df['rank_display'] = rank_displays
-    
-    return ranking_df
+# Note: The XGBoost-specific calculate_rankings function has been removed 
+# as part of the refactoring process since only the Spearman method is now used.
 
 def format_number_with_commas(value):
     """Format a numeric value with commas."""
@@ -618,3 +508,73 @@ def save_report(html_content, model_name, dataset_type, feature_set, timestamp):
         print(f"Report saved to fallback location: {file_path}")
     
     return str(file_path) 
+
+
+def calculate_rankings_with_ties(df, value_column='value_ratio', ascending=False):
+    """
+    Calculate rankings with proper handling of ties.
+    For tied ranks, uses '공동 X위' (joint X rank) notation
+    and ensures the next rank after ties is correctly incremented.
+    All tied plans should receive the '공동' label.
+    
+    Args:
+        df: DataFrame containing the data
+        value_column: Column to rank by
+        ascending: Whether to rank in ascending order
+        
+    Returns:
+        DataFrame with new columns: 'rank' (numeric) and 'rank_display' (with 공동 notation)
+    """
+    print(f"Calculating rankings based on {value_column} (ascending={ascending})")
+    
+    # Make a copy to avoid modifying the original
+    df_result = df.copy()
+    
+    # Sort by the value column
+    df_sorted = df_result.sort_values(by=value_column, ascending=ascending).copy()
+    
+    # Group by value to identify ties
+    # Use round to handle floating point precision issues
+    value_groups = df_sorted.groupby(df_sorted[value_column].round(10)).indices
+    
+    # Initialize lists for ranks and display ranks
+    numeric_ranks = [0] * len(df_sorted)
+    display_ranks = [""] * len(df_sorted)
+    
+    # Current rank counter
+    current_rank = 1
+    
+    # Process each group of values
+    for value, indices in sorted(value_groups.items(), 
+                               key=lambda x: x[0], 
+                               reverse=(not ascending)):
+        # If multiple plans with the same value (tied)
+        is_tied = len(indices) > 1
+        
+        # Assign the same rank to all tied items
+        for idx in indices:
+            numeric_ranks[idx] = current_rank
+            
+            # If tied, all plans in the group get the 공동 prefix
+            if is_tied:
+                display_ranks[idx] = f"공동 {current_rank}위"
+            else:
+                display_ranks[idx] = f"{current_rank}위"
+        
+        # Move to the next rank, skipping the positions used by the current group
+        current_rank += len(indices)
+    
+    # Add ranks back to the dataframe
+    df_sorted['rank'] = numeric_ranks
+    df_sorted['rank_display'] = display_ranks
+    
+    # Merge back to the original order
+    df_result = df_result.merge(
+        df_sorted[['rank', 'rank_display']], 
+        left_index=True, 
+        right_index=True, 
+        how='left',
+        suffixes=('_old', '')
+    )
+    
+    return df_result
