@@ -170,15 +170,25 @@ def generate_html_report(df, timestamp):
     html += """
         <h2>Plan Rankings</h2>
         <div class="container" id="main-table-container">
-        <table id="main-table">
+    """
+    
+    # Table header with appropriate value column name
+    value_column_name = "DEA Score" if is_dea else "Value Ratio"
+    
+    html += f"""
+        <table>
             <tr>
                 <th>Rank</th>
                 <th>Plan Name</th>
                 <th>Operator</th>
-                <th>Original Fee</th>
-                <th>Discounted Fee</th>
-                <th>Worth Estimate</th>
-                <th>Value Ratio</th>
+                <th>Original Price</th>
+                <th>Discounted Price</th>
+                <th>{value_column_name}</th>
+                <th>Data</th>
+                <th>Voice</th>
+                <th>Message</th>
+                <th>Network</th>
+            </tr>
     """
     
     # Add headers for all features used in the calculation
@@ -191,8 +201,23 @@ def generate_html_report(df, timestamp):
             </tr>
     """
     
+    # Determine which rank column to use
+    rank_column = None
+    for possible_column in ['rank', 'dea_rank', 'rank_with_ties']:
+        if possible_column in df.columns:
+            rank_column = possible_column
+            break
+            
+    if rank_column is None:
+        # If no rank column is found, create a simple rank based on index
+        logger.warning("No rank column found in data, creating a simple rank")
+        df['temp_rank'] = range(1, len(df) + 1)
+        rank_column = 'temp_rank'
+    
+    logger.info(f"Using rank column: {rank_column}")
+    
     # Add rows for each plan
-    for i, (_, row) in enumerate(df.sort_values('rank').iterrows()):
+    for i, (_, row) in enumerate(df.sort_values(rank_column).iterrows()):
         plan_name = str(row.get('plan_name', f"Plan {row.get('id', i)}"))
         if len(plan_name) > 30:
             plan_name = plan_name[:27] + "..."
@@ -201,20 +226,81 @@ def generate_html_report(df, timestamp):
         discounted_fee = f"{int(row.get('fee', 0)):,}"
         predicted_price = f"{int(row.get('predicted_price', 0)):,}"
         
-        # Value ratio
-        value_ratio = row.get('value_ratio_original', row.get('value_ratio', 0))
+        # Value ratio or efficiency score for DEA
+        if is_dea:
+            # For DEA, use efficiency or score metrics
+            if 'dea_score' in row:
+                value_ratio = row.get('dea_score', 0)
+                value_name = "DEA Score"
+            elif 'dea_efficiency' in row:
+                value_ratio = 1.0 / row.get('dea_efficiency', 1.0)  # Convert efficiency to score
+                value_name = "DEA Score"
+            else:
+                value_ratio = 0
+                value_name = "Value"
+        else:
+            # For Spearman, use value ratio
+            value_ratio = row.get('value_ratio_original', row.get('value_ratio', 0))
+            value_name = "Value Ratio"
+            
         if pd.isna(value_ratio):
             value_ratio_str = "N/A"
             value_class = ""
         else:
             value_ratio_str = f"{value_ratio:.2f}"
-            value_class = "good-value" if value_ratio > 1.1 else ("bad-value" if value_ratio < 0.9 else "")
+            # For DEA, higher score is better
+            # For Spearman, ratio > 1 is good, < 1 is bad
+            if is_dea:
+                value_class = "good-value" if value_ratio > 0.9 else ("bad-value" if value_ratio < 0.5 else "")
+            else:
+                value_class = "good-value" if value_ratio > 1.1 else ("bad-value" if value_ratio < 0.9 else "")
             
         operator = row.get('mvno', "Unknown")
         
-        # Don't try to convert rank_display to int since it may contain Korean characters
-        rank_display = row.get('rank_display', f"{i+1}")
+        # Get the rank value using the determined rank column
+        if rank_column in row:
+            rank_display = row[rank_column]
+        else:
+            rank_display = i+1
+            
+        # Format rank display - if it's a number, add "위" (Korean for "rank")
+        if isinstance(rank_display, (int, float)):
+            rank_display = f"{int(rank_display)}위"
         
+        # For DEA reports, we don't need predicted price column
+        # Get data, voice, and message values
+        basic_data = row.get('basic_data_clean', row.get('basic_data', 0))
+        if pd.isna(basic_data):
+            basic_data = 0
+        if row.get('basic_data_unlimited', 0) == 1:
+            data_str = "무제한"
+        else:
+            data_str = f"{basic_data}GB"
+            
+        voice = row.get('voice_clean', row.get('voice', 0))
+        if pd.isna(voice):
+            voice = 0
+        if row.get('voice_unlimited', 0) == 1:
+            voice_str = "무제한"
+        else:
+            voice_str = f"{int(voice)}분"
+            
+        message = row.get('message_clean', row.get('message', 0))
+        if pd.isna(message):
+            message = 0
+        if row.get('message_unlimited', 0) == 1:
+            message_str = "무제한"
+        else:
+            message_str = f"{int(message)}건"
+            
+        network = row.get('network', "")
+        if network == "5G":
+            network = "5G"
+        elif network == "LTE":
+            network = "LTE"
+        else:
+            network = ""
+            
         html += f"""
         <tr>
             <td>{rank_display}</td>
@@ -222,8 +308,11 @@ def generate_html_report(df, timestamp):
             <td>{operator}</td>
             <td>{original_fee}</td>
             <td>{discounted_fee}</td>
-            <td>{predicted_price}</td>
             <td class="{value_class}">{value_ratio_str}</td>
+            <td>{data_str}</td>
+            <td>{voice_str}</td>
+            <td>{message_str}</td>
+            <td>{network}</td>
         """
         
         # Add values for all features
