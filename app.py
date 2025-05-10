@@ -708,7 +708,12 @@ async def process_data(request: Request):
 
         # Step 3: Save raw data
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        raw_data_path = save_raw_data(data, timestamp)
+        raw_data_path = config.spearman_raw_dir / f"raw_data_{timestamp}.json"
+        if not raw_data_path.parent.exists():
+            raw_data_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(raw_data_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
         
         # Step 4: Preprocess data
         df = pd.DataFrame(data)
@@ -723,8 +728,11 @@ async def process_data(request: Request):
         gc.collect()
         
         # Step 5: Save processed data
-        processed_data_paths = save_processed_data(processed_df)
-        latest_processed_path = processed_data_paths[1] if len(processed_data_paths) > 1 else processed_data_paths[0]
+        processed_data_path = config.spearman_processed_dir / f"processed_data_{timestamp}.csv"
+        if not processed_data_path.parent.exists():
+            processed_data_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        processed_df.to_csv(processed_data_path, index=False, encoding='utf-8')
         
         # Step 6: Apply Spearman ranking method with options
         # Note: calculate_rankings_with_spearman now calculates ALL ranking types internally
@@ -742,8 +750,13 @@ async def process_data(request: Request):
         
         # Step 7: Generate HTML report
         timestamp_now = datetime.now()
-        html_report = generate_html_report(df_ranked, timestamp_now)
-        report_path = save_report(html_report, timestamp_now)
+        report_filename = f"spearman_ranking_{timestamp_now.strftime('%Y%m%d_%H%M%S')}.html"
+        report_path = config.spearman_report_dir / report_filename
+        if not report_path.parent.exists():
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write(html_report)
         
         # Step 8: Prepare response with complete ranking data
         # Include all ranking types in the response
@@ -887,27 +900,21 @@ async def upload_csv(file: UploadFile = File(...)):
                 headers={"X-Error-Type": "FileSizeError"}
             )
             
-        # Create temporary file path
-        temp_file = config.data_dir / "raw" / f"{uuid.uuid4()}.csv"
-        
         # Save uploaded file
         try:
-            with temp_file.open("wb") as buffer:
+            csv_path = config.dea_input_dir / file.filename
+            if not csv_path.parent.exists():
+                csv_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            with csv_path.open("wb") as f:
                 content = await file.read()
-                buffer.write(content)
+                f.write(content)
         except Exception as e:
             raise HTTPException(
                 status_code=500,
                 detail=f"Error saving file: {str(e)}",
                 headers={"X-Error-Type": "FileSaveError"}
             )
-        csv_path = DATA_DIR / "dea_input" / file.filename
-        if not csv_path.parent.exists():
-            csv_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(csv_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
         
         # Validate CSV content
         try:
@@ -937,13 +944,17 @@ async def upload_csv(file: UploadFile = File(...)):
         
         # Generate report
         try:
-            report_path = REPORT_DIR_BASE / f"dea_ranking_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            timestamp = datetime.now()
+            report_filename = f"dea_ranking_{timestamp.strftime('%Y%m%d_%H%M%S')}.html"
+            report_path = config.dea_report_dir / report_filename
+            if not report_path.parent.exists():
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+            
             generate_html_report(result_df, report_path)
             if not report_path.exists():
                 raise ValueError("Failed to generate HTML report")
                 
-            return FileResponse(report_path)
-            
+            return FileResponse(report_path, filename=report_filename)
         except Exception as e:
             logger.error(f"Error generating report: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error generating report: {str(e)}")

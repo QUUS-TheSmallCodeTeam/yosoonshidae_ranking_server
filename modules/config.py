@@ -36,9 +36,19 @@ from typing import Optional
 @dataclass
 class Config:
     """Application configuration."""
+    # Base paths
     app_dir: Path = APP_DIR
     data_dir: Path = DATA_DIR
     report_dir: Path = REPORT_DIR_BASE
+    
+    # DEA-specific paths
+    dea_input_dir: Path = DATA_DIR / "dea_input"
+    dea_report_dir: Path = REPORT_DIR_BASE / "dea_reports"
+    
+    # Spearman-specific paths
+    spearman_raw_dir: Path = DATA_DIR / "raw"
+    spearman_processed_dir: Path = DATA_DIR / "processed"
+    spearman_report_dir: Path = REPORT_DIR_BASE / "spearman_reports"
     
     # Global state
     df_with_rankings: Optional[pd.DataFrame] = None
