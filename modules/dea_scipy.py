@@ -192,6 +192,7 @@ def run_scipy_dea(
                     'roaming_support',
                     'micro_payment',
                     'is_esim'
+                    # Note: unlimited_type_numeric removed as it's redundant with the individual flag features
                 ],
                 
                 'full': [col for col in df.columns if col != target_variable and col != 'plan_id' and col != 'provider']
@@ -247,19 +248,10 @@ def run_scipy_dea(
                 df_sample.loc[df_sample[flag_col] == 1, num_col] = cap
                 logger.info(f"  - {flag_col} → created {num_col} with values 0/1")
         
-        # Special handling for unlimited_type_numeric - treat as categorical
-        if 'unlimited_type_numeric' in output_cols and 'unlimited_type_numeric' in df_sample.columns:
-            logger.info("Handling unlimited_type_numeric as categorical feature")
-            # Remove the original column from output_cols
+        # Remove unlimited_type_numeric if present as it's redundant with individual flag features
+        if 'unlimited_type_numeric' in output_cols:
+            logger.info("Removing unlimited_type_numeric as it's redundant with individual flag features")
             output_cols.remove('unlimited_type_numeric')
-            
-            # Create binary indicator columns for each category
-            unlimited_types = {0: 'limited', 1: 'throttled', 2: 'throttled_plus', 3: 'unlimited'}
-            for value, name in unlimited_types.items():
-                col_name = f'unlimited_type_{name}'
-                df_sample[col_name] = (df_sample['unlimited_type_numeric'] == value).astype(float)
-                output_cols.append(col_name)
-                logger.info(f"  - Created categorical feature: {col_name}")
         
         # Identify and properly handle categorical features
         categorical_features = [
