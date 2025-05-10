@@ -260,20 +260,47 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
             </tr>
     """
     
-    # Determine which rank column to use for DEA
+    # Determine which rank column to use
     rank_column = None
+    
+    # Check for available rank columns based on the method
     if is_dea:
-        for possible_column in ['dea_rank', 'rank']:
+        # For DEA, first check for dea-specific rank columns
+        for possible_column in ['dea_rank', 'dea_efficiency_rank', 'rank']:
             if possible_column in df.columns:
                 rank_column = possible_column
                 break
     else:
-        rank_column = 'rank'
+        # For Spearman, look for standard rank columns
+        for possible_column in ['rank', 'rank_with_ties']:
+            if possible_column in df.columns:
+                rank_column = possible_column
+                break
             
     if rank_column is None:
-        # If no rank column is found, create a simple rank based on index
-        logger.warning("No rank column found in data, creating a simple rank")
-        df['temp_rank'] = range(1, len(df) + 1)
+        # If no rank column is found, create a simple rank based on index or efficiency
+        logger.warning("No rank column found in data, creating a temporary rank")
+        
+        if is_dea and 'dea_efficiency' in df.columns:
+            # For DEA, sort by efficiency (descending) if available
+            logger.info("Creating temporary rank based on DEA efficiency")
+            df = df.sort_values('dea_efficiency', ascending=False)
+            df['temp_rank'] = range(1, len(df) + 1)
+        elif is_dea and 'dea_score' in df.columns:
+            # For DEA, sort by score (descending) if available
+            logger.info("Creating temporary rank based on DEA score")
+            df = df.sort_values('dea_score', ascending=False)
+            df['temp_rank'] = range(1, len(df) + 1)
+        elif not is_dea and 'value_ratio' in df.columns:
+            # For Spearman, sort by value ratio (descending) if available
+            logger.info("Creating temporary rank based on value ratio")
+            df = df.sort_values('value_ratio', ascending=False)
+            df['temp_rank'] = range(1, len(df) + 1)
+        else:
+            # Fallback to simple index-based rank
+            logger.info("Creating simple index-based rank")
+            df['temp_rank'] = range(1, len(df) + 1)
+            
         rank_column = 'temp_rank'
     
     logger.info(f"Using rank column: {rank_column}")

@@ -778,7 +778,8 @@ async def process_data(request: Request):
             report_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Generate HTML content
-        html_report = generate_html_report(df_ranked, timestamp_now)
+        # Pass is_dea=True to indicate this is a DEA report
+        html_report = generate_html_report(df_ranked, timestamp_now, is_dea=True, title="DEA Mobile Plan Rankings")
         
         # Write HTML content to file
         with open(report_path, 'w', encoding='utf-8') as f:
