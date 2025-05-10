@@ -123,7 +123,22 @@ def read_root():
     if config.df_with_rankings is not None:
         # Generate HTML report from the in-memory rankings
         try:
-            html_content = generate_html_report(config.df_with_rankings, datetime.now())
+            # Check if this is a DEA ranking based on column names
+            is_dea = any(col for col in config.df_with_rankings.columns if col.startswith('dea_'))
+            
+            # Generate report with appropriate parameters
+            if is_dea:
+                logger.info("Generating DEA report for main endpoint")
+                html_content = generate_html_report(
+                    config.df_with_rankings, 
+                    datetime.now(), 
+                    is_dea=True, 
+                    title="DEA Mobile Plan Rankings"
+                )
+            else:
+                logger.info("Generating Spearman report for main endpoint")
+                html_content = generate_html_report(config.df_with_rankings, datetime.now())
+                
             return HTMLResponse(content=html_content)
         except Exception as e:
             logger.error(f"Error generating report from in-memory rankings: {e}")
@@ -381,16 +396,48 @@ def read_root():
     
     # Get the latest report by modification time
     latest_report = max(html_files, key=lambda x: x.stat().st_mtime)
-    print(f"Serving latest report: {latest_report}")
+    logger.info(f"Serving latest report: {latest_report}")
     
-    # Set the latest_report_path variable 
+    # Check if this is a DEA report based on the filename
+    is_dea_report = 'dea' in latest_report.name.lower()
+    logger.info(f"Report identified as DEA report: {is_dea_report}")
+    
+    # If it's a file from the DEA reports directory, it's definitely a DEA report
+    if latest_report.parent == config.dea_report_dir:
+        is_dea_report = True
+        logger.info("Report confirmed as DEA report based on directory")
+    
+    # Read the HTML file content
+    with open(latest_report, 'r', encoding='utf-8') as f:
+        html_content = f.read()
+    
+    # If it's a DEA report but doesn't have the proper is_dea parameter in the HTML,
+    # regenerate the report with the proper parameters
+    if is_dea_report and '<h2>DEA Plan Rankings</h2>' in html_content:
+        try:
+            # Try to load the DataFrame from the file
+            # This is a simplified approach - in a real implementation, you might want to
+            # extract the DataFrame from the HTML or use a cached version
+            if config.df_with_rankings is not None:
+                logger.info("Regenerating DEA report with proper parameters")
+                html_content = generate_html_report(
+                    config.df_with_rankings,
+                    datetime.now(),
+                    is_dea=True,
+                    title="DEA Mobile Plan Rankings"
+                )
+        except Exception as e:
+            logger.error(f"Error regenerating DEA report: {e}")
+    
+    # Set the latest_report_path variable for reference
     latest_report_path = f"/reports/{latest_report.name}"
     
     # Read and return the HTML content
+    # Note: We've already read the content above for DEA detection, so we don't need to read it again
+    # unless we didn't regenerate it
     try:
-        with open(latest_report, "r", encoding="utf-8") as f:
-            html_content = f.read()
-            
+        # html_content is already set from above
+        
         # Insert additional UI controls before the closing </body> tag
         if '</body>' in html_content:
             interactive_controls = """
