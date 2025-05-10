@@ -118,13 +118,30 @@ def read_root():
     Serve the latest ranking HTML report if available.
     Similar to the original app, but without logical test functionality.
     """
+    # Check if we have rankings in memory first
+    if config.df_with_rankings is not None:
+        # Generate HTML report from the in-memory rankings
+        try:
+            html_content = generate_html_report(config.df_with_rankings, datetime.now())
+            return HTMLResponse(content=html_content)
+        except Exception as e:
+            logger.error(f"Error generating report from in-memory rankings: {e}")
+            # Fall back to looking for files
+    
     # Look for the latest HTML report in all potential directories
-    report_dirs = [Path("./reports"), Path("/tmp/reports"), Path("/tmp")]
+    report_dirs = [
+        config.spearman_report_dir,  # Spearman reports
+        config.dea_report_dir,       # DEA reports
+        Path("./reports"), 
+        Path("/tmp/reports"), 
+        Path("/tmp")
+    ]
     
     html_files = []
     for reports_dir in report_dirs:
         if reports_dir.exists():
-            html_files.extend(list(reports_dir.glob("plan_rankings_*.html")))
+            # Look for both DEA and Spearman reports
+            html_files.extend(list(reports_dir.glob("*ranking_*.html")))
     
     if not html_files:
         # No reports found, return welcome message similar to original
@@ -179,18 +196,15 @@ def read_root():
                 </div>
 
                 <div class="method-info">
-                    <h3>Data Envelopment Analysis (DEA)</h3>
-                    <p>Upload a CSV file with plan data to perform DEA ranking analysis. The file should have the same structure as the 'latest processed data' CSV.</p>
-                    <p>DEA will calculate efficiency scores for each plan based on:</p>
-                    <ul>
-                        <li>Input: Plan fee</li>
-                        <li>Outputs: Plan features (data, voice, message, etc.)</li>
-                    </ul>
-                    <p>Plans with higher efficiency scores will be ranked higher.</p>
-                    
-                    <form action="/upload-csv" method="post" enctype="multipart/form-data" class="upload-form">
-                        <input type="file" name="file" accept=".csv" required>
-                        <button type="submit" class="upload-btn">Upload CSV</button>
+                    <h2>DEA Ranking Method</h2>
+                    <p>Upload a CSV file with mobile plan data to generate rankings using Data Envelopment Analysis (DEA).</p>
+                    <p>DEA uses SciPy's linear programming solver to calculate efficiency scores, which are then converted to rankings.</p>
+                    <p>Required columns: 'fee' and basic feature columns (data, voice, message, etc.)</p>
+                    <form action="/upload-csv" method="post" enctype="multipart/form-data" style="margin-top: 15px;">
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            <input type="file" name="file" accept=".csv" style="padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+                            <button type="submit" style="padding: 10px 15px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; width: fit-content;">Generate DEA Rankings</button>
+                        </div>
                     </form>
                 </div>
 
@@ -968,10 +982,12 @@ async def upload_csv(file: UploadFile = File(...)):
                 
             if not report_path.exists():
                 raise ValueError("Failed to generate HTML report")
-                
-            # Return file response with proper media type
-            from fastapi.responses import FileResponse
-            return FileResponse(path=str(report_path), filename=report_filename, media_type="text/html")
+            
+            # Store the results in global state for access by the root endpoint
+            config.df_with_rankings = result_df
+            
+            # Return HTML content directly
+            return HTMLResponse(content=html_content, status_code=200)
         except Exception as e:
             logger.error(f"Error generating report: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Error generating report: {str(e)}")
