@@ -169,27 +169,41 @@ def generate_html_report(df, timestamp):
     # Add main data table
     html += """
         <h2>Plan Rankings</h2>
-        <div class="container" id="main-table-container">
-    """
-    
-    # Table header with appropriate value column name
-    value_column_name = "DEA Score" if is_dea else "Value Ratio"
-    
-    html += f"""
-        <table>
+        <div class="container">
+        <table id="rankings-table">
             <tr>
                 <th>Rank</th>
                 <th>Plan Name</th>
-                <th>Operator</th>
-                <th>Original Price</th>
-                <th>Discounted Price</th>
-                <th>{value_column_name}</th>
+                <th>Provider</th>
+                <th>Original Fee</th>
+                <th>Discounted Fee</th>"""
+                
+    # Add the value column name (DEA metrics or Value Ratio)
+    value_column_name = "Price-Value Ratio" if is_dea else "Value Ratio"
+    html += f"""
+                <th>{value_column_name}</th>"""
+                
+    # Add DEA-specific columns if using DEA method
+    if is_dea:
+        html += """
+                <th>DEA Efficiency</th>
+                <th>DEA Score</th>
+                <th>Price Factor</th>"""
+                
+    html += """
                 <th>Data</th>
                 <th>Voice</th>
-                <th>Message</th>
+                <th>SMS</th>
                 <th>Network</th>
-            </tr>
-    """
+                <th>Throttle Speed</th>
+                <th>Tethering</th>
+                <th>Data Type</th>
+                <th>Data Sharing</th>
+                <th>Roaming</th>
+                <th>Micro Payment</th>
+                <th>eSIM</th>"""
+    
+    html += """</tr>"""
     
     # Add headers for all features used in the calculation
     for feature in used_features:
@@ -228,20 +242,32 @@ def generate_html_report(df, timestamp):
         
         # Value ratio or efficiency score for DEA
         if is_dea:
-            # For DEA, use efficiency or score metrics
-            if 'dea_score' in row:
+            # For DEA, use price-value ratio as the primary metric
+            if 'price_value_ratio' in row:
+                value_ratio = row.get('price_value_ratio', 0)
+                value_name = "Price-Value Ratio"
+                
+                # Also get the raw DEA metrics for additional columns
+                dea_efficiency = row.get('dea_efficiency', 0)
+                dea_score = row.get('dea_score', 0)
+                price_factor = row.get('dea_price_factor', 1.0)
+            elif 'dea_score' in row:
                 value_ratio = row.get('dea_score', 0)
                 value_name = "DEA Score"
-            elif 'dea_efficiency' in row:
-                value_ratio = 1.0 / row.get('dea_efficiency', 1.0)  # Convert efficiency to score
-                value_name = "DEA Score"
+                dea_efficiency = row.get('dea_efficiency', 0)
+                price_factor = 1.0
             else:
                 value_ratio = 0
                 value_name = "Value"
+                dea_efficiency = 0
+                price_factor = 1.0
         else:
             # For Spearman, use value ratio
             value_ratio = row.get('value_ratio_original', row.get('value_ratio', 0))
             value_name = "Value Ratio"
+            dea_efficiency = 0
+            dea_score = 0
+            price_factor = 1.0
             
         if pd.isna(value_ratio):
             value_ratio_str = "N/A"
@@ -301,19 +327,101 @@ def generate_html_report(df, timestamp):
         else:
             network = ""
             
-        html += f"""
-        <tr>
-            <td>{rank_display}</td>
-            <td>{plan_name}</td>
-            <td>{operator}</td>
-            <td>{original_fee}</td>
-            <td>{discounted_fee}</td>
-            <td class="{value_class}">{value_ratio_str}</td>
-            <td>{data_str}</td>
-            <td>{voice_str}</td>
-            <td>{message_str}</td>
-            <td>{network}</td>
-        """
+        # Get additional feature details
+        throttle_speed = row.get('throttle_speed_normalized', 0)
+        if pd.isna(throttle_speed):
+            throttle_speed_str = "N/A"
+        elif throttle_speed == 0:
+            throttle_speed_str = "No throttling"
+        else:
+            # Convert normalized value (0-1) to actual Mbps (assuming max is 100 Mbps)
+            speed_mbps = throttle_speed * 100
+            throttle_speed_str = f"{speed_mbps:.1f} Mbps"
+            
+        tethering_gb = row.get('tethering_gb', 0)
+        if pd.isna(tethering_gb):
+            tethering_str = "N/A"
+        elif tethering_gb == 0:
+            tethering_str = "Not allowed"
+        else:
+            tethering_str = f"{tethering_gb:.1f} GB"
+            
+        # Determine data type based on unlimited flags
+        if row.get('basic_data_unlimited', 0) == 1:
+            if throttle_speed > 0:
+                data_type = "Throttled"
+            else:
+                data_type = "Unlimited"
+        else:
+            data_type = "Limited"
+            
+        # Get boolean features
+        data_sharing = "Yes" if row.get('data_sharing', False) else "No"
+        roaming = "Yes" if row.get('roaming_support', False) else "No"
+        micro_payment = "Yes" if row.get('micro_payment', False) else "No"
+        esim = "Yes" if row.get('is_esim', False) else "No"
+            
+        # Format DEA metrics
+        if is_dea:
+            if pd.isna(dea_efficiency):
+                dea_efficiency_str = "N/A"
+            else:
+                dea_efficiency_str = f"{dea_efficiency:.4f}"
+                
+            if pd.isna(dea_score):
+                dea_score_str = "N/A"
+            else:
+                dea_score_str = f"{dea_score:.4f}"
+                
+            if pd.isna(price_factor):
+                price_factor_str = "N/A"
+            else:
+                price_factor_str = f"{price_factor:.2f}"
+            
+            html += f"""
+            <tr>
+                <td>{rank_display}</td>
+                <td>{plan_name}</td>
+                <td>{operator}</td>
+                <td>{original_fee}</td>
+                <td>{discounted_fee}</td>
+                <td class="{value_class}">{value_ratio_str}</td>
+                <td>{dea_efficiency_str}</td>
+                <td>{dea_score_str}</td>
+                <td>{price_factor_str}</td>
+                <td>{data_str}</td>
+                <td>{voice_str}</td>
+                <td>{message_str}</td>
+                <td>{network}</td>
+                <td>{throttle_speed_str}</td>
+                <td>{tethering_str}</td>
+                <td>{data_type}</td>
+                <td>{data_sharing}</td>
+                <td>{roaming}</td>
+                <td>{micro_payment}</td>
+                <td>{esim}</td>
+            """
+        else:
+            html += f"""
+            <tr>
+                <td>{rank_display}</td>
+                <td>{plan_name}</td>
+                <td>{operator}</td>
+                <td>{original_fee}</td>
+                <td>{discounted_fee}</td>
+                <td class="{value_class}">{value_ratio_str}</td>
+                <td>{data_str}</td>
+                <td>{voice_str}</td>
+                <td>{message_str}</td>
+                <td>{network}</td>
+                <td>{throttle_speed_str}</td>
+                <td>{tethering_str}</td>
+                <td>{data_type}</td>
+                <td>{data_sharing}</td>
+                <td>{roaming}</td>
+                <td>{micro_payment}</td>
+                <td>{esim}</td>
+            """
         
         # Add values for all features
         for feature in used_features:

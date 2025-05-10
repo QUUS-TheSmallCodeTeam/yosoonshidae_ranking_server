@@ -175,13 +175,28 @@ def run_scipy_dea(
         
         # Add default weight constraints if none provided
         # This prevents plans from assigning zero weights to features they're weak in
+        # and improves discrimination among plans
         if weight_constraints is None:
             weight_constraints = {}
             for feature in output_cols:
                 if feature in df.columns:
-                    # Set minimum weights to at least 10% of maximum possible weight
-                    # This forces plans to consider all features
-                    weight_constraints[feature] = {'min': 0.1, 'max': 1.0}
+                    # Set minimum weights to at least 20% of maximum possible weight
+                    # This forces plans to consider all features more equally
+                    # and reduces the number of tied rankings
+                    weight_constraints[feature] = {'min': 0.2, 'max': 1.0}
+                    
+        # Apply price-to-feature ratio normalization to prevent expensive plans from dominating
+        # This helps ensure that plans are ranked based on value, not just raw feature amounts
+        for feature in output_cols:
+            if feature in df_sample.columns:
+                # Calculate price-to-feature ratio for non-zero features
+                mask = (df_sample[feature] > 0)
+                if mask.any():
+                    # Create a normalized version that penalizes high prices
+                    price_ratio = df_sample.loc[mask, target_variable] / df_sample.loc[mask, feature]
+                    # Apply a scaling factor to maintain reasonable values
+                    scaling_factor = price_ratio.median()
+                    df_sample.loc[mask, feature] = df_sample.loc[mask, feature] * (scaling_factor / price_ratio)
         
         logger.info(f"Using feature columns: {output_cols}")
         
@@ -253,10 +268,25 @@ def run_scipy_dea(
         df_result['dea_score'] = 1.0 / df_result['dea_efficiency']
         
         # Calculate super-efficiency for efficient DMUs to break ties
-        efficient_dmus = df_result[df_result['dea_efficiency'] == 1.0].index.tolist()
-        logger.info(f"Found {len(efficient_dmus)} efficient DMUs. Calculating super-efficiency to break ties.")
+        # Use a slightly lower threshold to catch near-efficient DMUs as well
+        efficiency_threshold = 0.98  # Consider DMUs with efficiency >= 0.98 for super-efficiency
+        efficient_dmus = df_result[df_result['dea_efficiency'] >= efficiency_threshold].index.tolist()
+        logger.info(f"Found {len(efficient_dmus)} efficient or near-efficient DMUs. Calculating super-efficiency to break ties.")
         
+        # Add a price penalty factor to avoid expensive plans dominating the rankings
+        price_factors = {}
         if len(efficient_dmus) > 1:
+            # Calculate price percentiles for efficient DMUs
+            efficient_prices = df_result.loc[efficient_dmus, target_variable]
+            median_price = efficient_prices.median()
+            
+            # Calculate price penalty factors (higher price = lower super-efficiency)
+            for dmu_idx in efficient_dmus:
+                price = df_result.loc[dmu_idx, target_variable]
+                # Apply a logarithmic penalty to avoid excessive penalties for very expensive plans
+                price_factor = 1.0 - 0.2 * np.log1p(max(0, price - median_price) / median_price)
+                price_factors[dmu_idx] = max(0.5, price_factor)  # Limit the penalty
+            
             # For each efficient DMU, recalculate efficiency excluding it from the reference set
             super_efficiencies = {}
             
@@ -321,12 +351,34 @@ def run_scipy_dea(
             
             # Apply super-efficiencies to break ties
             for dmu_idx, super_eff in super_efficiencies.items():
+                # Apply price penalty factor to super-efficiency
+                price_factor = price_factors.get(dmu_idx, 1.0)
+                adjusted_super_eff = super_eff * price_factor
+                
+                # Store both original and adjusted values
                 df_result.loc[dmu_idx, 'dea_super_efficiency'] = super_eff
-                # Update the score with super-efficiency for efficient DMUs
-                df_result.loc[dmu_idx, 'dea_score'] = super_eff
+                df_result.loc[dmu_idx, 'dea_price_factor'] = price_factor
+                
+                # Update the score with adjusted super-efficiency
+                df_result.loc[dmu_idx, 'dea_score'] = adjusted_super_eff
+                
+                # Add a price-value metric that considers both efficiency and price
+                price = df_result.loc[dmu_idx, target_variable]
+                df_result.loc[dmu_idx, 'price_value_ratio'] = adjusted_super_eff * 100000 / price  # Normalize to a reasonable scale
         
-        # Calculate final rank
-        df_result['dea_rank'] = df_result['dea_score'].rank(ascending=False, method='min')
+        # Calculate price-value ratio for all DMUs, not just efficient ones
+        for idx in df_result.index:
+            if idx not in efficient_dmus:
+                price = df_result.loc[idx, target_variable]
+                efficiency = df_result.loc[idx, 'dea_efficiency']
+                # For non-efficient DMUs, use their efficiency score but with a stronger price penalty
+                df_result.loc[idx, 'price_value_ratio'] = efficiency * 100000 / price  # Normalize to a reasonable scale
+        
+        # Calculate final rank using price-value ratio (better value for money)
+        df_result['dea_rank'] = df_result['price_value_ratio'].rank(ascending=False, method='min')
+        
+        # Also keep the traditional DEA rank for comparison
+        df_result['dea_efficiency_rank'] = df_result['dea_score'].rank(ascending=False, method='min')
         
         if sample_size is not None:
             logger.warning("Results based on sampled data; may not represent full dataset.")
