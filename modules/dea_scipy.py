@@ -123,7 +123,7 @@ def compute_efficiency(dmu_idx, inputs_matrix, outputs_matrix, n_dmu, rts, weigh
 def run_scipy_dea(
     df: pd.DataFrame,
     feature_set: str,
-    target_variable: str,
+    target_variable: str = 'fee',
     rts: str = 'vrs',  # Changed default to VRS for better discrimination
     weight_constraints: dict = None,
     non_discretionary: list = None,
@@ -148,20 +148,98 @@ def run_scipy_dea(
     try:
         logger.info("Starting DEA calculation with SciPy")
         
+        # Validate and auto-detect target variable if needed
+        if target_variable not in df.columns:
+            # Try to find the fee column with exact matches first
+            fee_cols = ['fee', 'monthly_fee', 'price', 'monthly_price', 'plan_fee']
+            found_fee_col = next((col for col in fee_cols if col in df.columns), None)
+            
+            if found_fee_col:
+                logger.info(f"Found target variable: {found_fee_col} instead of {target_variable}")
+                target_variable = found_fee_col
+            else:
+                # Try partial matches for fee/price columns
+                for col in df.columns:
+                    if 'fee' in col.lower() or 'price' in col.lower() or 'cost' in col.lower():
+                        logger.info(f"Found target variable with partial match: {col}")
+                        target_variable = col
+                        break
+                else:
+                    # If still not found, raise an error
+                    raise ValueError(f"Target variable '{target_variable}' not found. Please ensure your CSV contains a column for plan fees/prices.")
+        
         # Handle sampling if specified
         if sample_size is not None and sample_size < len(df):
-            df_sample = df.sample(n=sample_size, random_state=42).reset_index(drop=True)
+            logger.info(f"Sampling {sample_size} records from dataset of size {len(df)}")
+            df_sample = df.sample(sample_size, random_state=42)
         else:
             df_sample = df.copy()
         
-        # Define feature sets based on input
+        # Log available columns for debugging
+        logger.info(f"Available columns in dataset: {df.columns.tolist()}")
+        
+        # Define feature sets based on the correct mobile plan features
         if isinstance(feature_set, str):
-            # Predefined feature sets - reduced dimensionality to improve discrimination
-            feature_sets = {
-                'basic': ['data', 'voice', 'message'],  # Core features only
-                'extended': ['data', 'voice', 'message', 'data_speed'],  # Reduced from original
-                'full': [col for col in df.columns if col != target_variable and col != 'plan_id' and col != 'provider']
-            }
+            # Define the exact mobile plan features
+            all_features = [
+                'is_5g',
+                'basic_data_clean',
+                'basic_data_unlimited',
+                'daily_data_clean',
+                'daily_data_unlimited',
+                'voice_clean',
+                'voice_unlimited',
+                'message_clean',
+                'message_unlimited',
+                'tethering_gb',
+                'additional_call',
+                'has_throttled_data',
+                'has_unlimited_speed',
+                'speed_when_exhausted'
+            ]
+            
+            # Check which features exist in the dataset
+            available_features = [col for col in all_features if col in df.columns]
+            logger.info(f"Available features in dataset: {available_features}")
+            
+            # Remove constant features (features with only one unique value)
+            non_constant_features = []
+            for col in available_features:
+                if df[col].nunique() > 1:  # More than one unique value
+                    non_constant_features.append(col)
+                else:
+                    logger.info(f"Removing constant feature: {col} with value {df[col].iloc[0]}")
+            
+            logger.info(f"Non-constant features: {non_constant_features}")
+            
+            # Define feature sets
+            feature_sets = {}
+            
+            # Basic feature set - core mobile plan features
+            basic_features = [
+                col for col in [
+                    'basic_data_clean', 'voice_clean', 'message_clean'
+                ] if col in non_constant_features
+            ]
+            
+            # If basic features are missing, use available non-constant features
+            if not basic_features:
+                logger.warning("Basic features not found, using available non-constant features")
+                basic_features = non_constant_features
+            
+            feature_sets['basic'] = basic_features
+            
+            # Extended feature set - add more features
+            extended_features = basic_features.copy()
+            for col in ['daily_data_clean', 'tethering_gb', 'speed_when_exhausted']:
+                if col in non_constant_features:
+                    extended_features.append(col)
+            feature_sets['extended'] = extended_features
+            
+            # Full feature set - all non-constant features
+            feature_sets['full'] = non_constant_features
+            
+            logger.info(f"Feature sets: {feature_sets}")
             
             if feature_set in feature_sets:
                 output_cols = feature_sets[feature_set]
@@ -169,11 +247,18 @@ def run_scipy_dea(
                 logger.warning(f"Unknown feature set '{feature_set}', using 'basic'")
                 output_cols = feature_sets['basic']
         elif isinstance(feature_set, list):
-            # Custom list of features
-            output_cols = feature_set
+            # Custom list of features - verify they exist
+            valid_cols = [col for col in feature_set if col in df.columns]
+            if len(valid_cols) != len(feature_set):
+                missing = set(feature_set) - set(valid_cols)
+                logger.warning(f"Some requested features not found in data: {missing}")
+            output_cols = valid_cols
         else:
-            logger.warning(f"Invalid feature_set type {type(feature_set)}, using 'basic'")
-            output_cols = ['data', 'voice', 'message']
+            logger.warning(f"Invalid feature_set type {type(feature_set)}, auto-detecting features")
+            # Auto-detect numeric columns as features
+            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+            output_cols = [col for col in numeric_cols if col != target_variable and col != 'plan_id' and 'rank' not in col.lower()]
+            logger.info(f"Auto-detected features: {output_cols}")
         
         # Add default weight constraints if none provided
         # This prevents plans from assigning zero weights to features they're weak in
@@ -194,15 +279,22 @@ def run_scipy_dea(
             
         # Check and clean feature columns
         for col in output_cols:
-            if col not in df_sample.columns:
-                raise ValueError(f"Column '{col}' not found in data")
             if df_sample[col].isnull().any() or np.any(np.isnan(df_sample[col])) or np.any(np.isinf(df_sample[col])):
                 logger.warning(f"NaN or infinite values detected in column {col}; replacing with 0.")
                 df_sample[col] = df_sample[col].fillna(0).replace([np.inf, -np.inf], 0)
         
+        # Validate that output_cols are in the dataframe
+        valid_output_cols = [col for col in output_cols if col in df_sample.columns]
+        if len(valid_output_cols) == 0:
+            raise ValueError(f"None of the output columns {output_cols} found in data with columns {df_sample.columns.tolist()}")
+        elif len(valid_output_cols) < len(output_cols):
+            missing = set(output_cols) - set(valid_output_cols)
+            logger.warning(f"Some output columns not found in data: {missing}. Using only: {valid_output_cols}")
+            output_cols = valid_output_cols
+            
         n_dmu = len(df_sample)
         inputs = df_sample[target_variable].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
-        outputs = df_sample[feature_columns].values  # Output data, 2D array (n_dmu x n_output)
+        outputs = df_sample[output_cols].values  # Output data, 2D array (n_dmu x n_output)
         
         # Precompute shared arrays outside the per-DMU loop
         inputs_matrix = inputs.copy()
