@@ -6,9 +6,7 @@ from .spearman import calculate_rankings_with_spearman
 from .utils import (
     ensure_directories, 
     save_raw_data, 
-    save_processed_data, 
-    format_model_config,
-    save_model_config
+    save_processed_data
 )
 
 __all__ = [
@@ -20,7 +18,5 @@ __all__ = [
     'ensure_directories',
     'save_raw_data',
     'save_processed_data',
-    'get_basic_feature_list',
-    'format_model_config',
-    'save_model_config'
+    'get_basic_feature_list'
 ] 
