@@ -152,66 +152,14 @@ def run_scipy_dea(
         else:
             df_sample = df.copy()
         
-        # Define feature sets based on the correct mobile plan features
+        # Define feature sets based on input
         if isinstance(feature_set, str):
-            # Define the exact mobile plan features
-            all_features = [
-                'is_5g',
-                'basic_data_clean',
-                'basic_data_unlimited',
-                'daily_data_clean',
-                'daily_data_unlimited',
-                'voice_clean',
-                'voice_unlimited',
-                'message_clean',
-                'message_unlimited',
-                'tethering_gb',
-                'additional_call',
-                'has_throttled_data',
-                'has_unlimited_speed',
-                'speed_when_exhausted'
-            ]
-            
-            # Check which features exist in the dataset
-            available_features = [col for col in all_features if col in df.columns]
-            logger.info(f"Available features in dataset: {available_features}")
-            
-            # Remove constant features (features with only one unique value)
-            non_constant_features = []
-            for col in available_features:
-                if df[col].nunique() > 1:  # More than one unique value
-                    non_constant_features.append(col)
-                else:
-                    logger.info(f"Removing constant feature: {col} with value {df[col].iloc[0]}")
-            
-            logger.info(f"Non-constant features: {non_constant_features}")
-            
-            # Define feature sets
-            feature_sets = {}
-            
-            # Basic feature set - core mobile plan features
-            basic_features = [
-                col for col in [
-                    'basic_data_clean', 'voice_clean', 'message_clean'
-                ] if col in non_constant_features
-            ]
-            
-            # If basic features are missing, use available non-constant features
-            if not basic_features:
-                logger.warning("Basic features not found, using available non-constant features")
-                basic_features = non_constant_features
-            
-            feature_sets['basic'] = basic_features
-            
-            # Extended feature set - add more features
-            extended_features = basic_features.copy()
-            for col in ['daily_data_clean', 'tethering_gb', 'speed_when_exhausted']:
-                if col in non_constant_features:
-                    extended_features.append(col)
-            feature_sets['extended'] = extended_features
-            
-            # Full feature set - all non-constant features
-            feature_sets['full'] = non_constant_features
+            # Predefined feature sets - reduced dimensionality to improve discrimination
+            feature_sets = {
+                'basic': ['data', 'voice', 'message'],  # Core features only
+                'extended': ['data', 'voice', 'message', 'data_speed'],  # Reduced from original
+                'full': [col for col in df.columns if col != target_variable and col != 'plan_id' and col != 'provider']
+            }
             
             if feature_set in feature_sets:
                 output_cols = feature_sets[feature_set]
@@ -242,6 +190,27 @@ def run_scipy_dea(
             logger.warning("NaN values detected in input variable; replacing with 0 for robustness.")
             df_sample[target_variable].fillna(0, inplace=True)
             
+        # Pre-process unlimited specs
+        spec_pairs = [
+            ("basic_data_clean", "basic_data_unlimited"),
+            ("daily_data_clean", "daily_data_unlimited"),
+            ("voice_clean", "voice_unlimited"),
+            ("message_clean", "message_unlimited")
+        ]
+        
+        logger.info("Pre-processing unlimited specs:")
+        for num_col, flag_col in spec_pairs:
+            if num_col in df_sample.columns and flag_col in df_sample.columns:
+                cap = df_sample[num_col].replace(0, np.nan).max()
+                if not pd.isna(cap) and cap > 0:
+                    df_sample.loc[df_sample[flag_col] == 1, num_col] = cap  # set to max value
+                    logger.info(f"  - {flag_col} → set {num_col} to max value: {cap:.2f}")
+            elif flag_col in df_sample.columns:  # fallback: create numeric col
+                df_sample[num_col] = 0
+                cap = 1
+                df_sample.loc[df_sample[flag_col] == 1, num_col] = cap
+                logger.info(f"  - {flag_col} → created {num_col} with values 0/1")
+        
         # Check and clean feature columns
         for col in output_cols:
             if col not in df_sample.columns:
@@ -250,48 +219,21 @@ def run_scipy_dea(
                 logger.warning(f"NaN or infinite values detected in column {col}; replacing with 0.")
                 df_sample[col] = df_sample[col].fillna(0).replace([np.inf, -np.inf], 0)
         
-        # Validate that output_cols are in the dataframe
-        valid_output_cols = [col for col in output_cols if col in df_sample.columns]
-        if len(valid_output_cols) == 0:
-            raise ValueError(f"None of the output columns {output_cols} found in data with columns {df_sample.columns.tolist()}")
-        elif len(valid_output_cols) < len(output_cols):
-            missing = set(output_cols) - set(valid_output_cols)
-            logger.warning(f"Some output columns not found in data: {missing}. Using only: {valid_output_cols}")
-            output_cols = valid_output_cols
-        
-        # Normalize features to [0,1] range
-        df_norm = df_sample.copy()
-        logger.info("Normalizing features to [0,1] range:")
-        for c in output_cols:
-            min_v = df_sample[c].min()
-            max_v = df_sample[c].max()
-            
-            if max_v == min_v:
-                logger.info(f"  Feature '{c}' has min=max={min_v}, setting normalized values to 0.5")
-                df_norm[c] = 0.5
-            else:
-                df_norm[c] = (df_sample[c] - min_v) / (max_v - min_v)
-                logger.info(f"  {c}: range [{min_v:.4f}, {max_v:.4f}] → normalized → [0, 1]")
-            
-        n_dmu = len(df_norm)
-        inputs = df_norm[target_variable].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
-        outputs = df_norm[output_cols].values  # Output data, 2D array (n_dmu x n_output)
+        n_dmu = len(df_sample)
+        inputs = df_sample[target_variable].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
+        outputs = df_sample[feature_columns].values  # Output data, 2D array (n_dmu x n_output)
         
         # Precompute shared arrays outside the per-DMU loop
         inputs_matrix = inputs.copy()
         outputs_matrix = outputs.copy()
         
-        # Log weight constraints being applied
-        if weight_constraints:
-            logger.info(f"Applying weight constraints: {weight_constraints}")
-        
         # Parallel execution using ProcessPoolExecutor
-        max_workers = min(16, (os.cpu_count() or 4))  # Cap at 16 to prevent overload
+        max_workers = min(64, (os.cpu_count() or 4))  # Cap at 64 to prevent overload, use system CPU count
         efficiencies = []
         lp_results = []
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
             # Submit tasks for all DMUs
-            future_to_index = {executor.submit(compute_efficiency, i, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary, output_cols): i for i in range(n_dmu)}
+            future_to_index = {executor.submit(compute_efficiency, i, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary): i for i in range(n_dmu)}
             for future in concurrent.futures.as_completed(future_to_index):
                 index = future_to_index[future]
                 try:

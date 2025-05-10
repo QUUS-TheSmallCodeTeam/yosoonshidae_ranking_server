@@ -27,7 +27,7 @@ from modules.spearman import calculate_rankings_with_spearman
 from fastapi import UploadFile, File
 
 # Initialize FastAPI
-app = FastAPI(title="Moyo Plan Ranking Model Server - Spearman Method")
+app = FastAPI(title="Moyo Plan Ranking Model Server - DEA Method")
 
 # Global variables for storing data
 df_with_rankings = None  # Global variable to store the latest rankings
@@ -683,7 +683,7 @@ def read_root():
 
 @app.post("/process")
 async def process_data(request: Request):
-    """Process plan data using the Spearman method."""
+    """Process plan data using the DEA method."""
     start_time = time.time()
     request_id = str(uuid.uuid4())
     logger.info(f"[{request_id}] Received /process request")
@@ -715,12 +715,12 @@ async def process_data(request: Request):
 
         logger.info(f"[{request_id}] Received {len(data)} plans")
         
-        # Extract ranking options with defaults
-        rank_method = options.get('rankMethod', 'relative')
-        use_log_transform = options.get('logTransform', True)
-        fee_type = options.get('feeType', 'original')
+        # Extract DEA options with defaults
+        feature_set = options.get('featureSet', 'basic')
+        target_variable = options.get('targetVariable', 'fee')
+        rts = options.get('rts', 'vrs')  # Default to VRS for better discrimination
         
-        logger.info(f"[{request_id}] Using ranking options: method={rank_method}, fee_type={fee_type}, log_transform={use_log_transform}")
+        logger.info(f"[{request_id}] Using DEA options: feature_set={feature_set}, target_variable={target_variable}, rts={rts}")
 
         # Step 3: Save raw data
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -750,12 +750,12 @@ async def process_data(request: Request):
         
         processed_df.to_csv(processed_data_path, index=False, encoding='utf-8')
         
-        # Step 6: Apply Spearman ranking method with options
-        # Note: calculate_rankings_with_spearman now calculates ALL ranking types internally
-        df_ranked = calculate_rankings_with_spearman(
-            processed_df, 
-            use_log_transform=use_log_transform, 
-            rank_method=rank_method
+        # Step 6: Apply DEA ranking method with options
+        df_ranked = calculate_rankings_with_dea(
+            processed_df,
+            feature_set=feature_set,
+            target_variable=target_variable,
+            rts=rts
         )
         
         logger.info(f"[{request_id}] Ranked DataFrame shape: {df_ranked.shape}")
@@ -765,8 +765,8 @@ async def process_data(request: Request):
         
         # Step 7: Generate HTML report
         timestamp_now = datetime.now()
-        report_filename = f"spearman_ranking_{timestamp_now.strftime('%Y%m%d_%H%M%S')}.html"
-        report_path = config.spearman_report_dir / report_filename
+        report_filename = f"dea_ranking_{timestamp_now.strftime('%Y%m%d_%H%M%S')}.html"
+        report_path = config.dea_report_dir / report_filename
         if not report_path.parent.exists():
             report_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -777,44 +777,30 @@ async def process_data(request: Request):
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(html_report)
         
-        # Step 8: Prepare response with complete ranking data
-        # Include all ranking types in the response
+        # Step 8: Prepare response with DEA ranking data
         all_rankings = {}
         
-        # Group plans by each ranking method
-        ranking_methods = {
-            'absolute': ('rank_absolute', 'delta_krw'),
-            'relative_original': ('rank_relative_original', 'value_ratio_original'),
-            'relative_fee': ('rank_relative_fee', 'value_ratio_fee'),
-            'net_original': ('rank_net_original', 'net_value_original'),
-            'net_fee': ('rank_net_fee', 'net_value_fee')
-        }
+        # For DEA, we only have one ranking method
+        rank_col = 'dea_rank'
+        value_col = 'dea_score'
         
-        # Get all plans for all ranking types
-        for rank_type, (rank_col, value_col) in ranking_methods.items():
-            if rank_col in df_ranked.columns and value_col in df_ranked.columns:
-                columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
-                                     "predicted_price", rank_col, "rank_display", value_col]
-                available_columns = [col for col in columns_to_include if col in df_ranked.columns]
-                
-                # Sort by the ranking column and convert to records
-                all_rankings[rank_type] = df_ranked.sort_values(rank_col)[available_columns].to_dict(orient="records")
-                logger.info(f"[{request_id}] Included {rank_type} rankings with {len(all_rankings[rank_type])} plans")
+        if rank_col in df_ranked.columns and value_col in df_ranked.columns:
+            columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
+                                rank_col, "dea_efficiency", value_col]
+            available_columns = [col for col in columns_to_include if col in df_ranked.columns]
+            
+            # Sort by the ranking column and convert to records
+            all_rankings['dea'] = df_ranked.sort_values(rank_col)[available_columns].to_dict(orient="records")
+            logger.info(f"[{request_id}] Included DEA rankings with {len(all_rankings['dea'])} plans")
         
-        # Get top 10 by the primary requested method
-        top_10_value_col = "value_ratio_original"
-        if rank_method == 'absolute':
-            top_10_value_col = "delta_krw"
-        elif rank_method == 'net':
-            top_10_value_col = f"net_value_{fee_type}"
-        elif rank_method == 'relative':
-            top_10_value_col = f"value_ratio_{fee_type}"
+        # Get top 10 plans by DEA score
+        top_10_value_col = "dea_score"
         
         # Get top 10 plans
         top_10_plans = []
         try:
             columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
-                               "predicted_price", "rank_display", "rank", top_10_value_col]
+                               "dea_rank", "dea_efficiency", top_10_value_col]
             available_columns = [col for col in columns_to_include if col in df_ranked.columns]
             
             top_10_plans = df_ranked.sort_values(top_10_value_col, ascending=False).head(10)[available_columns].to_dict(orient="records")
@@ -827,24 +813,17 @@ async def process_data(request: Request):
         try:
             # Use the same columns as top_10_plans but include value_ratio explicitly for DB upsert
             columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
-                               "predicted_price", "rank_display", "rank"]
+                               "dea_rank", "dea_efficiency", top_10_value_col]
                                
-            # If we have a value_ratio column available, include it
-            if top_10_value_col in df_ranked.columns:
-                columns_to_include.append(top_10_value_col)
-            elif "value_ratio" in df_ranked.columns:
-                columns_to_include.append("value_ratio")
-                
             available_columns = [col for col in columns_to_include if col in df_ranked.columns]
             
-            # Get all plans, sorted by the current ranking method
+            # Get all plans, sorted by DEA score
             all_ranked_plans = df_ranked.sort_values(top_10_value_col, ascending=False)[available_columns].to_dict(orient="records")
             
             # Ensure each plan has a value_ratio field (required for edge function DB upsert)
             for plan in all_ranked_plans:
-                # If we don't already have value_ratio, add it from the appropriate column
-                if "value_ratio" not in plan and top_10_value_col in plan:
-                    plan["value_ratio"] = plan[top_10_value_col]
+                # Add value_ratio field using dea_score for compatibility
+                plan["value_ratio"] = plan.get(top_10_value_col, 0)
             
             logger.info(f"[{request_id}] Prepared all_ranked_plans with {len(all_ranked_plans)} plans")
         except Exception as e:
@@ -856,13 +835,13 @@ async def process_data(request: Request):
         
         response = {
             "request_id": request_id,
-            "message": "Data processing complete using Spearman correlation method",
+            "message": "Data processing complete using DEA method",
             "status": "success",
             "processing_time_seconds": round(processing_time, 4),
             "options": {
-                "rankMethod": rank_method,
-                "feeType": fee_type,
-                "logTransform": use_log_transform
+                "featureSet": feature_set,
+                "targetVariable": target_variable,
+                "rts": rts
             },
             "results": {
                 "raw_data_path": raw_data_path,
@@ -870,7 +849,7 @@ async def process_data(request: Request):
                 "report_path": report_path,
                 "report_url": f"/reports/{Path(report_path).name}" if report_path else None
             },
-            "ranking_method": "spearman",
+            "ranking_method": "dea",
             "top_10_plans": top_10_plans,
             "all_ranked_plans": all_ranked_plans
         }
@@ -885,120 +864,8 @@ def test(request: dict = Body(...)):
     """Simple echo endpoint for testing (returns the provided data)."""
     return {"received": request}
 
-@app.post("/upload-csv")
-async def upload_csv(file: UploadFile = File(...)):
-    """
-    Upload CSV file and process with DEA ranking.
-    
-    Args:
-        file: CSV file containing plan data
-        
-    Returns:
-        HTML report with DEA rankings
-        
-    Raises:
-        HTTPException: If file upload or processing fails
-    """
-    try:
-        # Validate file
-        if not file.filename.endswith('.csv'):
-            raise HTTPException(
-                status_code=400,
-                detail="Only CSV files are allowed",
-                headers={"X-Error-Type": "FileFormatError"}
-            )
-        
-        # Get file size
-        content = await file.read()
-        file_size = len(content)
-        
-        if file_size > 10 * 1024 * 1024:  # 10MB limit
-            raise HTTPException(
-                status_code=413,
-                detail="File too large (max 10MB)",
-                headers={"X-Error-Type": "FileSizeError"}
-            )
-        
-        # Reset file pointer
-        await file.seek(0)
-            
-        # Save uploaded file
-        try:
-            csv_path = config.dea_input_dir / file.filename
-            if not csv_path.parent.exists():
-                csv_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Since we already read the content for file size check
-            with csv_path.open("wb") as f:
-                f.write(content)
-        except Exception as e:
-            logger.error(f"Error saving file: {str(e)}", exc_info=True)
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error saving file: {str(e)}",
-                headers={"X-Error-Type": "FileSaveError"}
-            )
-        
-        # Validate CSV content
-        try:
-            df = pd.read_csv(csv_path)
-            if df.empty:
-                raise ValueError("Uploaded CSV file is empty")
-            
-            # Check for required columns
-            required_columns = ['fee'] + get_basic_feature_list()
-            missing_cols = [col for col in required_columns if col not in df.columns]
-            if missing_cols:
-                raise ValueError(f"Missing required columns: {missing_cols}")
-                
-        except Exception as e:
-            logger.error(f"Error reading or validating CSV file: {str(e)}")
-            raise HTTPException(status_code=400, detail=f"Error reading CSV file: {str(e)}")
-        
-        # Process DEA
-        try:
-            result_df = calculate_rankings_with_dea(df)
-            if result_df is None or result_df.empty:
-                raise ValueError("DEA calculation returned empty results")
-                
-        except Exception as e:
-            logger.error(f"Error in DEA calculation: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error in DEA calculation: {str(e)}")
-        
-        # Generate report
-        try:
-            timestamp = datetime.now()
-            report_filename = f"dea_ranking_{timestamp.strftime('%Y%m%d_%H%M%S')}.html"
-            report_path = config.dea_report_dir / report_filename
-            if not report_path.parent.exists():
-                report_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Generate HTML content
-            html_content = generate_html_report(result_df, timestamp)
-            
-            # Write HTML content to file
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-                
-            if not report_path.exists():
-                raise ValueError("Failed to generate HTML report")
-            
-            # Store the results in global state for access by the root endpoint
-            config.df_with_rankings = result_df
-            
-            # Return HTML content directly
-            return HTMLResponse(content=html_content, status_code=200)
-        except Exception as e:
-            logger.error(f"Error generating report: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Error generating report: {str(e)}")
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error in upload_csv: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+# The /upload-csv endpoint has been removed
+# All functionality is now consolidated in the /process endpoint
 
 # Run the application
 if __name__ == "__main__":
