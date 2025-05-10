@@ -5,8 +5,8 @@ Uses SciPy's linear programming solver to calculate efficiency scores.
 
 import numpy as np
 import pandas as pd
-from modules.dea.dea_scipy import run_scipy_dea
-from modules.dea.dea_run import run_dea_analysis
+from modules.dea_scipy import run_scipy_dea
+from modules.dea_run import run_dea_analysis
 from modules.models import get_basic_feature_list
 
 logger = logging.getLogger(__name__)
