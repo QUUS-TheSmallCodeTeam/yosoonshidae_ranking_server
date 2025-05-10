@@ -23,8 +23,6 @@ os.makedirs(REPORT_DIR_BASE, exist_ok=True)
 os.makedirs(DATA_DIR / "raw", exist_ok=True)
 os.makedirs(DATA_DIR / "processed", exist_ok=True)
 os.makedirs(DATA_DIR / "test", exist_ok=True)
-os.makedirs(DATA_DIR / "trained_models" / "xgboost" / "with_domain" / "basic" / "standard" / "model", exist_ok=True)
-os.makedirs(DATA_DIR / "trained_models" / "xgboost" / "with_domain" / "basic" / "standard" / "config", exist_ok=True)
 os.makedirs(DATA_DIR / "results" / "latest", exist_ok=True)
 os.makedirs(DATA_DIR / "results" / "archive", exist_ok=True)
 
