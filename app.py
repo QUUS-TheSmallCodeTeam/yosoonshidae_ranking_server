@@ -37,6 +37,8 @@ from modules import (
     calculate_rankings_with_spearman, calculate_rankings_with_ties,
     generate_html_report, save_report
 )
+from modules.dea import calculate_rankings_with_dea
+from fastapi import UploadFile, File
 from modules.models import get_basic_feature_list  # Import directly to avoid circular imports
 
 # Initialize FastAPI
@@ -176,6 +178,32 @@ def read_root():
                 
                 <p>No ranking reports are available yet. Use the <code>/process</code> endpoint to analyze data and generate rankings.</p>
                 
+                <h2>Ranking Methods</h2>
+                <div class="method-info">
+                    <h3>Spearman Correlation</h3>
+                    <p>This API uses the Spearman correlation method to estimate plan worth based on feature importance:</p>
+                    <ol>
+                        <li>Calculate Spearman correlation between each feature and the original plan fee</li>
+                        <li>Apply log(1+x) transformation to non-categorical features</li>
+                        <li>Normalize correlations to create feature weights</li>
+                        <li>Normalize each feature to [0,1] range</li>
+                        <li>Calculate weighted score for each plan with correlation signs</li>
+                        <li>Scale scores to KRW range</li>
+                        <li>Rank by value ratio (predicted price / fee)</li>
+                    </ol>
+                </div>
+
+                <div class="method-info">
+                    <h3>Data Envelopment Analysis (DEA)</h3>
+                    <p>Upload a CSV file with plan data to perform DEA ranking analysis. The file should have the same structure as the 'latest processed data' CSV.</p>
+                    <p>DEA will calculate efficiency scores for each plan based on:</p>
+                    <ul>
+                        <li>Input: Plan fee</li>
+                        <li>Outputs: Plan features (data, voice, message, etc.)</li>
+                    </ul>
+                    <p>Plans with higher efficiency scores will be ranked higher.</p>
+                </div>
+
                 <h2>Ranking Options</h2>
                 <div class="button-group">
                     <strong>Ranking Method:</strong><br>
@@ -256,6 +284,59 @@ def read_root():
                     currentState.logTransform = enabled;
                     console.log("Log transform set to: " + enabled);
                 }
+                </script>
+                <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    const form = document.querySelector('.dea-form');
+                    const fileInput = document.getElementById('csv_file');
+                    const fileError = document.getElementById('file-error');
+                    const processingStatus = document.getElementById('processing-status');
+                    const resultMessage = document.getElementById('result-message');
+                    const progressBar = document.querySelector('.progress');
+                    
+                    form.addEventListener('submit', async function(e) {
+                        e.preventDefault();
+                        
+                        // Reset error message
+                        fileError.textContent = '';
+                        fileError.classList.add('hidden');
+                        
+                        // Validate file
+                        if (!fileInput.files[0]) {
+                            fileError.textContent = 'Please select a file';
+                            fileError.classList.remove('hidden');
+                            return;
+                        }
+                        
+                        // Show processing status
+                        processingStatus.classList.remove('hidden');
+                        progressBar.style.width = '0%';
+                        
+                        try {
+                            // Simulate processing (in real implementation, this would be async)
+                            for (let i = 0; i <= 100; i += 10) {
+                                progressBar.style.width = i + '%';
+                                await new Promise(resolve => setTimeout(resolve, 200));
+                            }
+                            
+                            // Submit form
+                            form.submit();
+                        } catch (error) {
+                            fileError.textContent = 'Error processing file: ' + error.message;
+                            fileError.classList.remove('hidden');
+                            processingStatus.classList.add('hidden');
+                        }
+                    });
+                    
+                    // Handle form submission response
+                    window.addEventListener('message', function(e) {
+                        if (e.data.type === 'dea-result') {
+                            resultMessage.textContent = e.data.message;
+                            resultMessage.classList.remove('hidden');
+                            processingStatus.classList.add('hidden');
+                        }
+                    });
+                });
                 </script>
             </body>
         </html>
@@ -758,8 +839,51 @@ def test(request: dict = Body(...)):
     """Simple echo endpoint for testing (returns the provided data)."""
     return {"received": request}
 
+@app.post("/upload-csv")
+async def upload_csv(file: UploadFile = File(...)):
+    """
+    Upload CSV file and process with DEA ranking.
+    
+    Args:
+        file: CSV file containing plan data
+        
+    Returns:
+        HTML report with DEA rankings
+        
+    Raises:
+        HTTPException: If file upload or processing fails
+    """
+    try:
+        # Validate file
+        if not file.filename.endswith('.csv'):
+            raise HTTPException(status_code=400, detail="Only CSV files are allowed")
+            
+        # Save uploaded file
+        csv_path = DATA_DIR / "dea_input" / file.filename
+        if not csv_path.parent.exists():
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(csv_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        
+        # Process DEA
+        df = pd.read_csv(csv_path)
+        result_df = calculate_rankings_with_dea(df)
+        
+        # Generate report
+        report_path = REPORT_DIR_BASE / f"dea_ranking_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+        generate_html_report(result_df, report_path)
+        
+        return FileResponse(report_path)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+
 # Run the application
 if __name__ == "__main__":
     import uvicorn
     logger.info("Starting server with Uvicorn...")
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
