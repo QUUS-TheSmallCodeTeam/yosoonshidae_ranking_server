@@ -16,8 +16,6 @@ def ensure_directories():
     directories = [
         Path('./data/raw'),
         Path('./data/processed'),
-        Path('./trained_models/xgboost/model'),
-        Path('./trained_models/xgboost/config'),
         Path('./results'),
         Path('./reports')  # For HTML reports
     ]
@@ -135,65 +133,4 @@ def get_basic_feature_list():
         'additional_call'
     ]
 
-def format_model_config(model, feature_names, dataset_info):
-    """
-    Format model configuration for saving.
-    
-    Args:
-        model: The trained model
-        feature_names: List of feature names used
-        dataset_info: Information about the dataset
-        
-    Returns:
-        Dictionary with model configuration
-    """
-    return {
-        "model_type": "xgboost",
-        "feature_set": "basic",
-        "training_date": datetime.now().isoformat(),
-        "hyperparameters": getattr(model, 'get_params', lambda: "Not Available")(),
-        "feature_columns_used": feature_names,
-        "monotonicity_constraints_applied": getattr(model, 'get_monotonicity_constraints', lambda: "Not Available")(),
-        "use_domain_knowledge": True,
-        "dataset_type": "standard",
-        "relaxed_constraints": False,
-        "use_gradient_penalty": False,
-        "training_data_info": dataset_info
-    }
-
-def save_model_config(config, path=None):
-    """
-    Save model configuration as JSON file.
-    
-    Args:
-        config: Configuration dictionary
-        path: Optional path to save (default: standard location)
-        
-    Returns:
-        Path to the saved file
-    """
-    if path is None:
-        # Simplified path for model config
-        config_dir = Path("./trained_models/xgboost/config")
-        try:
-            os.makedirs(config_dir, exist_ok=True)
-            config_path = config_dir / "xgboost_model_config.json"
-        except PermissionError:
-            # Fallback to /tmp if app directory is not writable
-            config_dir = Path("/tmp/trained_models/xgboost/config")
-            os.makedirs(config_dir, exist_ok=True)
-            config_path = config_dir / "xgboost_model_config.json"
-    else:
-        config_path = Path(path)
-        try:
-            os.makedirs(os.path.dirname(config_path), exist_ok=True)
-        except PermissionError:
-            # If we can't write to the specified path, use a fallback in /tmp
-            fallback_path = Path(f"/tmp/{os.path.basename(path)}")
-            config_path = fallback_path
-    
-    # Save config
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=4)
-    
-    return str(config_path) 
+# XGBoost-related functions have been removed

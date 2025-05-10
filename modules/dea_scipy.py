@@ -221,7 +221,7 @@ def run_scipy_dea(
         
         n_dmu = len(df_sample)
         inputs = df_sample[target_variable].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
-        outputs = df_sample[feature_columns].values  # Output data, 2D array (n_dmu x n_output)
+        outputs = df_sample[output_cols].values  # Output data, 2D array (n_dmu x n_output)
         
         # Precompute shared arrays outside the per-DMU loop
         inputs_matrix = inputs.copy()
