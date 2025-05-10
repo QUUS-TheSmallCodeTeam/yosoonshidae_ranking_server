@@ -71,8 +71,16 @@ def calculate_rankings_with_dea(
             logger.error("DEA calculation returned empty results")
             raise RuntimeError("DEA calculation returned empty results")
             
-        # Calculate rankings
-        result_df['dea_rank'] = result_df['efficiency_score'].rank(ascending=False)
+        # The ranking is already calculated in dea_scipy.py as 'dea_rank'
+        # But we'll ensure it's properly calculated here as well
+        if 'dea_rank' not in result_df.columns:
+            # Use dea_score or dea_efficiency depending on what's available
+            if 'dea_score' in result_df.columns:
+                result_df['dea_rank'] = result_df['dea_score'].rank(ascending=False)
+            elif 'dea_efficiency' in result_df.columns:
+                # Lower efficiency is better, so we use ascending=True
+                result_df['dea_rank'] = result_df['dea_efficiency'].rank(ascending=True)
+                
         logger.info("DEA calculation completed successfully")
         
         return result_df
