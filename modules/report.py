@@ -389,8 +389,8 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
             elif throttle_speed == 0:
                 throttle_speed_str = "No throttling"
             else:
-                # Convert normalized value (0-1) to actual Mbps (assuming max is 100 Mbps)
-                speed_mbps = throttle_speed * 100
+                # Convert normalized value (0-1) to actual Mbps (max is 10 Mbps as defined in preprocess.py)
+                speed_mbps = throttle_speed * 10.0
                 throttle_speed_str = f"{speed_mbps:.1f} Mbps"
                 
             tethering_gb = row.get('tethering_gb', 0)
