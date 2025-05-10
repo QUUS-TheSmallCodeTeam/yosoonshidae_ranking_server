@@ -215,40 +215,35 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
     """
     
     # Add main data table
-    if is_dea:
-        html += """
-        <h2>DEA Plan Rankings</h2>
-        <div class="container">
-        <table id="rankings-table">
-            <tr>
-                <th>Rank</th>
-                <th>Plan Name</th>
-                <th>Provider</th>
-                <th class="input-feature">Fee (Input)</th>
-                <th class="dea-metrics">DEA Score</th>
-                <th class="dea-metrics">Efficiency</th>
-                <th class="dea-metrics">Super-Efficiency</th>
-                
-                <!-- Core output features used in DEA calculation -->
-                <th class="output-feature">Data (GB)</th>
-                <th class="output-feature">Voice (Min)</th>
-                <th class="output-feature">SMS</th>
-                <th class="core-feature">Network</th>
-        """
-    else:
-        html += """
-        <h2>Plan Rankings</h2>
-        <div class="container" id="main-table-container">
-        <table id="main-table">
-            <tr>
-                <th>Rank</th>
-                <th>Plan Name</th>
-                <th>Operator</th>
-                <th>Original Fee</th>
-                <th>Discounted Fee</th>
-                <th>Worth Estimate</th>
-                <th>Value Ratio</th>
-        """
+    # DEA Plan Rankings table header
+    html += """
+    <h2>DEA Plan Rankings</h2>
+    <div class="container">
+    <table id="rankings-table">
+        <tr>
+            <th>Rank</th>
+            <th>Plan Name</th>
+            <th>Provider</th>
+            <th class="input-feature">Fee (Input)</th>
+            <th class="dea-metrics">DEA Score</th>
+            <th class="dea-metrics">Efficiency</th>
+            <th class="dea-metrics">Super-Efficiency</th>
+            
+            <!-- Core output features used in DEA calculation -->
+            <th class="output-feature">Data (GB)</th>
+            <th class="output-feature">Voice (Min)</th>
+            <th class="output-feature">SMS</th>
+            <th class="core-feature">Network</th>
+            
+            <!-- Additional features -->
+            <th class="additional-feature">Throttle Speed</th>
+            <th class="additional-feature">Tethering</th>
+            <th class="additional-feature">Data Type</th>
+            <th class="additional-feature">Data Sharing</th>
+            <th class="additional-feature">Roaming</th>
+            <th class="additional-feature">Micro Payment</th>
+            <th class="additional-feature">eSIM</th>
+    """
     
     # Add headers for all features used in the calculation
     for feature in used_features:
@@ -320,41 +315,40 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         # Format rank display - if it's a number, add "위" (Korean for "rank")
         if isinstance(rank_display, (int, float)):
             rank_display = f"{int(rank_display)}위"
+            
+        # DEA specific values
+        fee = int(row.get('fee', 0))
+        fee_str = f"{fee:,}"
         
-        if is_dea:
-            # DEA specific values
-            fee = int(row.get('fee', 0))
-            fee_str = f"{fee:,}"
+        # DEA metrics
+        efficiency = row.get('dea_efficiency', 0)
+        if pd.isna(efficiency):
+            efficiency_str = "N/A"
+        else:
+            efficiency_str = f"{efficiency:.4f}"
             
-            # DEA metrics
-            efficiency = row.get('dea_efficiency', 0)
-            if pd.isna(efficiency):
-                efficiency_str = "N/A"
-            else:
-                efficiency_str = f"{efficiency:.4f}"
-                
-            dea_score = row.get('dea_score', 0)
-            if pd.isna(dea_score):
-                dea_score_str = "N/A"
-                value_class = ""
-            else:
-                dea_score_str = f"{dea_score:.4f}"
-                value_class = "good-value" if dea_score > 1.0 else ""
-                
-            super_efficiency = row.get('dea_super_efficiency', 0)
-            if pd.isna(super_efficiency):
-                super_efficiency_str = "N/A"
-            else:
-                super_efficiency_str = f"{super_efficiency:.4f}"
+        dea_score = row.get('dea_score', 0)
+        if pd.isna(dea_score):
+            dea_score_str = "N/A"
+            value_class = ""
+        else:
+            dea_score_str = f"{dea_score:.4f}"
+            value_class = "good-value" if dea_score > 1.1 else ("bad-value" if dea_score < 0.9 else "")
+        
+        super_efficiency = row.get('dea_super_efficiency', 0)
+        if pd.isna(super_efficiency):
+            super_efficiency_str = "N/A"
+        else:
+            super_efficiency_str = f"{super_efficiency:.4f}"
             
-            # Get data, voice, and message values for DEA outputs
-            data_value = row.get('basic_data_clean', row.get('basic_data', 0))
-            if pd.isna(data_value):
-                data_value = 0
-            if row.get('basic_data_unlimited', 0) == 1:
-                data_str = "무제한"
-            else:
-                data_str = f"{data_value}GB"
+        # Get data, voice, and message values for DEA outputs
+        data_value = row.get('basic_data_clean', row.get('basic_data', 0))
+        if pd.isna(data_value):
+            data_value = 0
+        if row.get('basic_data_unlimited', 0) == 1:
+            data_str = "무제한"
+        else:
+            data_str = f"{data_value}GB"
                 
             voice_value = row.get('voice_clean', row.get('voice', 0))
             if pd.isna(voice_value):
@@ -379,6 +373,40 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
                 network = "LTE"
             else:
                 network = ""
+                
+            # Get additional feature details
+            throttle_speed = row.get('throttle_speed_normalized', 0)
+            if pd.isna(throttle_speed):
+                throttle_speed_str = "N/A"
+            elif throttle_speed == 0:
+                throttle_speed_str = "No throttling"
+            else:
+                # Convert normalized value (0-1) to actual Mbps (assuming max is 100 Mbps)
+                speed_mbps = throttle_speed * 100
+                throttle_speed_str = f"{speed_mbps:.1f} Mbps"
+                
+            tethering_gb = row.get('tethering_gb', 0)
+            if pd.isna(tethering_gb):
+                tethering_str = "N/A"
+            elif tethering_gb == 0:
+                tethering_str = "Not allowed"
+            else:
+                tethering_str = f"{tethering_gb:.1f} GB"
+                
+            # Determine data type based on unlimited flags
+            if row.get('basic_data_unlimited', 0) == 1:
+                if throttle_speed > 0:
+                    data_type = "Throttled"
+                else:
+                    data_type = "Unlimited"
+            else:
+                data_type = "Limited"
+                
+            # Get boolean features
+            data_sharing = "Yes" if row.get('data_sharing', False) else "No"
+            roaming = "Yes" if row.get('roaming_support', False) else "No"
+            micro_payment = "Yes" if row.get('micro_payment', False) else "No"
+            esim = "Yes" if row.get('is_esim', False) else "No"
             
             html += f"""
             <tr>
@@ -393,64 +421,15 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
                 <td class="output-feature">{voice_str}</td>
                 <td class="output-feature">{message_str}</td>
                 <td class="core-feature">{network}</td>
+                <td class="additional-feature">{throttle_speed_str}</td>
+                <td class="additional-feature">{tethering_str}</td>
+                <td class="additional-feature">{data_type}</td>
+                <td class="additional-feature">{data_sharing}</td>
+                <td class="additional-feature">{roaming}</td>
+                <td class="additional-feature">{micro_payment}</td>
+                <td class="additional-feature">{esim}</td>
+            </tr>
             """
-        else:
-            # Spearman specific values
-            original_fee = f"{int(row.get('original_fee', row.get('fee', 0))):,}"
-            discounted_fee = f"{int(row.get('fee', 0)):,}"
-            predicted_price = f"{int(row.get('predicted_price', 0)):,}"
-            
-            # Value ratio
-            value_ratio = row.get('value_ratio_original', row.get('value_ratio', 0))
-            if pd.isna(value_ratio):
-                value_ratio_str = "N/A"
-                value_class = ""
-            else:
-                value_ratio_str = f"{value_ratio:.2f}"
-                value_class = "good-value" if value_ratio > 1.1 else ("bad-value" if value_ratio < 0.9 else "")
-                
-            operator = row.get('mvno', "Unknown")
-            
-            html += f"""
-            <tr>
-                <td>{rank_display}</td>
-                <td>{plan_name}</td>
-                <td>{operator}</td>
-                <td>{original_fee}</td>
-                <td>{discounted_fee}</td>
-                <td>{predicted_price}</td>
-                <td class="{value_class}">{value_ratio_str}</td>
-            """
-        
-        # Add values for all features
-        for feature in used_features:
-            if feature in row:
-                # Format the feature value based on its type
-                if isinstance(row[feature], bool):
-                    value = "Yes" if row[feature] else "No"
-                elif isinstance(row[feature], (int, float)):
-                    if feature in ['is_5g', 'basic_data_unlimited', 'daily_data_unlimited', 'voice_unlimited', 'message_unlimited']:
-                        value = "Yes" if row[feature] == 1 else "No"
-                    elif feature == 'unlimited_type_numeric':
-                        # Map unlimited type numeric to descriptive text
-                        unlimited_types = {
-                            0: "Limited",
-                            1: "Throttled",
-                            2: "Throttled+",
-                            3: "Unlimited"
-                        }
-                        value = unlimited_types.get(row[feature], str(row[feature]))
-                    else:
-                        # Format with commas if it's a whole number
-                        if row[feature] == int(row[feature]):
-                            value = f"{int(row[feature]):,}"
-                        else:
-                            value = f"{row[feature]:.2f}"
-                else:
-                    value = str(row[feature])
-                html += f"<td>{value}</td>"
-            else:
-                html += "<td>N/A</td>"
         
         html += "</tr>"
     
