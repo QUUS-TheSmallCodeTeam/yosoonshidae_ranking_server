@@ -65,6 +65,7 @@ All previous refactoring tasks have been completed. The current focus is on repl
 - **Goal**: Address any issues found during testing
 - **Specific Steps**:
   - [✓] Fix missing `time` module import in app.py
+  - [✓] Fix column name mismatch in DEA implementation
   - [ ] Verify all necessary imports are present
   - [ ] Check for any other potential runtime errors
 - **Verification**:
@@ -95,6 +96,7 @@ All previous refactoring tasks have been completed. The current focus is on repl
 List any issues encountered during refactoring:
 
 - Fixed missing `time` module import in app.py that was causing runtime errors
+- Fixed column name mismatch in DEA implementation (updated feature set definitions to use correct column names like 'basic_data_clean' instead of 'data')
 
 ## Final Verification
 

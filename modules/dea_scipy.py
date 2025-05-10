@@ -156,8 +156,8 @@ def run_scipy_dea(
         if isinstance(feature_set, str):
             # Predefined feature sets - reduced dimensionality to improve discrimination
             feature_sets = {
-                'basic': ['data', 'voice', 'message'],  # Core features only
-                'extended': ['data', 'voice', 'message', 'data_speed'],  # Reduced from original
+                'basic': ['basic_data_clean', 'voice_clean', 'message_clean'],  # Core features only
+                'extended': ['basic_data_clean', 'voice_clean', 'message_clean', 'throttle_speed_normalized'],  # Reduced from original
                 'full': [col for col in df.columns if col != target_variable and col != 'plan_id' and col != 'provider']
             }
             
@@ -171,7 +171,7 @@ def run_scipy_dea(
             output_cols = feature_set
         else:
             logger.warning(f"Invalid feature_set type {type(feature_set)}, using 'basic'")
-            output_cols = ['data', 'voice', 'message']
+            output_cols = ['basic_data_clean', 'voice_clean', 'message_clean']
         
         # Add default weight constraints if none provided
         # This prevents plans from assigning zero weights to features they're weak in
