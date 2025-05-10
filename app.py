@@ -18,10 +18,11 @@ from modules.config import config, logger
 from modules.data import load_data_from_json
 from modules.preprocess import prepare_features
 from modules.utils import ensure_directories, save_raw_data, save_processed_data
-from modules.ranking import calculate_rankings_with_spearman, calculate_rankings_with_ties
-from modules.report import generate_html_report, save_report
+from modules.ranking import calculate_rankings_with_ties
+from modules.report import generate_html_report
 from modules.dea import calculate_rankings_with_dea
 from modules.models import get_basic_feature_list
+from modules.spearman import calculate_rankings_with_spearman
 from fastapi import UploadFile, File
 
 # Initialize FastAPI
