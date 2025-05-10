@@ -3,13 +3,11 @@ DEA implementation using SciPy's linear programming solver with parallel process
 """
 
 import numpy as np
-import pandas as pd
-import logging
-import warnings
-import os
-import concurrent.futures
-from multiprocessing import Pool, cpu_count
 from scipy.optimize import linprog
+import pandas as pd
+import concurrent.futures
+import os
+import warnings
 import logging
 
 # Setup logging
@@ -123,7 +121,7 @@ def compute_efficiency(dmu_idx, inputs_matrix, outputs_matrix, n_dmu, rts, weigh
 def run_scipy_dea(
     df: pd.DataFrame,
     feature_set: str,
-    target_variable: str = 'fee',
+    target_variable: str,
     rts: str = 'vrs',  # Changed default to VRS for better discrimination
     weight_constraints: dict = None,
     non_discretionary: list = None,
@@ -148,35 +146,11 @@ def run_scipy_dea(
     try:
         logger.info("Starting DEA calculation with SciPy")
         
-        # Validate and auto-detect target variable if needed
-        if target_variable not in df.columns:
-            # Try to find the fee column with exact matches first
-            fee_cols = ['fee', 'monthly_fee', 'price', 'monthly_price', 'plan_fee']
-            found_fee_col = next((col for col in fee_cols if col in df.columns), None)
-            
-            if found_fee_col:
-                logger.info(f"Found target variable: {found_fee_col} instead of {target_variable}")
-                target_variable = found_fee_col
-            else:
-                # Try partial matches for fee/price columns
-                for col in df.columns:
-                    if 'fee' in col.lower() or 'price' in col.lower() or 'cost' in col.lower():
-                        logger.info(f"Found target variable with partial match: {col}")
-                        target_variable = col
-                        break
-                else:
-                    # If still not found, raise an error
-                    raise ValueError(f"Target variable '{target_variable}' not found. Please ensure your CSV contains a column for plan fees/prices.")
-        
         # Handle sampling if specified
         if sample_size is not None and sample_size < len(df):
-            logger.info(f"Sampling {sample_size} records from dataset of size {len(df)}")
-            df_sample = df.sample(sample_size, random_state=42)
+            df_sample = df.sample(n=sample_size, random_state=42).reset_index(drop=True)
         else:
             df_sample = df.copy()
-        
-        # Log available columns for debugging
-        logger.info(f"Available columns in dataset: {df.columns.tolist()}")
         
         # Define feature sets based on the correct mobile plan features
         if isinstance(feature_set, str):
@@ -239,26 +213,17 @@ def run_scipy_dea(
             # Full feature set - all non-constant features
             feature_sets['full'] = non_constant_features
             
-            logger.info(f"Feature sets: {feature_sets}")
-            
             if feature_set in feature_sets:
                 output_cols = feature_sets[feature_set]
             else:
                 logger.warning(f"Unknown feature set '{feature_set}', using 'basic'")
                 output_cols = feature_sets['basic']
         elif isinstance(feature_set, list):
-            # Custom list of features - verify they exist
-            valid_cols = [col for col in feature_set if col in df.columns]
-            if len(valid_cols) != len(feature_set):
-                missing = set(feature_set) - set(valid_cols)
-                logger.warning(f"Some requested features not found in data: {missing}")
-            output_cols = valid_cols
+            # Custom list of features
+            output_cols = feature_set
         else:
-            logger.warning(f"Invalid feature_set type {type(feature_set)}, auto-detecting features")
-            # Auto-detect numeric columns as features
-            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-            output_cols = [col for col in numeric_cols if col != target_variable and col != 'plan_id' and 'rank' not in col.lower()]
-            logger.info(f"Auto-detected features: {output_cols}")
+            logger.warning(f"Invalid feature_set type {type(feature_set)}, using 'basic'")
+            output_cols = ['data', 'voice', 'message']
         
         # Add default weight constraints if none provided
         # This prevents plans from assigning zero weights to features they're weak in
@@ -279,6 +244,8 @@ def run_scipy_dea(
             
         # Check and clean feature columns
         for col in output_cols:
+            if col not in df_sample.columns:
+                raise ValueError(f"Column '{col}' not found in data")
             if df_sample[col].isnull().any() or np.any(np.isnan(df_sample[col])) or np.any(np.isinf(df_sample[col])):
                 logger.warning(f"NaN or infinite values detected in column {col}; replacing with 0.")
                 df_sample[col] = df_sample[col].fillna(0).replace([np.inf, -np.inf], 0)
@@ -291,10 +258,24 @@ def run_scipy_dea(
             missing = set(output_cols) - set(valid_output_cols)
             logger.warning(f"Some output columns not found in data: {missing}. Using only: {valid_output_cols}")
             output_cols = valid_output_cols
+        
+        # Normalize features to [0,1] range
+        df_norm = df_sample.copy()
+        logger.info("Normalizing features to [0,1] range:")
+        for c in output_cols:
+            min_v = df_sample[c].min()
+            max_v = df_sample[c].max()
             
-        n_dmu = len(df_sample)
-        inputs = df_sample[target_variable].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
-        outputs = df_sample[output_cols].values  # Output data, 2D array (n_dmu x n_output)
+            if max_v == min_v:
+                logger.info(f"  Feature '{c}' has min=max={min_v}, setting normalized values to 0.5")
+                df_norm[c] = 0.5
+            else:
+                df_norm[c] = (df_sample[c] - min_v) / (max_v - min_v)
+                logger.info(f"  {c}: range [{min_v:.4f}, {max_v:.4f}] → normalized → [0, 1]")
+            
+        n_dmu = len(df_norm)
+        inputs = df_norm[target_variable].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
+        outputs = df_norm[output_cols].values  # Output data, 2D array (n_dmu x n_output)
         
         # Precompute shared arrays outside the per-DMU loop
         inputs_matrix = inputs.copy()
@@ -304,21 +285,24 @@ def run_scipy_dea(
         if weight_constraints:
             logger.info(f"Applying weight constraints: {weight_constraints}")
         
-        # Use parallel processing if more than 10 DMUs
-        if n_dmu > 10 and cpu_count() > 1:
-            with Pool(processes=min(cpu_count(), 4)) as pool:
-                results = pool.starmap(
-                    compute_efficiency,
-                    [(i, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary, output_cols) for i in range(n_dmu)]
-                )
-                efficiencies = [res[0] for res in results]
-                lp_results = [res[1] for res in results]
-        else:
-            # Sequential processing for small datasets
-            for i in range(n_dmu):
-                eff, success = compute_efficiency(i, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary, output_cols)
-                efficiencies.append(eff)
-                lp_results.append(success)
+        # Parallel execution using ProcessPoolExecutor
+        max_workers = min(16, (os.cpu_count() or 4))  # Cap at 16 to prevent overload
+        efficiencies = []
+        lp_results = []
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            # Submit tasks for all DMUs
+            future_to_index = {executor.submit(compute_efficiency, i, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary, output_cols): i for i in range(n_dmu)}
+            for future in concurrent.futures.as_completed(future_to_index):
+                index = future_to_index[future]
+                try:
+                    efficiency, success = future.result()
+                    efficiencies.append(efficiency)
+                    lp_results.append(success)
+                    logger.info(f"Processed DMU {index+1}/{n_dmu} with efficiency {efficiency:.4f}")
+                except Exception as e:
+                    logger.error(f"Error processing DMU {index+1}: {e}")
+                    efficiencies.append(1.0)  # Default to efficient on error
+                    lp_results.append(False)
         
         # Add results to DataFrame
         df_result = df_sample.copy()

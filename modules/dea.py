@@ -16,7 +16,7 @@ def calculate_rankings_with_dea(
     df: pd.DataFrame,
     feature_set: str = 'basic',
     target_variable: str = 'fee',
-    rts: str = 'vrs',  # Changed default to VRS for better discrimination
+    rts: str = 'vrs',  # Using VRS for better discrimination
     weight_constraints: dict = None,
     non_discretionary: list = None
 ) -> pd.DataFrame:
