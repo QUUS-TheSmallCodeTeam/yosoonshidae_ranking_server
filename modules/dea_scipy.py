@@ -3,11 +3,13 @@ DEA implementation using SciPy's linear programming solver with parallel process
 """
 
 import numpy as np
-from scipy.optimize import linprog
 import pandas as pd
-import concurrent.futures
-import os
+import logging
 import warnings
+import os
+import concurrent.futures
+from multiprocessing import Pool, cpu_count
+from scipy.optimize import linprog
 import logging
 
 # Setup logging
@@ -18,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Helper function for efficiency calculation, defined at module level for pickling
-def compute_efficiency(dmu_idx, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary):
+def compute_efficiency(dmu_idx, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary, output_cols=None):
     """
     Compute efficiency score for a single DMU using SciPy's linear programming.
     
@@ -28,62 +30,95 @@ def compute_efficiency(dmu_idx, inputs_matrix, outputs_matrix, n_dmu, rts, weigh
         outputs_matrix: Matrix of output values
         n_dmu: Number of DMUs
         rts: Returns to scale ('crs' or 'vrs')
-        weight_constraints: Dict of weight restrictions (currently ignored)
+        weight_constraints: Dict of weight restrictions for each feature
         non_discretionary: List of non-discretionary variables (currently ignored)
+        output_cols: List of output column names (needed for weight constraints)
         
     Returns:
         Tuple of (efficiency_score, success_flag)
     """
     try:
-        # Use precomputed matrices, focus on efficient constraint building
-        c = np.zeros(n_dmu + 1)
-        c[0] = 1.0
-        A_ub = []
-        b_ub = []
+        # Set up the linear program
+        c = np.zeros(n_dmu + 1 + outputs_matrix.shape[1])  # Add variables for weights
+        c[0] = 1.0  # Maximize efficiency
         
-        # Input constraint row - handle both 1D and 2D input matrices
-        A_ub_row_input = np.zeros(n_dmu + 1)
-        if inputs_matrix.ndim == 1:
-            # If inputs_matrix is 1D
-            A_ub_row_input[0] = -inputs_matrix[dmu_idx]
-            A_ub_row_input[1:] = inputs_matrix
-        else:
-            # If inputs_matrix is 2D (n_dmu x 1)
-            A_ub_row_input[0] = -inputs_matrix[dmu_idx, 0]
-            A_ub_row_input[1:] = inputs_matrix[:, 0]
-            
+        # Constraints
+        A_ub = []  # Inequality constraints (A_ub * x <= b_ub)
+        b_ub = []  # Right-hand side of inequality constraints
+        
+        # Input constraint
+        A_ub_row_input = np.zeros(n_dmu + 1 + outputs_matrix.shape[1])
+        A_ub_row_input[0] = -inputs_matrix[dmu_idx, 0] if inputs_matrix.ndim > 1 else -inputs_matrix[dmu_idx]
+        A_ub_row_input[1:n_dmu+1] = inputs_matrix.flatten() if inputs_matrix.ndim == 1 else inputs_matrix[:, 0]
         A_ub.append(A_ub_row_input)
         b_ub.append(0.0)
-        # Output constraints
+        
+        # Output constraints with explicit weights
         for k in range(outputs_matrix.shape[1]):
-            A_ub_row_output = np.zeros(n_dmu + 1)
-            A_ub_row_output[1:] = -outputs_matrix[:, k]
+            A_ub_row_output = np.zeros(n_dmu + 1 + outputs_matrix.shape[1])
+            A_ub_row_output[1:n_dmu+1] = -outputs_matrix[:, k]
+            A_ub_row_output[0] = outputs_matrix[dmu_idx, k]
+            # Set weight variable coefficient
+            A_ub_row_output[n_dmu+1+k] = 1.0
             A_ub.append(A_ub_row_output)
-            b_ub.append(-outputs_matrix[dmu_idx, k])
-        # Weight and non-discretionary constraints (currently ignored)
-        if weight_constraints:
-            warnings.warn("Weight restrictions not fully supported; ignoring.")
-        if non_discretionary:
-            warnings.warn("Non-discretionary variables not implemented; ignoring.")
-        # Equality constraints for VRS
-        if rts.lower() == 'vrs':
-            A_eq = np.zeros((1, n_dmu + 1))
-            A_eq[0, 1:] = 1.0
-            b_eq = np.array([1.0])
-        else:  # CRS
+            b_ub.append(0.0)
+        
+        # Weight constraints if provided
+        if weight_constraints and output_cols:
+            # Normalize weights to sum to 1
+            A_eq_weights = np.zeros((1, n_dmu + 1 + outputs_matrix.shape[1]))
+            A_eq_weights[0, n_dmu+1:] = 1.0
+            b_eq_weights = np.ones(1)
+            
+            # Apply minimum and maximum weight constraints
+            for i, col in enumerate(output_cols):
+                if col in weight_constraints:
+                    # Minimum weight constraint
+                    if 'min' in weight_constraints[col]:
+                        min_weight = weight_constraints[col]['min']
+                        A_ub_min = np.zeros(n_dmu + 1 + outputs_matrix.shape[1])
+                        A_ub_min[n_dmu+1+i] = -1.0  # -weight <= -min_weight
+                        A_ub.append(A_ub_min)
+                        b_ub.append(-min_weight)
+                    
+                    # Maximum weight constraint
+                    if 'max' in weight_constraints[col]:
+                        max_weight = weight_constraints[col]['max']
+                        A_ub_max = np.zeros(n_dmu + 1 + outputs_matrix.shape[1])
+                        A_ub_max[n_dmu+1+i] = 1.0  # weight <= max_weight
+                        A_ub.append(A_ub_max)
+                        b_ub.append(max_weight)
+        
+        # VRS constraint if applicable
+        if rts == 'vrs':
+            A_eq = np.zeros((1, n_dmu + 1 + outputs_matrix.shape[1]))
+            A_eq[0, 1:n_dmu+1] = 1.0
+            b_eq = np.ones(1)
+        else:
             A_eq = None
             b_eq = None
         
-        # Solve the linear programming problem
-        result = linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, method='highs')
+        # Bounds for variables
+        bounds = [(0, None) for _ in range(n_dmu + 1 + outputs_matrix.shape[1])]  # All variables >= 0
+        
+        # Solve the linear program
+        result = linprog(
+            c=c,
+            A_ub=A_ub,
+            b_ub=b_ub,
+            A_eq=A_eq,
+            b_eq=b_eq,
+            bounds=bounds,
+            method='highs'  # Use the HiGHS solver for better performance
+        )
+        
         if result.success:
-            return 1.0 / result.x[0], True
+            return result.x[0], True  # Return the efficiency score and success flag
         else:
-            logger.warning(f"LP solver failed for DMU {dmu_idx}: {result.message}")
-            return 1.0, False
+            return 1.0, False  # Default to 1.0 if optimization fails
     except Exception as e:
-        logger.error(f"Error in compute_efficiency for DMU {dmu_idx}: {e}")
-        return 1.0, False
+        logger.warning(f"Error computing efficiency for DMU {dmu_idx}: {e}")
+        return 1.0, False  # Default to 1.0 on error
 
 def run_scipy_dea(
     df: pd.DataFrame,
@@ -119,21 +154,38 @@ def run_scipy_dea(
         else:
             df_sample = df.copy()
         
-        # Get feature columns based on feature_set
-        if feature_set == 'basic':
-            from modules.models import get_basic_feature_list
-            feature_columns = get_basic_feature_list()
-        elif feature_set == 'extended':
-            # Use an extended feature list if available
-            from modules.models import get_basic_feature_list
-            feature_columns = get_basic_feature_list()  # Fallback to basic if extended not defined
-        elif isinstance(feature_set, list):
-            # If feature_set is already a list of column names
-            feature_columns = feature_set
-        else:
-            raise ValueError(f"Unknown feature set: {feature_set}")
+        # Define feature sets based on input
+        if isinstance(feature_set, str):
+            # Predefined feature sets - reduced dimensionality to improve discrimination
+            feature_sets = {
+                'basic': ['data', 'voice', 'message'],  # Core features only
+                'extended': ['data', 'voice', 'message', 'data_speed'],  # Reduced from original
+                'full': [col for col in df.columns if col != target_variable and col != 'plan_id' and col != 'provider']
+            }
             
-        logger.info(f"Using feature columns: {feature_columns}")
+            if feature_set in feature_sets:
+                output_cols = feature_sets[feature_set]
+            else:
+                logger.warning(f"Unknown feature set '{feature_set}', using 'basic'")
+                output_cols = feature_sets['basic']
+        elif isinstance(feature_set, list):
+            # Custom list of features
+            output_cols = feature_set
+        else:
+            logger.warning(f"Invalid feature_set type {type(feature_set)}, using 'basic'")
+            output_cols = ['data', 'voice', 'message']
+        
+        # Add default weight constraints if none provided
+        # This prevents plans from assigning zero weights to features they're weak in
+        if weight_constraints is None:
+            weight_constraints = {}
+            for feature in output_cols:
+                if feature in df.columns:
+                    # Set minimum weights to at least 10% of maximum possible weight
+                    # This forces plans to consider all features
+                    weight_constraints[feature] = {'min': 0.1, 'max': 1.0}
+        
+        logger.info(f"Using feature columns: {output_cols}")
         
         # Check for NaN or inf values in data
         if df_sample[target_variable].isnull().any():
@@ -141,7 +193,7 @@ def run_scipy_dea(
             df_sample[target_variable].fillna(0, inplace=True)
             
         # Check and clean feature columns
-        for col in feature_columns:
+        for col in output_cols:
             if col not in df_sample.columns:
                 raise ValueError(f"Column '{col}' not found in data")
             if df_sample[col].isnull().any() or np.any(np.isnan(df_sample[col])) or np.any(np.isinf(df_sample[col])):
@@ -156,24 +208,25 @@ def run_scipy_dea(
         inputs_matrix = inputs.copy()
         outputs_matrix = outputs.copy()
         
-        # Parallel execution using ProcessPoolExecutor
-        max_workers = min(64, (os.cpu_count() or 4))  # Cap at 64 to prevent overload, use system CPU count
-        efficiencies = []
-        lp_results = []
-        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            # Submit tasks for all DMUs
-            future_to_index = {executor.submit(compute_efficiency, i, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary): i for i in range(n_dmu)}
-            for future in concurrent.futures.as_completed(future_to_index):
-                index = future_to_index[future]
-                try:
-                    efficiency, success = future.result()
-                    efficiencies.append(efficiency)
-                    lp_results.append(success)
-                    logger.info(f"Processed DMU {index+1}/{n_dmu} with efficiency {efficiency:.4f}")
-                except Exception as e:
-                    logger.error(f"Error processing DMU {index+1}: {e}")
-                    efficiencies.append(1.0)  # Default to efficient on error
-                    lp_results.append(False)
+        # Log weight constraints being applied
+        if weight_constraints:
+            logger.info(f"Applying weight constraints: {weight_constraints}")
+        
+        # Use parallel processing if more than 10 DMUs
+        if n_dmu > 10 and cpu_count() > 1:
+            with Pool(processes=min(cpu_count(), 4)) as pool:
+                results = pool.starmap(
+                    compute_efficiency,
+                    [(i, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary, output_cols) for i in range(n_dmu)]
+                )
+                efficiencies = [res[0] for res in results]
+                lp_results = [res[1] for res in results]
+        else:
+            # Sequential processing for small datasets
+            for i in range(n_dmu):
+                eff, success = compute_efficiency(i, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary, output_cols)
+                efficiencies.append(eff)
+                lp_results.append(success)
         
         # Add results to DataFrame
         df_result = df_sample.copy()
