@@ -40,10 +40,18 @@ def compute_efficiency(dmu_idx, inputs_matrix, outputs_matrix, n_dmu, rts, weigh
         c[0] = 1.0
         A_ub = []
         b_ub = []
-        # Input constraint row
+        
+        # Input constraint row - handle both 1D and 2D input matrices
         A_ub_row_input = np.zeros(n_dmu + 1)
-        A_ub_row_input[0] = -inputs_matrix[dmu_idx]
-        A_ub_row_input[1:] = inputs_matrix
+        if inputs_matrix.ndim == 1:
+            # If inputs_matrix is 1D
+            A_ub_row_input[0] = -inputs_matrix[dmu_idx]
+            A_ub_row_input[1:] = inputs_matrix
+        else:
+            # If inputs_matrix is 2D (n_dmu x 1)
+            A_ub_row_input[0] = -inputs_matrix[dmu_idx, 0]
+            A_ub_row_input[1:] = inputs_matrix[:, 0]
+            
         A_ub.append(A_ub_row_input)
         b_ub.append(0.0)
         # Output constraints
@@ -111,15 +119,38 @@ def run_scipy_dea(
         else:
             df_sample = df.copy()
         
+        # Get feature columns based on feature_set
+        if feature_set == 'basic':
+            from modules.models import get_basic_feature_list
+            feature_columns = get_basic_feature_list()
+        elif feature_set == 'extended':
+            # Use an extended feature list if available
+            from modules.models import get_basic_feature_list
+            feature_columns = get_basic_feature_list()  # Fallback to basic if extended not defined
+        elif isinstance(feature_set, list):
+            # If feature_set is already a list of column names
+            feature_columns = feature_set
+        else:
+            raise ValueError(f"Unknown feature set: {feature_set}")
+            
+        logger.info(f"Using feature columns: {feature_columns}")
+        
         # Check for NaN or inf values in data
-        if df_sample[target_variable].isnull().any() or np.any(np.isnan(df_sample[feature_set])) or np.any(np.isinf(df_sample[feature_set])):
-            logger.warning("NaN or infinite values detected in input data; replacing with 0 for robustness.")
+        if df_sample[target_variable].isnull().any():
+            logger.warning("NaN values detected in input variable; replacing with 0 for robustness.")
             df_sample[target_variable].fillna(0, inplace=True)
-            df_sample[feature_set] = df_sample[feature_set].fillna(0).replace([np.inf, -np.inf], 0)
+            
+        # Check and clean feature columns
+        for col in feature_columns:
+            if col not in df_sample.columns:
+                raise ValueError(f"Column '{col}' not found in data")
+            if df_sample[col].isnull().any() or np.any(np.isnan(df_sample[col])) or np.any(np.isinf(df_sample[col])):
+                logger.warning(f"NaN or infinite values detected in column {col}; replacing with 0.")
+                df_sample[col] = df_sample[col].fillna(0).replace([np.inf, -np.inf], 0)
         
         n_dmu = len(df_sample)
-        inputs = df_sample[target_variable].values  # Input data, 1D array
-        outputs = df_sample[feature_set].values  # Output data, 2D array (n_dmu x n_output)
+        inputs = df_sample[target_variable].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
+        outputs = df_sample[feature_columns].values  # Output data, 2D array (n_dmu x n_output)
         
         # Precompute shared arrays outside the per-DMU loop
         inputs_matrix = inputs.copy()
