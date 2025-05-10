@@ -89,7 +89,7 @@ def run_scipy_dea(
     df: pd.DataFrame,
     feature_set: str,
     target_variable: str,
-    rts: str = 'crs',
+    rts: str = 'vrs',  # Changed default to VRS for better discrimination
     weight_constraints: dict = None,
     non_discretionary: list = None,
     sample_size: int = None
@@ -180,6 +180,81 @@ def run_scipy_dea(
         df_result['dea_efficiency'] = efficiencies
         df_result['dea_defaulted'] = [eff == 1.0 and not success for eff, success in zip(efficiencies, lp_results)]  # Flag for defaulted efficiencies
         df_result['dea_score'] = 1.0 / df_result['dea_efficiency']
+        
+        # Calculate super-efficiency for efficient DMUs to break ties
+        efficient_dmus = df_result[df_result['dea_efficiency'] == 1.0].index.tolist()
+        logger.info(f"Found {len(efficient_dmus)} efficient DMUs. Calculating super-efficiency to break ties.")
+        
+        if len(efficient_dmus) > 1:
+            # For each efficient DMU, recalculate efficiency excluding it from the reference set
+            super_efficiencies = {}
+            
+            for dmu_idx in efficient_dmus:
+                # Create a subset without this DMU
+                subset_indices = [i for i in range(n_dmu) if i != dmu_idx]
+                subset_inputs = inputs_matrix[subset_indices]
+                subset_outputs = outputs_matrix[subset_indices]
+                
+                try:
+                    # Calculate super-efficiency
+                    A_ub = []
+                    b_ub = []
+                    
+                    # Input constraint
+                    A_ub_row_input = np.zeros(len(subset_indices) + 1)
+                    A_ub_row_input[0] = -inputs_matrix[dmu_idx, 0] if inputs_matrix.ndim > 1 else -inputs_matrix[dmu_idx]
+                    A_ub_row_input[1:] = subset_inputs.flatten() if subset_inputs.ndim == 1 else subset_inputs[:, 0]
+                    A_ub.append(A_ub_row_input)
+                    b_ub.append(0.0)
+                    
+                    # Output constraints
+                    for k in range(outputs_matrix.shape[1]):
+                        A_ub_row_output = np.zeros(len(subset_indices) + 1)
+                        A_ub_row_output[1:] = -subset_outputs[:, k]
+                        A_ub_row_output[0] = outputs_matrix[dmu_idx, k]
+                        A_ub.append(A_ub_row_output)
+                        b_ub.append(0.0)
+                    
+                    # VRS constraint
+                    if rts == 'vrs':
+                        A_eq = np.zeros((1, len(subset_indices) + 1))
+                        A_eq[0, 1:] = 1.0
+                        b_eq = np.ones(1)
+                    else:
+                        A_eq = None
+                        b_eq = None
+                    
+                    # Solve LP
+                    c = np.zeros(len(subset_indices) + 1)
+                    c[0] = 1.0
+                    bounds = [(0, None) for _ in range(len(subset_indices) + 1)]
+                    
+                    result = linprog(
+                        c=c,
+                        A_ub=A_ub,
+                        b_ub=b_ub,
+                        A_eq=A_eq,
+                        b_eq=b_eq,
+                        bounds=bounds,
+                        method='highs'
+                    )
+                    
+                    if result.success:
+                        super_efficiencies[dmu_idx] = result.x[0]
+                    else:
+                        # If infeasible, this DMU is super-efficient (can't be represented by others)
+                        super_efficiencies[dmu_idx] = 2.0  # Assign a high value
+                except Exception as e:
+                    logger.warning(f"Error calculating super-efficiency for DMU {dmu_idx}: {e}")
+                    super_efficiencies[dmu_idx] = 1.0  # Default
+            
+            # Apply super-efficiencies to break ties
+            for dmu_idx, super_eff in super_efficiencies.items():
+                df_result.loc[dmu_idx, 'dea_super_efficiency'] = super_eff
+                # Update the score with super-efficiency for efficient DMUs
+                df_result.loc[dmu_idx, 'dea_score'] = super_eff
+        
+        # Calculate final rank
         df_result['dea_rank'] = df_result['dea_score'].rank(ascending=False, method='min')
         
         if sample_size is not None:
