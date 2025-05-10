@@ -1,11 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request, Response, Body
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
-import os
 import json
-import sys
-import logging
-import time
 import uuid
 import gc
 from datetime import datetime
@@ -15,31 +11,18 @@ import numpy as np
 from typing import Optional, Union, List
 from scipy.stats import spearmanr
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# Define Paths (relative to container root /app)
-APP_DIR = Path(__file__).parent  # Should resolve to /app
-DATA_DIR = APP_DIR / "data"
-REPORT_DIR_BASE = Path("/tmp/reports")  # Use /tmp for reports in container
-
-# Add the project root to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(current_dir, '..'))
-if project_root not in sys.path:
-    sys.path.append(project_root)
+# Import configuration
+from modules.config import config, logger
 
 # Import necessary modules
-from modules.data import load_data_from_json  # For loading test data if needed
-from modules import (
-    prepare_features, ensure_directories, save_raw_data, save_processed_data,
-    calculate_rankings_with_spearman, calculate_rankings_with_ties,
-    generate_html_report, save_report
-)
+from modules.data import load_data_from_json
+from modules.preprocess import prepare_features
+from modules.utils import ensure_directories, save_raw_data, save_processed_data
+from modules.ranking import calculate_rankings_with_spearman, calculate_rankings_with_ties
+from modules.report import generate_html_report, save_report
 from modules.dea import calculate_rankings_with_dea
+from modules.models import get_basic_feature_list
 from fastapi import UploadFile, File
-from modules.models import get_basic_feature_list  # Import directly to avoid circular imports
 
 # Initialize FastAPI
 app = FastAPI(title="Moyo Plan Ranking Model Server - Spearman Method")
@@ -202,7 +185,38 @@ def read_root():
                         <li>Outputs: Plan features (data, voice, message, etc.)</li>
                     </ul>
                     <p>Plans with higher efficiency scores will be ranked higher.</p>
+                    
+                    <form action="/upload-csv" method="post" enctype="multipart/form-data" class="upload-form">
+                        <input type="file" name="file" accept=".csv" required>
+                        <button type="submit" class="upload-btn">Upload CSV</button>
+                    </form>
                 </div>
+
+                <style>
+                    .upload-form {
+                        margin-top: 20px;
+                        padding: 15px;
+                        background-color: #f8f9fa;
+                        border-radius: 4px;
+                    }
+                    .upload-form input[type="file"] {
+                        margin-bottom: 10px;
+                        padding: 8px;
+                        border: 1px solid #ddd;
+                        border-radius: 4px;
+                    }
+                    .upload-btn {
+                        padding: 10px 20px;
+                        background-color: #007bff;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                    }
+                    .upload-btn:hover {
+                        background-color: #0056b3;
+                    }
+                </style>
 
                 <h2>Ranking Options</h2>
                 <div class="button-group">
@@ -856,9 +870,37 @@ async def upload_csv(file: UploadFile = File(...)):
     try:
         # Validate file
         if not file.filename.endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Only CSV files are allowed")
+            raise HTTPException(
+                status_code=400,
+                detail="Only CSV files are allowed",
+                headers={"X-Error-Type": "FileFormatError"}
+            )
+        
+        # Get file size
+        file_size = await file.seek(0, os.SEEK_END)
+        await file.seek(0)
+        
+        if file_size > 10 * 1024 * 1024:  # 10MB limit
+            raise HTTPException(
+                status_code=413,
+                detail="File too large (max 10MB)",
+                headers={"X-Error-Type": "FileSizeError"}
+            )
             
+        # Create temporary file path
+        temp_file = config.data_dir / "raw" / f"{uuid.uuid4()}.csv"
+        
         # Save uploaded file
+        try:
+            with temp_file.open("wb") as buffer:
+                content = await file.read()
+                buffer.write(content)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error saving file: {str(e)}",
+                headers={"X-Error-Type": "FileSaveError"}
+            )
         csv_path = DATA_DIR / "dea_input" / file.filename
         if not csv_path.parent.exists():
             csv_path.parent.mkdir(parents=True, exist_ok=True)
