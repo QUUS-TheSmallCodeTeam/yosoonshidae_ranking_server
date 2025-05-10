@@ -867,18 +867,50 @@ async def upload_csv(file: UploadFile = File(...)):
             content = await file.read()
             f.write(content)
         
+        # Validate CSV content
+        try:
+            df = pd.read_csv(csv_path)
+            if df.empty:
+                raise ValueError("Uploaded CSV file is empty")
+            
+            # Check for required columns
+            required_columns = ['fee'] + get_basic_feature_list()
+            missing_cols = [col for col in required_columns if col not in df.columns]
+            if missing_cols:
+                raise ValueError(f"Missing required columns: {missing_cols}")
+                
+        except Exception as e:
+            logger.error(f"Error reading or validating CSV file: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Error reading CSV file: {str(e)}")
+        
         # Process DEA
-        df = pd.read_csv(csv_path)
-        result_df = calculate_rankings_with_dea(df)
+        try:
+            result_df = calculate_rankings_with_dea(df)
+            if result_df is None or result_df.empty:
+                raise ValueError("DEA calculation returned empty results")
+                
+        except Exception as e:
+            logger.error(f"Error in DEA calculation: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error in DEA calculation: {str(e)}")
         
         # Generate report
-        report_path = REPORT_DIR_BASE / f"dea_ranking_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-        generate_html_report(result_df, report_path)
-        
-        return FileResponse(report_path)
-        
+        try:
+            report_path = REPORT_DIR_BASE / f"dea_ranking_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            generate_html_report(result_df, report_path)
+            if not report_path.exists():
+                raise ValueError("Failed to generate HTML report")
+                
+            return FileResponse(report_path)
+            
+        except Exception as e:
+            logger.error(f"Error generating report: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error generating report: {str(e)}")
+            
     except HTTPException:
         raise
+    except Exception as e:
+        logger.error(f"Unexpected error in upload_csv: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
