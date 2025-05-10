@@ -13,19 +13,18 @@ import pandas as pd
 # Configure logging
 logger = logging.getLogger(__name__)
 
-def generate_html_report(df, timestamp):
+def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Rankings"):
     """Generate an HTML report of the rankings.
     
     Args:
         df: DataFrame with ranking data
         timestamp: Timestamp for the report
+        is_dea: Whether this is a DEA report (default: False)
+        title: Title for the report (default: "Mobile Plan Rankings")
         
     Returns:
         HTML content as string
     """
-    # Determine if this is a DEA or Spearman report based on columns
-    is_dea = 'efficiency_score' in df.columns or 'dea_score' in df.columns
-    
     # Get ranking method and log transform from the dataframe attributes if available
     ranking_method = df.attrs.get('ranking_method', 'relative')
     use_log_transform = df.attrs.get('use_log_transform', False)
@@ -33,11 +32,11 @@ def generate_html_report(df, timestamp):
     # Get the features used for calculation
     used_features = df.attrs.get('used_features', [])
     
-    # Set report title based on method but keep consistent for user
-    report_title = "Mobile Plan Rankings"
-    
     # Get current timestamp
     timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Set report title based on method
+    report_title = "DEA Mobile Plan Rankings" if is_dea else title
     
     # Create HTML
     html = f"""
@@ -48,14 +47,45 @@ def generate_html_report(df, timestamp):
         <style>
             body {{ font-family: Arial, sans-serif; margin: 20px; }}
             h1, h2 {{ color: #333; }}
-            table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
-            th, td {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
-            th {{ background-color: #f2f2f2; position: sticky; top: 0; }}
+            table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; font-size: 14px; }}
+            th, td {{ padding: 8px; text-align: left; border: 1px solid #ddd; }}
+            th {{ background-color: #f2f2f2; position: sticky; top: 0; z-index: 10; }}
             tr:hover {{ background-color: #f5f5f5; }}
-            .good-value {{ color: green; }}
+            tr:nth-child(even) {{ background-color: #f9f9f9; }}
+            .good-value {{ color: green; font-weight: bold; }}
             .bad-value {{ color: red; }}
             .container {{ max-width: 100%; overflow-x: auto; }}
             .note {{ background-color: #f8f9fa; padding: 10px; border-left: 4px solid #007bff; margin-bottom: 20px; }}
+            
+            /* Feature category colors */
+            .core-feature {{ background-color: #e6f7ff; }}
+            .dea-metrics {{ background-color: #fff0f6; }}
+            .input-feature {{ background-color: #f9f0ff; }}
+            .output-feature {{ background-color: #f6ffed; }}
+            
+            /* Collapsible sections */
+            .collapsible {{ 
+                background-color: #f1f1f1;
+                color: #444;
+                cursor: pointer;
+                padding: 18px;
+                width: 100%;
+                border: none;
+                text-align: left;
+                outline: none;
+                font-size: 15px;
+                margin-bottom: 5px;
+            }}
+            
+            .active, .collapsible:hover {{ background-color: #ccc; }}
+            
+            .content {{ 
+                padding: 0 18px;
+                display: none;
+                overflow: hidden;
+                background-color: #f9f9f9;
+                margin-bottom: 10px;
+            }}
             .button-group {{ margin-bottom: 15px; }}
             button {{ padding: 10px 15px; background-color: #007bff; color: white; border: none; 
                      border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px; }}
@@ -65,7 +95,7 @@ def generate_html_report(df, timestamp):
         </style>
     </head>
     <body>
-        <h1>Mobile Plan Rankings</h1>
+        <h1>Mobile Plan Rankings (Spearman Method)</h1>
         <p>Generated: {timestamp_str}</p>
         
         <div class="note">
@@ -94,10 +124,28 @@ def generate_html_report(df, timestamp):
         </div>
     """
     
-    # Get feature weights
+    # Add DEA explanation section if this is a DEA report
+    if is_dea:
+        html += """
+        <h2>DEA Calculation Explanation</h2>
+        <div class="note">
+            <p><strong>Data Envelopment Analysis (DEA)</strong> is a method that evaluates the efficiency of decision-making units (in this case, mobile plans).</p>
+            <p>In this analysis:</p>
+            <ul>
+                <li><strong>Input:</strong> Plan price (fee)</li>
+                <li><strong>Outputs:</strong> Data, Voice, SMS, and other features</li>
+                <li><strong>DEA Efficiency:</strong> A score between 0 and 1, where 1 means the plan is efficient (on the efficiency frontier)</li>
+                <li><strong>DEA Score:</strong> For inefficient plans, this is 1/efficiency. For efficient plans, this is the super-efficiency score</li>
+                <li><strong>Super-Efficiency:</strong> A score that helps differentiate between efficient plans (higher is better)</li>
+            </ul>
+            <p>Plans are ranked based on their DEA Score (higher is better).</p>
+        </div>
+        """
+    
+    # Add feature weights section
     html += """
         <h2>Feature Weights</h2>
-        <div id="feature-weights-container">
+        <div class="container">
         <table>
             <tr>
                 <th>Feature</th>
@@ -167,43 +215,40 @@ def generate_html_report(df, timestamp):
     """
     
     # Add main data table
-    html += """
-        <h2>Plan Rankings</h2>
+    if is_dea:
+        html += """
+        <h2>DEA Plan Rankings</h2>
         <div class="container">
         <table id="rankings-table">
             <tr>
                 <th>Rank</th>
                 <th>Plan Name</th>
                 <th>Provider</th>
-                <th>Original Fee</th>
-                <th>Discounted Fee</th>"""
+                <th class="input-feature">Fee (Input)</th>
+                <th class="dea-metrics">DEA Score</th>
+                <th class="dea-metrics">Efficiency</th>
+                <th class="dea-metrics">Super-Efficiency</th>
                 
-    # Add the value column name (DEA metrics or Value Ratio)
-    value_column_name = "Price-Value Ratio" if is_dea else "Value Ratio"
-    html += f"""
-                <th>{value_column_name}</th>"""
-                
-    # Add DEA-specific columns if using DEA method
-    if is_dea:
+                <!-- Core output features used in DEA calculation -->
+                <th class="output-feature">Data (GB)</th>
+                <th class="output-feature">Voice (Min)</th>
+                <th class="output-feature">SMS</th>
+                <th class="core-feature">Network</th>
+        """
+    else:
         html += """
-                <th>DEA Efficiency</th>
-                <th>DEA Score</th>
-                <th>Price Factor</th>"""
-                
-    html += """
-                <th>Data</th>
-                <th>Voice</th>
-                <th>SMS</th>
-                <th>Network</th>
-                <th>Throttle Speed</th>
-                <th>Tethering</th>
-                <th>Data Type</th>
-                <th>Data Sharing</th>
-                <th>Roaming</th>
-                <th>Micro Payment</th>
-                <th>eSIM</th>"""
-    
-    html += """</tr>"""
+        <h2>Plan Rankings</h2>
+        <div class="container" id="main-table-container">
+        <table id="main-table">
+            <tr>
+                <th>Rank</th>
+                <th>Plan Name</th>
+                <th>Operator</th>
+                <th>Original Fee</th>
+                <th>Discounted Fee</th>
+                <th>Worth Estimate</th>
+                <th>Value Ratio</th>
+        """
     
     # Add headers for all features used in the calculation
     for feature in used_features:
@@ -215,12 +260,15 @@ def generate_html_report(df, timestamp):
             </tr>
     """
     
-    # Determine which rank column to use
+    # Determine which rank column to use for DEA
     rank_column = None
-    for possible_column in ['rank', 'dea_rank', 'rank_with_ties']:
-        if possible_column in df.columns:
-            rank_column = possible_column
-            break
+    if is_dea:
+        for possible_column in ['dea_rank', 'rank']:
+            if possible_column in df.columns:
+                rank_column = possible_column
+                break
+    else:
+        rank_column = 'rank'
             
     if rank_column is None:
         # If no rank column is found, create a simple rank based on index
@@ -235,53 +283,6 @@ def generate_html_report(df, timestamp):
         plan_name = str(row.get('plan_name', f"Plan {row.get('id', i)}"))
         if len(plan_name) > 30:
             plan_name = plan_name[:27] + "..."
-            
-        original_fee = f"{int(row.get('original_fee', 0)):,}"
-        discounted_fee = f"{int(row.get('fee', 0)):,}"
-        predicted_price = f"{int(row.get('predicted_price', 0)):,}"
-        
-        # Value ratio or efficiency score for DEA
-        if is_dea:
-            # For DEA, use price-value ratio as the primary metric
-            if 'price_value_ratio' in row:
-                value_ratio = row.get('price_value_ratio', 0)
-                value_name = "Price-Value Ratio"
-                
-                # Also get the raw DEA metrics for additional columns
-                dea_efficiency = row.get('dea_efficiency', 0)
-                dea_score = row.get('dea_score', 0)
-                price_factor = row.get('dea_price_factor', 1.0)
-            elif 'dea_score' in row:
-                value_ratio = row.get('dea_score', 0)
-                value_name = "DEA Score"
-                dea_efficiency = row.get('dea_efficiency', 0)
-                price_factor = 1.0
-            else:
-                value_ratio = 0
-                value_name = "Value"
-                dea_efficiency = 0
-                price_factor = 1.0
-        else:
-            # For Spearman, use value ratio
-            value_ratio = row.get('value_ratio_original', row.get('value_ratio', 0))
-            value_name = "Value Ratio"
-            dea_efficiency = 0
-            dea_score = 0
-            price_factor = 1.0
-            
-        if pd.isna(value_ratio):
-            value_ratio_str = "N/A"
-            value_class = ""
-        else:
-            value_ratio_str = f"{value_ratio:.2f}"
-            # For DEA, higher score is better
-            # For Spearman, ratio > 1 is good, < 1 is bad
-            if is_dea:
-                value_class = "good-value" if value_ratio > 0.9 else ("bad-value" if value_ratio < 0.5 else "")
-            else:
-                value_class = "good-value" if value_ratio > 1.1 else ("bad-value" if value_ratio < 0.9 else "")
-            
-        operator = row.get('mvno', "Unknown")
         
         # Get the rank value using the determined rank column
         if rank_column in row:
@@ -293,90 +294,95 @@ def generate_html_report(df, timestamp):
         if isinstance(rank_display, (int, float)):
             rank_display = f"{int(rank_display)}위"
         
-        # For DEA reports, we don't need predicted price column
-        # Get data, voice, and message values
-        basic_data = row.get('basic_data_clean', row.get('basic_data', 0))
-        if pd.isna(basic_data):
-            basic_data = 0
-        if row.get('basic_data_unlimited', 0) == 1:
-            data_str = "무제한"
-        else:
-            data_str = f"{basic_data}GB"
-            
-        voice = row.get('voice_clean', row.get('voice', 0))
-        if pd.isna(voice):
-            voice = 0
-        if row.get('voice_unlimited', 0) == 1:
-            voice_str = "무제한"
-        else:
-            voice_str = f"{int(voice)}분"
-            
-        message = row.get('message_clean', row.get('message', 0))
-        if pd.isna(message):
-            message = 0
-        if row.get('message_unlimited', 0) == 1:
-            message_str = "무제한"
-        else:
-            message_str = f"{int(message)}건"
-            
-        network = row.get('network', "")
-        if network == "5G":
-            network = "5G"
-        elif network == "LTE":
-            network = "LTE"
-        else:
-            network = ""
-            
-        # Get additional feature details
-        throttle_speed = row.get('throttle_speed_normalized', 0)
-        if pd.isna(throttle_speed):
-            throttle_speed_str = "N/A"
-        elif throttle_speed == 0:
-            throttle_speed_str = "No throttling"
-        else:
-            # Convert normalized value (0-1) to actual Mbps (assuming max is 100 Mbps)
-            speed_mbps = throttle_speed * 100
-            throttle_speed_str = f"{speed_mbps:.1f} Mbps"
-            
-        tethering_gb = row.get('tethering_gb', 0)
-        if pd.isna(tethering_gb):
-            tethering_str = "N/A"
-        elif tethering_gb == 0:
-            tethering_str = "Not allowed"
-        else:
-            tethering_str = f"{tethering_gb:.1f} GB"
-            
-        # Determine data type based on unlimited flags
-        if row.get('basic_data_unlimited', 0) == 1:
-            if throttle_speed > 0:
-                data_type = "Throttled"
-            else:
-                data_type = "Unlimited"
-        else:
-            data_type = "Limited"
-            
-        # Get boolean features
-        data_sharing = "Yes" if row.get('data_sharing', False) else "No"
-        roaming = "Yes" if row.get('roaming_support', False) else "No"
-        micro_payment = "Yes" if row.get('micro_payment', False) else "No"
-        esim = "Yes" if row.get('is_esim', False) else "No"
-            
-        # Format DEA metrics
         if is_dea:
-            if pd.isna(dea_efficiency):
-                dea_efficiency_str = "N/A"
+            # DEA specific values
+            fee = int(row.get('fee', 0))
+            fee_str = f"{fee:,}"
+            
+            # DEA metrics
+            efficiency = row.get('dea_efficiency', 0)
+            if pd.isna(efficiency):
+                efficiency_str = "N/A"
             else:
-                dea_efficiency_str = f"{dea_efficiency:.4f}"
+                efficiency_str = f"{efficiency:.4f}"
                 
+            dea_score = row.get('dea_score', 0)
             if pd.isna(dea_score):
                 dea_score_str = "N/A"
+                value_class = ""
             else:
                 dea_score_str = f"{dea_score:.4f}"
+                value_class = "good-value" if dea_score > 1.0 else ""
                 
-            if pd.isna(price_factor):
-                price_factor_str = "N/A"
+            super_efficiency = row.get('dea_super_efficiency', 0)
+            if pd.isna(super_efficiency):
+                super_efficiency_str = "N/A"
             else:
-                price_factor_str = f"{price_factor:.2f}"
+                super_efficiency_str = f"{super_efficiency:.4f}"
+            
+            # Get data, voice, and message values for DEA outputs
+            data_value = row.get('basic_data_clean', row.get('basic_data', 0))
+            if pd.isna(data_value):
+                data_value = 0
+            if row.get('basic_data_unlimited', 0) == 1:
+                data_str = "무제한"
+            else:
+                data_str = f"{data_value}GB"
+                
+            voice_value = row.get('voice_clean', row.get('voice', 0))
+            if pd.isna(voice_value):
+                voice_value = 0
+            if row.get('voice_unlimited', 0) == 1:
+                voice_str = "무제한"
+            else:
+                voice_str = f"{int(voice_value)}분"
+                
+            message_value = row.get('message_clean', row.get('message', 0))
+            if pd.isna(message_value):
+                message_value = 0
+            if row.get('message_unlimited', 0) == 1:
+                message_str = "무제한"
+            else:
+                message_str = f"{int(message_value)}건"
+            
+            network = row.get('network', "")
+            if network == "5G":
+                network = "5G"
+            elif network == "LTE":
+                network = "LTE"
+            else:
+                network = ""
+            
+            html += f"""
+            <tr>
+                <td>{rank_display}</td>
+                <td>{plan_name}</td>
+                <td>{row.get('mvno', 'Unknown')}</td>
+                <td class="input-feature">{fee_str}</td>
+                <td class="dea-metrics {value_class}">{dea_score_str}</td>
+                <td class="dea-metrics">{efficiency_str}</td>
+                <td class="dea-metrics">{super_efficiency_str}</td>
+                <td class="output-feature">{data_str}</td>
+                <td class="output-feature">{voice_str}</td>
+                <td class="output-feature">{message_str}</td>
+                <td class="core-feature">{network}</td>
+            """
+        else:
+            # Spearman specific values
+            original_fee = f"{int(row.get('original_fee', row.get('fee', 0))):,}"
+            discounted_fee = f"{int(row.get('fee', 0)):,}"
+            predicted_price = f"{int(row.get('predicted_price', 0)):,}"
+            
+            # Value ratio
+            value_ratio = row.get('value_ratio_original', row.get('value_ratio', 0))
+            if pd.isna(value_ratio):
+                value_ratio_str = "N/A"
+                value_class = ""
+            else:
+                value_ratio_str = f"{value_ratio:.2f}"
+                value_class = "good-value" if value_ratio > 1.1 else ("bad-value" if value_ratio < 0.9 else "")
+                
+            operator = row.get('mvno', "Unknown")
             
             html += f"""
             <tr>
@@ -385,42 +391,8 @@ def generate_html_report(df, timestamp):
                 <td>{operator}</td>
                 <td>{original_fee}</td>
                 <td>{discounted_fee}</td>
+                <td>{predicted_price}</td>
                 <td class="{value_class}">{value_ratio_str}</td>
-                <td>{dea_efficiency_str}</td>
-                <td>{dea_score_str}</td>
-                <td>{price_factor_str}</td>
-                <td>{data_str}</td>
-                <td>{voice_str}</td>
-                <td>{message_str}</td>
-                <td>{network}</td>
-                <td>{throttle_speed_str}</td>
-                <td>{tethering_str}</td>
-                <td>{data_type}</td>
-                <td>{data_sharing}</td>
-                <td>{roaming}</td>
-                <td>{micro_payment}</td>
-                <td>{esim}</td>
-            """
-        else:
-            html += f"""
-            <tr>
-                <td>{rank_display}</td>
-                <td>{plan_name}</td>
-                <td>{operator}</td>
-                <td>{original_fee}</td>
-                <td>{discounted_fee}</td>
-                <td class="{value_class}">{value_ratio_str}</td>
-                <td>{data_str}</td>
-                <td>{voice_str}</td>
-                <td>{message_str}</td>
-                <td>{network}</td>
-                <td>{throttle_speed_str}</td>
-                <td>{tethering_str}</td>
-                <td>{data_type}</td>
-                <td>{data_sharing}</td>
-                <td>{roaming}</td>
-                <td>{micro_payment}</td>
-                <td>{esim}</td>
             """
         
         # Add values for all features
