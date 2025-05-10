@@ -739,16 +739,15 @@ async def process_data(request: Request):
         # Step 6: Apply Spearman ranking method with options
         # Note: calculate_rankings_with_spearman now calculates ALL ranking types internally
         df_ranked = calculate_rankings_with_spearman(
-            processed_df,
-            use_log_transform=use_log_transform,
+            processed_df, 
+            use_log_transform=use_log_transform, 
             rank_method=rank_method
         )
         
         logger.info(f"[{request_id}] Ranked DataFrame shape: {df_ranked.shape}")
         
-        # Save to global variable for later use
-        global df_with_rankings
-        df_with_rankings = df_ranked.copy()
+        # Store the results in global state for access by other endpoints
+        config.df_with_rankings = df_ranked
         
         # Step 7: Generate HTML report
         timestamp_now = datetime.now()
@@ -757,6 +756,10 @@ async def process_data(request: Request):
         if not report_path.parent.exists():
             report_path.parent.mkdir(parents=True, exist_ok=True)
         
+        # Generate HTML content
+        html_report = generate_html_report(df_ranked, timestamp_now)
+        
+        # Write HTML content to file
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(html_report)
         
@@ -892,8 +895,8 @@ async def upload_csv(file: UploadFile = File(...)):
             )
         
         # Get file size
-        file_size = await file.seek(0, os.SEEK_END)
-        await file.seek(0)
+        content = await file.read()
+        file_size = len(content)
         
         if file_size > 10 * 1024 * 1024:  # 10MB limit
             raise HTTPException(
@@ -901,6 +904,9 @@ async def upload_csv(file: UploadFile = File(...)):
                 detail="File too large (max 10MB)",
                 headers={"X-Error-Type": "FileSizeError"}
             )
+        
+        # Reset file pointer
+        await file.seek(0)
             
         # Save uploaded file
         try:
@@ -908,10 +914,11 @@ async def upload_csv(file: UploadFile = File(...)):
             if not csv_path.parent.exists():
                 csv_path.parent.mkdir(parents=True, exist_ok=True)
             
+            # Since we already read the content for file size check
             with csv_path.open("wb") as f:
-                content = await file.read()
                 f.write(content)
         except Exception as e:
+            logger.error(f"Error saving file: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=500,
                 detail=f"Error saving file: {str(e)}",
@@ -952,13 +959,21 @@ async def upload_csv(file: UploadFile = File(...)):
             if not report_path.parent.exists():
                 report_path.parent.mkdir(parents=True, exist_ok=True)
             
-            generate_html_report(result_df, report_path)
+            # Generate HTML content
+            html_content = generate_html_report(result_df, timestamp)
+            
+            # Write HTML content to file
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+                
             if not report_path.exists():
                 raise ValueError("Failed to generate HTML report")
                 
-            return FileResponse(report_path, filename=report_filename)
+            # Return file response with proper media type
+            from fastapi.responses import FileResponse
+            return FileResponse(path=str(report_path), filename=report_filename, media_type="text/html")
         except Exception as e:
-            logger.error(f"Error generating report: {str(e)}")
+            logger.error(f"Error generating report: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Error generating report: {str(e)}")
             
     except HTTPException:

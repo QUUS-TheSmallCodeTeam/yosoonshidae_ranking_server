@@ -16,7 +16,9 @@ def calculate_rankings_with_dea(
     df: pd.DataFrame,
     feature_set: str = 'basic',
     target_variable: str = 'fee',
-    rts: str = 'crs'
+    rts: str = 'crs',
+    weight_constraints: dict = None,
+    non_discretionary: list = None
 ) -> pd.DataFrame:
     """
     Calculate rankings using DEA method.
@@ -26,6 +28,8 @@ def calculate_rankings_with_dea(
         feature_set: Set of features to use ('basic' or 'extended')
         target_variable: The target variable (input)
         rts: Returns to scale assumption ('crs' or 'vrs')
+        weight_constraints: Optional dictionary of weight constraints
+        non_discretionary: Optional list of non-discretionary variables
         
     Returns:
         DataFrame with DEA rankings
@@ -55,10 +59,12 @@ def calculate_rankings_with_dea(
         # Run DEA analysis
         logger.info(f"Running DEA with feature_set={feature_set}, target_variable={target_variable}, rts={rts}")
         result_df = run_dea_analysis(
-            df,
+            df=df,
             feature_set=feature_set,
             target_variable=target_variable,
-            rts=rts
+            rts=rts,
+            weight_constraints=weight_constraints,
+            non_discretionary=non_discretionary
         )
         
         if result_df is None or result_df.empty:

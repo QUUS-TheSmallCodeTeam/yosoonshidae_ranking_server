@@ -23,12 +23,18 @@ def generate_html_report(df, timestamp):
     Returns:
         HTML content as string
     """
+    # Determine if this is a DEA or Spearman report based on columns
+    is_dea = 'efficiency_score' in df.columns or 'dea_score' in df.columns
+    
     # Get ranking method and log transform from the dataframe attributes if available
     ranking_method = df.attrs.get('ranking_method', 'relative')
     use_log_transform = df.attrs.get('use_log_transform', False)
     
-    # Get the features used for Spearman calculation
+    # Get the features used for calculation
     used_features = df.attrs.get('used_features', [])
+    
+    # Set report title based on method
+    report_title = "DEA Ranking Report" if is_dea else "Spearman Ranking Report"
     
     # Get current timestamp
     timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
@@ -38,7 +44,7 @@ def generate_html_report(df, timestamp):
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Mobile Plan Rankings - {timestamp_str}</title>
+        <title>{report_title} - {timestamp_str}</title>
         <style>
             body {{ font-family: Arial, sans-serif; margin: 20px; }}
             h1, h2 {{ color: #333; }}
