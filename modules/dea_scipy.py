@@ -154,10 +154,46 @@ def run_scipy_dea(
         
         # Define feature sets based on input
         if isinstance(feature_set, str):
-            # Predefined feature sets - reduced dimensionality to improve discrimination
+            # Predefined feature sets with comprehensive mobile plan features
             feature_sets = {
-                'basic': ['basic_data_clean', 'voice_clean', 'message_clean'],  # Core features only
-                'extended': ['basic_data_clean', 'voice_clean', 'message_clean', 'throttle_speed_normalized'],  # Reduced from original
+                'basic': [
+                    # Core data features
+                    'basic_data_clean',      # Monthly data allowance in GB
+                    'basic_data_unlimited',  # Flag for unlimited monthly data
+                    'daily_data_clean',      # Daily data allowance in GB
+                    'daily_data_unlimited',  # Flag for unlimited daily data
+                    
+                    # Voice and messaging features
+                    'voice_clean',           # Voice minutes
+                    'voice_unlimited',       # Flag for unlimited voice
+                    'message_clean',         # SMS count
+                    'message_unlimited',     # Flag for unlimited SMS
+                    'additional_call',       # Extra voice minutes
+                    
+                    # Network and tethering features
+                    'is_5g',                 # Flag for 5G network support
+                    'tethering_gb',          # Tethering allowance in GB
+                    
+                    # Throttling and speed features
+                    'has_throttled_data',    # Flag for throttling after allowance
+                    'has_unlimited_speed',   # Flag for full-speed after allowance
+                    'speed_when_exhausted'   # Speed in Mbps when throttled
+                ],
+                
+                'extended': [
+                    # All basic features
+                    'basic_data_clean', 'basic_data_unlimited', 'daily_data_clean', 'daily_data_unlimited',
+                    'voice_clean', 'voice_unlimited', 'message_clean', 'message_unlimited', 'additional_call',
+                    'is_5g', 'tethering_gb', 'has_throttled_data', 'has_unlimited_speed', 'speed_when_exhausted',
+                    
+                    # Additional features
+                    'throttle_speed_normalized',
+                    'data_sharing',
+                    'roaming_support',
+                    'micro_payment',
+                    'is_esim'
+                ],
+                
                 'full': [col for col in df.columns if col != target_variable and col != 'plan_id' and col != 'provider']
             }
             
@@ -210,6 +246,33 @@ def run_scipy_dea(
                 cap = 1
                 df_sample.loc[df_sample[flag_col] == 1, num_col] = cap
                 logger.info(f"  - {flag_col} → created {num_col} with values 0/1")
+        
+        # Special handling for unlimited_type_numeric - treat as categorical
+        if 'unlimited_type_numeric' in output_cols and 'unlimited_type_numeric' in df_sample.columns:
+            logger.info("Handling unlimited_type_numeric as categorical feature")
+            # Remove the original column from output_cols
+            output_cols.remove('unlimited_type_numeric')
+            
+            # Create binary indicator columns for each category
+            unlimited_types = {0: 'limited', 1: 'throttled', 2: 'throttled_plus', 3: 'unlimited'}
+            for value, name in unlimited_types.items():
+                col_name = f'unlimited_type_{name}'
+                df_sample[col_name] = (df_sample['unlimited_type_numeric'] == value).astype(float)
+                output_cols.append(col_name)
+                logger.info(f"  - Created categorical feature: {col_name}")
+        
+        # Identify and properly handle categorical features
+        categorical_features = [
+            'basic_data_unlimited', 'daily_data_unlimited', 'voice_unlimited', 'message_unlimited',
+            'is_5g', 'has_throttled_data', 'has_unlimited_speed', 'data_sharing',
+            'roaming_support', 'micro_payment', 'is_esim'
+        ]
+        
+        for col in categorical_features:
+            if col in output_cols and col in df_sample.columns:
+                # Ensure categorical features are properly represented as 0/1 values
+                df_sample[col] = df_sample[col].apply(lambda x: 1.0 if x else 0.0)
+                logger.info(f"  - Normalized categorical feature: {col}")
         
         # Check and clean feature columns
         for col in output_cols:
