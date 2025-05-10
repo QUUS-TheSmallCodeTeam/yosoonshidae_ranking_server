@@ -33,8 +33,8 @@ def generate_html_report(df, timestamp):
     # Get the features used for calculation
     used_features = df.attrs.get('used_features', [])
     
-    # Set report title based on method
-    report_title = "DEA Ranking Report" if is_dea else "Spearman Ranking Report"
+    # Set report title based on method but keep consistent for user
+    report_title = "Mobile Plan Rankings"
     
     # Get current timestamp
     timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
@@ -65,7 +65,7 @@ def generate_html_report(df, timestamp):
         </style>
     </head>
     <body>
-        <h1>Mobile Plan Rankings (Spearman Method)</h1>
+        <h1>Mobile Plan Rankings</h1>
         <p>Generated: {timestamp_str}</p>
         
         <div class="note">
