@@ -166,47 +166,53 @@ def read_root():
                 <h1>Welcome to the Moyo Ranking Model API</h1>
                 
                 <div class="method-info">
-                    <h2>Spearman Correlation Ranking Method</h2>
-                    <p>This API uses the Spearman correlation method to estimate plan worth based on feature importance:</p>
+                    <h2>Data Envelopment Analysis (DEA) Ranking Method</h2>
+                    <p>This API uses the DEA method to estimate plan efficiency and rank mobile plans:</p>
                     <ol>
-                        <li>Calculate Spearman correlation between each feature and the original plan fee</li>
-                        <li>Apply log(1+x) transformation to non-categorical features</li>
-                        <li>Normalize correlations to create feature weights</li>
-                        <li>Normalize each feature to [0,1] range</li>
-                        <li>Calculate weighted score for each plan with correlation signs</li>
-                        <li>Scale scores to KRW range</li>
-                        <li>Rank by value ratio (predicted price / fee)</li>
+                        <li>Calculate efficiency scores using Data Envelopment Analysis</li>
+                        <li>Use plan features as outputs (basic_data, voice, message, etc.)</li>
+                        <li>Use plan fee as input (cost)</li>
+                        <li>Apply Variable Returns to Scale (VRS) for better discrimination</li>
+                        <li>Set unlimited features to maximum observed values</li>
+                        <li>Rank plans by DEA efficiency score</li>
+                        <li>Generate comprehensive reports with detailed metrics</li>
                     </ol>
                 </div>
                 
                 <p>No ranking reports are available yet. Use the <code>/process</code> endpoint to analyze data and generate rankings.</p>
                 
-                <h2>Ranking Methods</h2>
+                <h2>Ranking Method Details</h2>
                 <div class="method-info">
-                    <h3>Spearman Correlation</h3>
-                    <p>This API uses the Spearman correlation method to estimate plan worth based on feature importance:</p>
-                    <ol>
-                        <li>Calculate Spearman correlation between each feature and the original plan fee</li>
-                        <li>Apply log(1+x) transformation to non-categorical features</li>
-                        <li>Normalize correlations to create feature weights</li>
-                        <li>Normalize each feature to [0,1] range</li>
-                        <li>Calculate weighted score for each plan with correlation signs</li>
-                        <li>Scale scores to KRW range</li>
-                        <li>Rank by value ratio (predicted price / fee)</li>
-                    </ol>
+                    <h3>Data Envelopment Analysis (DEA)</h3>
+                    <p>The DEA method offers several advantages for ranking mobile plans:</p>
+                    <ul>
+                        <li><strong>Data-driven approach</strong>: No subjective weights needed</li>
+                        <li><strong>Efficiency measurement</strong>: Evaluates how efficiently plans convert cost to features</li>
+                        <li><strong>Multiple input/output handling</strong>: Considers all plan features simultaneously</li>
+                        <li><strong>Non-parametric</strong>: No assumptions about the underlying distribution</li>
+                        <li><strong>Flexible configuration</strong>: Supports different returns to scale and feature sets</li>
+                    </ul>
                 </div>
 
                 <div class="method-info">
-                    <h2>DEA Ranking Method</h2>
-                    <p>Upload a CSV file with mobile plan data to generate rankings using Data Envelopment Analysis (DEA).</p>
+                    <h3>API Usage</h3>
+                    <p>Submit plan data to the <code>/process</code> endpoint to generate rankings using Data Envelopment Analysis (DEA).</p>
                     <p>DEA uses SciPy's linear programming solver to calculate efficiency scores, which are then converted to rankings.</p>
-                    <p>Required columns: 'fee' and basic feature columns (data, voice, message, etc.)</p>
-                    <form action="/upload-csv" method="post" enctype="multipart/form-data" style="margin-top: 15px;">
-                        <div style="display: flex; flex-direction: column; gap: 10px;">
-                            <input type="file" name="file" accept=".csv" style="padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
-                            <button type="submit" style="padding: 10px 15px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; width: fit-content;">Generate DEA Rankings</button>
-                        </div>
-                    </form>
+                    <p>Required columns: 'fee' and basic feature columns (basic_data_clean, voice_clean, message_clean, etc.)</p>
+                    <p>Use the <code>/process</code> endpoint to submit plan data in JSON format:</p>
+                    <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto;">
+{
+  "options": {
+    "featureSet": "basic",
+    "targetVariable": "fee",
+    "rts": "vrs"
+  },
+  "data": [
+    { "id": 1, "plan_name": "Plan A", ... },
+    { "id": 2, "plan_name": "Plan B", ... }
+  ]
+}
+                    </pre>
                 </div>
 
                 <style>
@@ -260,7 +266,7 @@ def read_root():
                 <hr>
                 <h3>Endpoints</h3>
                 <ul>
-                    <li><code>POST /process</code>: Submit plan data (JSON list) to preprocess, rank using Spearman method, and generate a report.</li>
+                    <li><code>POST /process</code>: Submit plan data (JSON list) to preprocess, rank using DEA method, and generate a report.</li>
                     <li><code>POST /test</code>: Echo back the request body (for debugging).</li>
                 </ul>
                 <hr>
