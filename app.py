@@ -852,7 +852,7 @@ async def process_data(request: Request):
             },
             "results": {
                 "raw_data_path": raw_data_path,
-                "processed_data_path": latest_processed_path,
+                "processed_data_path": processed_data_path,
                 "report_path": report_path,
                 "report_url": f"/reports/{Path(report_path).name}" if report_path else None
             },
