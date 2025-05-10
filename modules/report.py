@@ -276,15 +276,15 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         # If no rank column is found, create a simple rank based on index or efficiency
         logger.warning("No rank column found in data, creating a temporary rank")
         
-        if is_dea and 'dea_efficiency' in df.columns:
-            # For DEA, sort by efficiency (descending) if available
-            logger.info("Creating temporary rank based on DEA efficiency")
-            df = df.sort_values('dea_efficiency', ascending=False)
-            df['temp_rank'] = range(1, len(df) + 1)
-        elif is_dea and 'dea_score' in df.columns:
+        if is_dea and 'dea_score' in df.columns:
             # For DEA, sort by score (descending) if available
             logger.info("Creating temporary rank based on DEA score")
             df = df.sort_values('dea_score', ascending=False)
+            df['temp_rank'] = range(1, len(df) + 1)
+        elif is_dea and 'dea_efficiency' in df.columns:
+            # For DEA, sort by efficiency (descending) if available
+            logger.info("Creating temporary rank based on DEA efficiency")
+            df = df.sort_values('dea_efficiency', ascending=False)
             df['temp_rank'] = range(1, len(df) + 1)
         elif not is_dea and 'value_ratio' in df.columns:
             # For Spearman, sort by value ratio (descending) if available
@@ -301,7 +301,15 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
     logger.info(f"Using rank column: {rank_column}")
     
     # Add rows for each plan
-    for i, (_, row) in enumerate(df.sort_values(rank_column).iterrows()):
+    # For DEA, always sort by dea_score in descending order if available
+    if is_dea and 'dea_score' in df.columns:
+        logger.info("Sorting plans by DEA score (descending)")
+        sorted_df = df.sort_values('dea_score', ascending=False)
+    else:
+        logger.info(f"Sorting plans by {rank_column}")
+        sorted_df = df.sort_values(rank_column)
+        
+    for i, (_, row) in enumerate(sorted_df.iterrows()):
         plan_name = str(row.get('plan_name', f"Plan {row.get('id', i)}"))
         if len(plan_name) > 30:
             plan_name = plan_name[:27] + "..."
