@@ -5,6 +5,8 @@ Configuration module for the ranking model server.
 import os
 from pathlib import Path
 import logging
+import pandas as pd
+from typing import Optional, Dict, Any
 
 # Configure logging
 logging.basicConfig(
@@ -31,7 +33,6 @@ os.environ["PYTHONPATH"] = str(APP_DIR)
 
 # Configuration class
 from dataclasses import dataclass
-from typing import Optional
 
 @dataclass
 class Config:
@@ -52,7 +53,28 @@ class Config:
     
     # Global state
     df_with_rankings: Optional[pd.DataFrame] = None
-    latest_logical_test_results: Optional[dict] = None
+    latest_logical_test_results: Optional[Dict[str, Any]] = None
+    
+    def __post_init__(self):
+        """Initialize configuration after dataclass creation."""
+        # Ensure all directories exist
+        for path in [
+            self.app_dir,
+            self.data_dir,
+            self.report_dir,
+            self.dea_input_dir,
+            self.dea_report_dir,
+            self.spearman_raw_dir,
+            self.spearman_processed_dir,
+            self.spearman_report_dir
+        ]:
+            if not path.exists():
+                path.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Created directory: {path}")
+
+        # Set environment variables
+        os.environ["PYTHONPATH"] = str(self.app_dir)
+        logger.info(f"Set PYTHONPATH to: {self.app_dir}")
 
 # Create global config instance
 config = Config()
