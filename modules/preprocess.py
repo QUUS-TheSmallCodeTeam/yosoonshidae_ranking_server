@@ -10,16 +10,11 @@ def prepare_features(df):
     print("Data types before conversion:")
     print(processed_df.dtypes.head(10))
     
-    # Add tethering unit conversion (defensive measure if database conversion fails)
+    # Tethering unit conversion is already handled in the SQL query
+    # The SQL query already converts MB to GB with: 
+    # CASE WHEN pm.tethering->>'tethering_data_unit' = 'MB' THEN COALESCE((pm.tethering->>'tethering_data')::numeric / 1000, 0)
     if 'tethering_gb' in processed_df.columns and 'tethering_data_unit' in processed_df.columns:
-        print("Checking tethering data units for proper conversion...")
-        mb_count = 0
-        for idx, row in processed_df.iterrows():
-            if pd.notna(row['tethering_data_unit']) and str(row['tethering_data_unit']).upper() == 'MB':
-                # If tethering unit is MB, ensure the value is converted to GB
-                processed_df.at[idx, 'tethering_gb'] = pd.to_numeric(row['tethering_gb'], errors='coerce') / 1000
-                mb_count += 1
-        print(f"Converted {mb_count} tethering values from MB to GB")
+        print("Skipping tethering unit conversion - already handled in SQL query")
     
     # IMPORTANT: Ensure numeric fields are actually numeric
     # Convert basic_data and daily_data to numeric types first - ALWAYS DO THIS BEFORE ANY OPERATIONS
@@ -129,7 +124,7 @@ def prepare_features(df):
     # For unlimited basic data plans, use the maximum value
     # For plans with unlimited daily data, multiply by 30 to get monthly equivalent
     processed_df['total_data'] = np.where(
-        processed_df['basic_data_unlimited'] == 1,
+        (processed_df['basic_data_unlimited'] == 1),
         max_basic_data,  # Maximum observed value for unlimited basic data
         processed_df['basic_data_clean'] + (processed_df['daily_data_clean'] * 30)
     )
@@ -146,8 +141,8 @@ def prepare_features(df):
     # 1. Explicitly unlimited (basic or daily data is 999/9999)
     # 2. Throttled unlimited (has speed when exhausted)
     processed_df['any_unlimited_data'] = ((processed_df['basic_data_unlimited'] == 1) | 
-                                         (processed_df['daily_data_unlimited'] == 1) |
-                                         (processed_df['has_throttled_data'] == 1)).astype(int)
+                                          (processed_df['daily_data_unlimited'] == 1) |
+                                          (processed_df['has_throttled_data'] == 1)).astype(int)
     
     # Create a more nuanced unlimited type classification
     processed_df['unlimited_type'] = np.where(
@@ -164,6 +159,7 @@ def prepare_features(df):
         )
     )
     
+    # For regression, create numeric encoding of unlimited type
     # For regression, create numeric encoding of unlimited type
     # UPDATED ORDER:
     # 3 = unlimited_speed (unchanged) - Highest value: unlimited data AND speed
@@ -324,12 +320,8 @@ def prepare_features(df):
     # For all plans, calculate price per month directly
     processed_df['monthly_price'] = processed_df['fee']
     
-    # Calculate discount ratio
-    processed_df['discount_ratio'] = np.where(
-        processed_df['original_fee'] > 0,
-        1 - (processed_df['fee'] / processed_df['original_fee']),
-        0
-    )
+    # No need to calculate discount ratio as discount_percentage is already provided in SQL query
+    # The SQL query already calculates: (1 - (fee / original_fee)) * 100 as discount_percentage
     
     # --- START: MODIFICATION TO NORMALIZE original_fee ---
     # Ensure 'original_fee' consistently represents the base price.

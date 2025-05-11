@@ -266,16 +266,64 @@ def run_scipy_dea(
                 df_sample[col] = df_sample[col].apply(lambda x: 1.0 if x else 0.0)
                 logger.info(f"  - Normalized categorical feature: {col}")
         
-        # Check and clean feature columns
-        for col in output_cols:
+        # Check, clean, and normalize feature columns
+        # Define which features are binary flags (already normalized)
+        binary_features = [
+            'basic_data_unlimited', 'daily_data_unlimited', 'voice_unlimited', 'message_unlimited',
+            'is_5g', 'has_throttled_data', 'has_unlimited_speed', 'data_sharing',
+            'roaming_support', 'micro_payment', 'is_esim'
+        ]
+        
+        # Check if we already have normalized versions of features
+        normalized_feature_map = {
+            'speed_when_exhausted': 'throttle_speed_normalized'
+        }
+        
+        # Process each feature
+        for col in list(output_cols):  # Use list() to allow modifying output_cols during iteration
+            # Check if column exists
             if col not in df_sample.columns:
                 raise ValueError(f"Column '{col}' not found in data")
+                
+            # Replace with normalized version if available
+            if col in normalized_feature_map and normalized_feature_map[col] in df_sample.columns:
+                normalized_col = normalized_feature_map[col]
+                logger.info(f"Replacing {col} with normalized version {normalized_col}")
+                # Replace in output_cols list
+                output_cols[output_cols.index(col)] = normalized_col
+                continue
+                
+            # Clean NaN and inf values
             if df_sample[col].isnull().any() or np.any(np.isnan(df_sample[col])) or np.any(np.isinf(df_sample[col])):
                 logger.warning(f"NaN or infinite values detected in column {col}; replacing with 0.")
                 df_sample[col] = df_sample[col].fillna(0).replace([np.inf, -np.inf], 0)
+                
+            # Normalize numeric features (skip binary features)
+            if col not in binary_features and df_sample[col].nunique() > 2:
+                # Check if column has variation (max != min)
+                col_min, col_max = df_sample[col].min(), df_sample[col].max()
+                if col_max > col_min:
+                    # Min-max normalization to 0-1 range
+                    normalized_col_name = f"{col}_normalized"
+                    df_sample[normalized_col_name] = (df_sample[col] - col_min) / (col_max - col_min)
+                    logger.info(f"Normalized {col} to range [0,1] as {normalized_col_name}")
+                    # Replace in output_cols list
+                    output_cols[output_cols.index(col)] = normalized_col_name
         
         n_dmu = len(df_sample)
-        inputs = df_sample[target_variable].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
+        
+        # Normalize the input variable (fee) for consistent scaling
+        input_min, input_max = df_sample[target_variable].min(), df_sample[target_variable].max()
+        if input_max > input_min:
+            # Min-max normalization to 0-1 range
+            df_sample[f"{target_variable}_normalized"] = (df_sample[target_variable] - input_min) / (input_max - input_min)
+            logger.info(f"Normalized input {target_variable} to range [0,1]")
+            # Use normalized input for DEA
+            inputs = df_sample[f"{target_variable}_normalized"].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
+        else:
+            # If all inputs are the same, use the original values
+            inputs = df_sample[target_variable].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
+            
         outputs = df_sample[output_cols].values  # Output data, 2D array (n_dmu x n_output)
         
         # Precompute shared arrays outside the per-DMU loop
