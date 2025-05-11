@@ -434,6 +434,11 @@ def run_scipy_dea(
         # Calculate final rank based on DEA score (standard approach)
         df_result['dea_rank'] = df_result['dea_score'].rank(ascending=False, method='min')
         
+        # Replace any potential inf, -inf, or NaN values with appropriate finite values
+        # This ensures JSON serialization will work
+        df_result.replace([np.inf, -np.inf], np.finfo(np.float64).max, inplace=True)
+        df_result.replace(np.nan, 0, inplace=True)
+        
         if sample_size is not None:
             logger.warning("Results based on sampled data; may not represent full dataset.")
         

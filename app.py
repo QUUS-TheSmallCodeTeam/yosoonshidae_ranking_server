@@ -833,6 +833,11 @@ async def process_data(request: Request):
             f.write(html_report)
         
         # Step 8: Prepare response with DEA ranking data
+        # First, ensure all float values are JSON-serializable
+        # Replace inf, -inf, and NaN with appropriate values
+        df_ranked = df_ranked.replace([np.inf, -np.inf], np.finfo(np.float64).max)
+        df_ranked = df_ranked.replace(np.nan, 0)
+        
         all_rankings = {}
         
         # For DEA, we only have one ranking method
