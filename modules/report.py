@@ -341,7 +341,18 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         logger.info(f"Sorting plans by {rank_column}")
         sorted_df = working_df.sort_values(rank_column)
         
-    # Start the table for plan rankings
+    # 순위별로 정렬된 데이터프레임에서 1위가 있는지 확인
+    has_rank_one = False
+    if 'display_rank' in sorted_df.columns:
+        has_rank_one = 1.0 in sorted_df['display_rank'].values
+    
+    if not has_rank_one and len(sorted_df) > 0:
+        logger.warning("No rank 1 found in sorted dataframe! Forcing top plan to have rank 1.")
+        # 가장 높은 점수를 가진 플랜에 1위 부여
+        top_idx = sorted_df['dea_score'].idxmax() if 'dea_score' in sorted_df.columns else sorted_df.index[0]
+        sorted_df.loc[top_idx, 'display_rank'] = 1.0
+    
+    # 테이블 시작
     html += f"""
         <h2>Plan Rankings</h2>
         <div class="container">
@@ -376,14 +387,16 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         if len(plan_name) > 30:
             plan_name = plan_name[:27] + "..."
         
-        # Get the rank value - use display_rank which is a simple sequential rank
+        # display_rank 열을 사용하여 순위 표시 (동점 순위 및 1위 포함 보장)
         if 'display_rank' in row and not pd.isna(row['display_rank']):
-            rank_int = int(row['display_rank'])
+            # 정확한 순위 값 유지 (소수점이 있는 경우 정수로 변환)
+            rank_value = row['display_rank']
+            rank_int = int(rank_value)
         else:
-            # Fallback to position in sorted dataframe + 1
+            # 순위 정보가 없는 경우 정렬된 순서 + 1로 대체
             rank_int = i + 1
             
-        # Format rank display with "위" (Korean for "rank")
+        # 한국어 순위 표시를 위한 포맷팅
         rank_display = f"{rank_int}위"
             
         # No need for rank debugging logs
