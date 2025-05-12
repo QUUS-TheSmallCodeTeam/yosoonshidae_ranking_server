@@ -341,22 +341,37 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         logger.info(f"Sorting plans by {rank_column}")
         sorted_df = working_df.sort_values(rank_column)
         
-    # We'll use the sequential rank column for display to ensure all ranks from 1 to N are shown
-    # without skipping any numbers
-    added_plan_ids = set()  # Keep track of plans we've already added to avoid duplicates
-        
-    # Now add the rest of the plans, skipping any we've already added
+    # Start the table for plan rankings
+    html += f"""
+        <h2>Plan Rankings</h2>
+        <div class="container">
+        <table id="main-table">
+            <tr>
+                <th>Rank</th>
+                <th>Plan Name</th>
+                <th>Provider</th>
+                <th>Fee (Input)</th>
+                <th>DEA Score</th>
+                <th>Efficiency</th>
+                <th>Super-Efficiency</th>
+                <th>Data (GB)</th>
+                <th>Voice (Min)</th>
+                <th>SMS</th>
+                <th>Network</th>
+                <th>Throttle Speed</th>
+                <th>Tethering</th>
+                <th>Data Type</th>
+                <th>Data Sharing</th>
+                <th>Roaming</th>
+                <th>Micro Payment</th>
+                <th>eSIM</th>
+            </tr>
+    """
+    
+    # Process each plan for the HTML table
     for i, (_, row) in enumerate(sorted_df.iterrows()):
-        # Skip plans we've already added
-        plan_id = row.get('id', None)
-        if plan_id is not None and plan_id in added_plan_ids:
-            logger.info(f"Skipping plan ID {plan_id} as it was already added")
-            continue
-            
+        # Get the plan name
         plan_name = str(row.get('plan_name', f"Plan {row.get('id', i)}"))
-        if plan_name in added_plan_ids:
-            logger.info(f"Skipping plan {plan_name} as it was already added")
-            continue
             
         if len(plan_name) > 30:
             plan_name = plan_name[:27] + "..."
@@ -489,8 +504,7 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
             </tr>
             """
         
-        html += "</tr>"
-    
+    # Close the table
     html += """
         </table>
         </div>
