@@ -141,8 +141,7 @@ def read_root():
                 # This ensures all plans are displayed with ranks 1, 2, 3, etc. without any gaps
                 df_for_html['display_rank'] = range(1, len(df_for_html) + 1)
                 
-                # Log the top 20 plans with their new display ranks
-                logger.info(f"Top 20 plans with display ranks:\n{df_for_html[['plan_name', 'dea_score', 'display_rank']].head(20).to_string()}")
+                # No need for extensive logging here
                 
                 # Generate report with the modified dataframe
                 logger.info("Generating DEA report for main endpoint with display ranks")

@@ -330,21 +330,7 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
             logger.warning("No DEA rank column found, sorting by DEA score instead")
             sorted_df = working_df.sort_values('dea_score', ascending=False)
         
-        # Log the top 10 plans to verify all are included
-        display_cols = ['plan_name', 'dea_score']
-        if 'dea_rank_sequential' in sorted_df.columns:
-            display_cols.append('dea_rank_sequential')
-        if 'dea_rank' in sorted_df.columns:
-            display_cols.append('dea_rank')
-            
-        logger.info(f"Top 10 plans by rank:\n{sorted_df[display_cols].head(10).to_string()}")
-        
-        # Log the number of plans we're processing
-        logger.info(f"Processing {len(sorted_df)} plans for HTML report")
-            
-        # Ensure we have all plans in the dataframe
-        logger.info(f"Total number of plans in sorted_df: {len(sorted_df)}")
-        logger.info(f"Total number of plans in original df: {len(working_df)}")
+        # No need for extensive logging here
         
         # Make sure we're not losing any plans
         if len(sorted_df) != len(working_df):
@@ -385,9 +371,7 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         # Format rank display with "위" (Korean for "rank")
         rank_display = f"{rank_int}위"
             
-        # Log the rank for debugging
-        if i < 10:  # Log first 10 plans to ensure we see all ranks 1-10
-            logger.info(f"Plan {row.get('plan_name', 'Unknown')}: rank_display={rank_display}, sequential={row.get('dea_rank_sequential', 'N/A')}, standard={row.get('dea_rank', 'N/A')}")
+        # No need for rank debugging logs
 
             
         # DEA specific values
