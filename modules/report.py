@@ -304,13 +304,17 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
     # Make a deep copy of the dataframe to avoid any reference issues
     working_df = df.copy()
     
-    # For DEA, use the sequential rank column if available, otherwise use standard rank
+    # For DEA, use the display_rank column if available, otherwise use standard rank
     if is_dea:
         # Reset the index to make sure we don't lose any rows during sorting
         working_df = working_df.reset_index(drop=True)
         
         # Determine which rank column to use for sorting
-        if 'dea_rank_sequential' in working_df.columns:
+        if 'display_rank' in working_df.columns:
+            logger.info("Sorting plans by display rank (ascending)")
+            rank_column = 'display_rank'
+            sorted_df = working_df.sort_values('display_rank')
+        elif 'dea_rank_sequential' in working_df.columns:
             logger.info("Sorting plans by sequential DEA rank (ascending)")
             rank_column = 'dea_rank_sequential'
             sorted_df = working_df.sort_values('dea_rank_sequential')
@@ -376,8 +380,10 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         if len(plan_name) > 30:
             plan_name = plan_name[:27] + "..."
         
-        # Get the rank value - prefer sequential rank if available
-        if 'dea_rank_sequential' in row and not pd.isna(row['dea_rank_sequential']):
+        # Get the rank value - prefer display_rank if available
+        if 'display_rank' in row and not pd.isna(row['display_rank']):
+            rank_display = row['display_rank']
+        elif 'dea_rank_sequential' in row and not pd.isna(row['dea_rank_sequential']):
             rank_display = row['dea_rank_sequential']
         elif 'dea_rank_display' in row and not pd.isna(row['dea_rank_display']):
             rank_display = row['dea_rank_display']

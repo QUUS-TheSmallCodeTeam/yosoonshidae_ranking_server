@@ -129,25 +129,35 @@ def read_root():
             # Log the dataframe info before generating the report
             logger.info(f"Generating report from in-memory rankings with {len(config.df_with_rankings)} plans")
             
-            # Check if rank 1 exists in the dataframe
-            if 'dea_rank' in config.df_with_rankings.columns:
-                unique_ranks = sorted(config.df_with_rankings['dea_rank'].unique())
-                logger.info(f"Unique ranks in dataframe: {unique_ranks}")
-                
-                # Log the top 10 plans by rank
-                top_10_by_rank = config.df_with_rankings.sort_values('dea_rank').head(10)
-                logger.info(f"Top 10 plans by rank for HTML report:\n{top_10_by_rank[['plan_name', 'dea_score', 'dea_rank']].to_string()}")
-            
-            # Generate report with appropriate parameters
+            # IMPORTANT: Ensure we have plans with all ranks 1-20 for display
             if is_dea:
-                logger.info("Generating DEA report for main endpoint")
+                # First, log the current state
+                if 'dea_rank' in config.df_with_rankings.columns:
+                    unique_ranks = sorted(config.df_with_rankings['dea_rank'].unique())
+                    logger.info(f"Unique ranks in dataframe before fixing: {unique_ranks}")
+                
+                # Create a copy to avoid modifying the original
+                df_for_html = config.df_with_rankings.copy()
+                
+                # Sort by DEA score descending to get the correct order
+                df_for_html = df_for_html.sort_values('dea_score', ascending=False)
+                
+                # Create a new sequential rank column that starts from 1 and has no gaps
+                df_for_html['display_rank'] = range(1, len(df_for_html) + 1)
+                
+                # Log the top 20 plans with their new display ranks
+                logger.info(f"Top 20 plans with display ranks:\n{df_for_html[['plan_name', 'dea_score', 'display_rank']].head(20).to_string()}")
+                
+                # Generate report with the modified dataframe
+                logger.info("Generating DEA report for main endpoint with display ranks")
                 html_content = generate_html_report(
-                    config.df_with_rankings.copy(), 
+                    df_for_html, 
                     datetime.now(), 
                     is_dea=True, 
                     title="DEA Mobile Plan Rankings"
                 )
             else:
+                # For non-DEA reports
                 logger.info("Generating Spearman report for main endpoint")
                 html_content = generate_html_report(config.df_with_rankings, datetime.now())
                 
