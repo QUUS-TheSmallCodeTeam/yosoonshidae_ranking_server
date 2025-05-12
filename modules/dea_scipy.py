@@ -210,15 +210,8 @@ def run_scipy_dea(
             logger.warning(f"Invalid feature_set type {type(feature_set)}, using 'basic'")
             output_cols = ['basic_data_clean', 'voice_clean', 'message_clean']
         
-        # Add default weight constraints if none provided
-        # This prevents plans from assigning zero weights to features they're weak in
-        if weight_constraints is None:
-            weight_constraints = {}
-            for feature in output_cols:
-                if feature in df.columns:
-                    # Set minimum weights to ensure all features are considered
-                    # Standard practice in DEA to prevent zero weights
-                    weight_constraints[feature] = {'min': 0.1, 'max': 1.0}
+        # No weight constraints
+        weight_constraints = None
         
         logger.info(f"Using feature columns: {output_cols}")
         
@@ -266,7 +259,7 @@ def run_scipy_dea(
                 df_sample[col] = df_sample[col].apply(lambda x: 1.0 if x else 0.0)
                 logger.info(f"  - Normalized categorical feature: {col}")
         
-        # Check, clean, and normalize feature columns
+        # Check and clean feature columns
         # Define which features are binary flags (already normalized)
         binary_features = [
             'basic_data_unlimited', 'daily_data_unlimited', 'voice_unlimited', 'message_unlimited',
@@ -274,10 +267,8 @@ def run_scipy_dea(
             'roaming_support', 'micro_payment', 'is_esim'
         ]
         
-        # Check if we already have normalized versions of features
-        normalized_feature_map = {
-            'speed_when_exhausted': 'throttle_speed_normalized'
-        }
+        # Don't use normalized versions of features
+        normalized_feature_map = {}
         
         # Process each feature
         for col in list(output_cols):  # Use list() to allow modifying output_cols during iteration
@@ -298,31 +289,14 @@ def run_scipy_dea(
                 logger.warning(f"NaN or infinite values detected in column {col}; replacing with 0.")
                 df_sample[col] = df_sample[col].fillna(0).replace([np.inf, -np.inf], 0)
                 
-            # Normalize numeric features (skip binary features)
+            # Log the feature range for reference
             if col not in binary_features and df_sample[col].nunique() > 2:
-                # Check if column has variation (max != min)
-                col_min, col_max = df_sample[col].min(), df_sample[col].max()
-                if col_max > col_min:
-                    # Min-max normalization to 0-1 range
-                    normalized_col_name = f"{col}_normalized"
-                    df_sample[normalized_col_name] = (df_sample[col] - col_min) / (col_max - col_min)
-                    logger.info(f"Normalized {col} to range [0,1] as {normalized_col_name}")
-                    # Replace in output_cols list
-                    output_cols[output_cols.index(col)] = normalized_col_name
+                logger.info(f"Feature {col} range: min={df_sample[col].min():.2f}, max={df_sample[col].max():.2f}")
         
         n_dmu = len(df_sample)
         
-        # Normalize the input variable (fee) for consistent scaling
-        input_min, input_max = df_sample[target_variable].min(), df_sample[target_variable].max()
-        if input_max > input_min:
-            # Min-max normalization to 0-1 range
-            df_sample[f"{target_variable}_normalized"] = (df_sample[target_variable] - input_min) / (input_max - input_min)
-            logger.info(f"Normalized input {target_variable} to range [0,1]")
-            # Use normalized input for DEA
-            inputs = df_sample[f"{target_variable}_normalized"].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
-        else:
-            # If all inputs are the same, use the original values
-            inputs = df_sample[target_variable].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
+        # Use the original input values (not normalized)
+        inputs = df_sample[target_variable].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
             
         outputs = df_sample[output_cols].values  # Output data, 2D array (n_dmu x n_output)
         
