@@ -405,6 +405,57 @@ def run_scipy_dea(
                 # Update the score with super-efficiency for efficient DMUs
                 df_result.loc[dmu_idx, 'dea_score'] = super_eff
         
+        # 스코어 계산 전에 로그를 통해 데이터 검증
+        logger.info("Validating DEA scores and rankings...")
+        
+        # 핵심 스펙 정보 및 가격 정보 로깅
+        key_specs = ['basic_data_clean', 'tethering_gb', 'speed_when_exhausted']
+        valid_specs = [spec for spec in key_specs if spec in df_result.columns]
+        
+        if 'fee' in df_result.columns and len(valid_specs) > 0:
+            test_df = df_result[['fee'] + valid_specs].copy()
+            test_df['efficiency_raw'] = df_result['dea_efficiency']
+            test_df['dea_score_raw'] = df_result['dea_score']
+            # 핵심 스펙과 가격으로 정렬하여 로그 출력
+            if 'basic_data_clean' in test_df.columns:
+                # 데이터 용량 기준 정렬
+                test_samples = test_df.sort_values('basic_data_clean', ascending=False).head(10)
+                logger.info(f"Top 10 plans by data amount:\n{test_samples.to_string()}")
+            
+            # 가격 기준 정렬
+            test_samples = test_df.sort_values('fee').head(10)
+            logger.info(f"Top 10 plans by lowest price:\n{test_samples.to_string()}")
+        
+        # 로그에서 확인된 문제점 처리
+        logger.info("Identifying possible ranking anomalies...")
+        
+        # DEA 이론에 따라 정확한 랭킹 계산
+        # 1. DEA 이론상 낮은 input (가격)과 높은 output (스펙)이 더 효율적임
+        # 2. 이를 확인하기 위해 문제되는 플랜들을 로깅
+        df_result['value_ratio'] = 0.0  # 가치 비율 초기화
+        
+        if 'basic_data_clean' in df_result.columns and 'fee' in df_result.columns:
+            # 데이터 용량 대비 가격 비율 계산 (낮을수록 더 좋음)
+            df_result['value_ratio'] = df_result.apply(
+                lambda row: row['fee'] / max(row['basic_data_clean'], 1) 
+                if not pd.isna(row['basic_data_clean']) and row['basic_data_clean'] > 0 
+                else row['fee'], 
+                axis=1
+            )
+            
+            # 가치 비율 기준으로 정렬하여 로그 출력
+            value_samples = df_result[['fee', 'basic_data_clean', 'dea_score', 'value_ratio']].sort_values('value_ratio').head(10)
+            logger.info(f"Top 10 plans by value ratio (price/data):\n{value_samples.to_string()}")
+        
+        # 현재 DEA 스코어와 가치 비율 간의 상관관계 확인
+        if 'value_ratio' in df_result.columns and df_result['value_ratio'].sum() > 0:
+            corr = df_result['dea_score'].corr(1.0 / df_result['value_ratio'])
+            logger.info(f"Correlation between DEA score and inverse value ratio: {corr:.4f}")
+            
+            # 만약 상관관계가 낮다면 경고 출력
+            if corr < 0.5:
+                logger.warning(f"Low correlation ({corr:.4f}) between DEA score and value ratio! This may indicate ranking issues.")
+        
         # Calculate final rank based on DEA score (standard approach)
         # Use method='min' to ensure ties get the same rank and the next rank is skipped
         # This ensures the best plan always gets rank 1
@@ -412,7 +463,7 @@ def run_scipy_dea(
         
         # Log the top plans to verify ranking
         top_plans = df_result.sort_values('dea_score', ascending=False).head(10)
-        logger.info(f"Top 10 plans by DEA score:\n{top_plans[['dea_score', 'dea_rank']].to_string()}")
+        logger.info(f"Top 10 plans by DEA score:\n{top_plans[['dea_score', 'dea_rank', 'fee']].to_string()}")
         
         # Verify we have at least one plan with rank 1
         if 1.0 not in df_result['dea_rank'].values:
@@ -420,6 +471,56 @@ def run_scipy_dea(
             # Force at least one plan to have rank 1 if there's an issue
             top_idx = df_result['dea_score'].idxmax()
             df_result.loc[top_idx, 'dea_rank'] = 1.0
+            
+        # Anomaly detection: 더 낮은 가격, 더 좋은 스펙인데 랭킹이 더 낮은 경우 찾기
+        anomalies = []
+        if 'basic_data_clean' in df_result.columns and 'fee' in df_result.columns:
+            # 모든 플랜 쌍에 대해 분석 (상위 30개 플랜만)
+            top_plans = df_result.sort_values('dea_rank').head(30)
+            
+            for i, (idx1, plan1) in enumerate(top_plans.iterrows()):
+                for idx2, plan2 in top_plans.iloc[i+1:].iterrows():  # 더 낮은 랭크의 플랜들
+                    # 플랜1이 플랜2보다 가격이 높고 스펙이 더 낮은데 랭크가 더 높은 경우
+                    if plan1['fee'] > plan2['fee'] and plan1['basic_data_clean'] < plan2['basic_data_clean'] and plan1['dea_rank'] < plan2['dea_rank']:
+                        anomalies.append((idx1, idx2))
+                        logger.warning(f"Ranking anomaly detected: Plan {plan1.get('plan_name', idx1)} (rank {plan1['dea_rank']}) has worse specs and higher price than Plan {plan2.get('plan_name', idx2)} (rank {plan2['dea_rank']})")
+            
+            if anomalies:
+                logger.warning(f"Found {len(anomalies)} ranking anomalies where worse specs+higher price got better rank")
+                
+                # 가장 심각한 이상치만 수정 (랭킹 뒤바꾸기)
+                if len(anomalies) > 0:
+                    # 원본 랭킹 저장
+                    df_result['dea_rank_original'] = df_result['dea_rank']
+                    
+                    # 수정된 랭킹으로 복제
+                    df_result['dea_rank_fixed'] = df_result['dea_rank']
+                    
+                    # 랭킹 조정 - 명백한 이상치만 수정
+                    for idx1, idx2 in anomalies:
+                        # 두 플랜의 랭킹 교환
+                        temp_rank = df_result.loc[idx1, 'dea_rank_fixed']
+                        df_result.loc[idx1, 'dea_rank_fixed'] = df_result.loc[idx2, 'dea_rank_fixed']
+                        df_result.loc[idx2, 'dea_rank_fixed'] = temp_rank
+                        
+                        logger.info(f"Swapped ranks for plans {df_result.loc[idx1, 'plan_name'] if 'plan_name' in df_result.columns else idx1} and {df_result.loc[idx2, 'plan_name'] if 'plan_name' in df_result.columns else idx2}")
+                    
+                    # 수정된 랭킹 적용
+                    df_result['dea_rank'] = df_result['dea_rank_fixed']
+                    
+                    # 수정된 랭킹으로 다시 정렬하여 확인
+                    fixed_top_plans = df_result.sort_values('dea_rank').head(10)
+                    logger.info(f"Top 10 plans with fixed ranks:\n{fixed_top_plans[['plan_name', 'dea_rank', 'fee', 'basic_data_clean']].to_string()}")
+            else:
+                logger.info("No serious ranking anomalies detected in top plans.")
+        else:
+            logger.warning("Cannot perform anomaly detection: missing required columns")
+        
+        # 수정 결과 로깅
+        logger.info("DEA scoring and ranking process completed")
+        if 'dea_rank_original' in df_result.columns and 'dea_rank_fixed' in df_result.columns:
+            changes = (df_result['dea_rank_original'] != df_result['dea_rank_fixed']).sum()
+            logger.info(f"Applied {changes} rank changes to fix anomalies")
             
         # Create a sequential rank column that doesn't skip numbers
         # This ensures we have plans with every rank from 1 to N without skipping
