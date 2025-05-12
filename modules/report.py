@@ -379,6 +379,25 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
             logger.warning("Sorting by dea_rank and dea_score gives different results! Using score-based sorting for HTML.")
             sorted_df = sorted_by_score
     
+    # 순위 가지고 있는 플랜들이 모두 포함되어 있는지 확인
+    if 'dea_rank' in sorted_df.columns:
+        # 순위별 플랜 개수 확인
+        rank_counts = sorted_df['dea_rank'].value_counts().sort_index()
+        logger.info(f"Plans per rank: {rank_counts.head(10).to_dict()}")
+        
+        # 순위 1부터 5까지의 플랜들이 있는지 확인
+        missing_ranks = [r for r in range(1, 6) if r not in sorted_df['dea_rank'].values]
+        if missing_ranks:
+            logger.warning(f"Missing ranks in the HTML report: {missing_ranks}")
+            
+            # 누락된 순위의 플랜들이 있는지 확인
+            for rank in missing_ranks:
+                logger.warning(f"Checking for plans with rank {rank} in original data")
+                original_plans = df[df['dea_rank'] == float(rank)]
+                if not original_plans.empty:
+                    logger.warning(f"Found {len(original_plans)} plans with rank {rank} in original data but missing from HTML")
+                    logger.warning(f"Sample missing plan: {original_plans.iloc[0]['plan_name']}")
+    
     # 테이블 시작
     html += f"""
         <h2>Plan Rankings</h2>
@@ -405,6 +424,32 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
                 <th>eSIM</th>
             </tr>
     """
+    
+    # 순위별 플랜 개수 확인 - 테이블 생성 전
+    if 'dea_rank' in sorted_df.columns:
+        # 순위별 플랜 개수 확인
+        rank_counts = sorted_df['dea_rank'].value_counts().sort_index()
+        logger.info(f"Plans per rank before table generation: {rank_counts.head(10).to_dict()}")
+    
+    # 정렬된 데이터프레임의 크기 확인
+    logger.info(f"Number of plans in sorted dataframe: {len(sorted_df)}")
+    
+    # 순위별로 정렬하여 추가 확인
+    if 'dea_rank' in sorted_df.columns:
+        # 순위별로 정렬
+        sorted_df = sorted_df.sort_values('dea_rank')
+        top_plans_by_rank = sorted_df.head(5)
+        logger.info(f"Top 5 plans sorted by rank:\n{top_plans_by_rank[['plan_name', 'dea_score', 'dea_rank']].to_string()}")
+    
+    # 점수별로 정렬하여 추가 확인
+    if 'dea_score' in sorted_df.columns:
+        # 점수별로 정렬
+        sorted_by_score = sorted_df.sort_values('dea_score', ascending=False)
+        top_plans_by_score = sorted_by_score.head(5)
+        logger.info(f"Top 5 plans sorted by score:\n{top_plans_by_score[['plan_name', 'dea_score', 'dea_rank']].to_string()}")
+        
+        # 점수 기준 정렬을 사용하여 모든 플랜이 포함되도록 함
+        sorted_df = sorted_by_score
     
     # Process each plan for the HTML table
     for i, (_, row) in enumerate(sorted_df.iterrows()):

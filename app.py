@@ -148,6 +148,15 @@ def read_root():
                     has_rank_one = 1.0 in df_for_html['dea_rank'].values
                     if not has_rank_one:
                         logger.warning("No rank 1 found in original dataframe! This is unexpected based on logs.")
+                    
+                    # 순위별 플랜 개수 확인
+                    rank_counts = df_for_html['dea_rank'].value_counts().sort_index()
+                    logger.info(f"Plans per rank before HTML generation: {rank_counts.head(10).to_dict()}")
+                    
+                    # 순위 1부터 5까지의 플랜들이 있는지 확인
+                    missing_ranks = [r for r in range(1, 6) if float(r) not in df_for_html['dea_rank'].values]
+                    if missing_ranks:
+                        logger.warning(f"Missing ranks in the dataframe: {missing_ranks}")
                 
                 # 2. 순위와 점수 정보 로그 출력
                 top_plans = df_for_html.sort_values('dea_score', ascending=False).head(5)
