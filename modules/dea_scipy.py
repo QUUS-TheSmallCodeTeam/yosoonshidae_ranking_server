@@ -411,8 +411,8 @@ def run_scipy_dea(
         df_result['dea_rank'] = df_result['dea_score'].rank(ascending=False, method='min')
         
         # Log the top plans to verify ranking
-        top_plans = df_result.sort_values('dea_score', ascending=False).head(5)
-        logger.info(f"Top 5 plans by DEA score:\n{top_plans[['dea_score', 'dea_rank']].to_string()}")
+        top_plans = df_result.sort_values('dea_score', ascending=False).head(10)
+        logger.info(f"Top 10 plans by DEA score:\n{top_plans[['dea_score', 'dea_rank']].to_string()}")
         
         # Verify we have at least one plan with rank 1
         if 1.0 not in df_result['dea_rank'].values:
@@ -420,6 +420,24 @@ def run_scipy_dea(
             # Force at least one plan to have rank 1 if there's an issue
             top_idx = df_result['dea_score'].idxmax()
             df_result.loc[top_idx, 'dea_rank'] = 1.0
+            
+        # Create a sequential rank column that doesn't skip numbers
+        # This ensures we have plans with every rank from 1 to N without skipping
+        df_result['dea_rank_sequential'] = df_result['dea_score'].rank(ascending=False, method='dense')
+        
+        # Log the distribution of ranks to check for skipped ranks
+        rank_distribution = df_result['dea_rank'].value_counts().sort_index()
+        logger.info(f"Rank distribution:\n{rank_distribution.to_string()}")
+        
+        # Check if we have plans for each rank from 1 to 20
+        expected_ranks = set(range(1, 21))
+        actual_ranks = set(df_result['dea_rank'].unique())
+        missing_ranks = expected_ranks - actual_ranks
+        if missing_ranks:
+            logger.warning(f"Missing ranks in the top 20: {missing_ranks}")
+            
+        # Use the sequential rank for display purposes
+        df_result['dea_rank_display'] = df_result['dea_rank_sequential']
         
         # Replace any potential inf, -inf, or NaN values with appropriate finite values
         # This ensures JSON serialization will work

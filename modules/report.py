@@ -304,18 +304,36 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
     # Make a deep copy of the dataframe to avoid any reference issues
     working_df = df.copy()
     
-    # For DEA, always sort by dea_rank in ascending order
-    if is_dea and 'dea_rank' in working_df.columns:
-        logger.info("Sorting plans by DEA rank (ascending)")
-        
+    # For DEA, use the sequential rank column if available, otherwise use standard rank
+    if is_dea:
         # Reset the index to make sure we don't lose any rows during sorting
         working_df = working_df.reset_index(drop=True)
         
-        # Sort by dea_rank
-        sorted_df = working_df.sort_values('dea_rank')
+        # Determine which rank column to use for sorting
+        if 'dea_rank_sequential' in working_df.columns:
+            logger.info("Sorting plans by sequential DEA rank (ascending)")
+            rank_column = 'dea_rank_sequential'
+            sorted_df = working_df.sort_values('dea_rank_sequential')
+        elif 'dea_rank_display' in working_df.columns:
+            logger.info("Sorting plans by display DEA rank (ascending)")
+            rank_column = 'dea_rank_display'
+            sorted_df = working_df.sort_values('dea_rank_display')
+        elif 'dea_rank' in working_df.columns:
+            logger.info("Sorting plans by standard DEA rank (ascending)")
+            rank_column = 'dea_rank'
+            sorted_df = working_df.sort_values('dea_rank')
+        else:
+            logger.warning("No DEA rank column found, sorting by DEA score instead")
+            sorted_df = working_df.sort_values('dea_score', ascending=False)
         
         # Log the top 10 plans to verify all are included
-        logger.info(f"Top 10 plans by DEA rank:\n{sorted_df[['plan_name', 'dea_score', 'dea_rank']].head(10).to_string()}")
+        display_cols = ['plan_name', 'dea_score']
+        if 'dea_rank_sequential' in sorted_df.columns:
+            display_cols.append('dea_rank_sequential')
+        if 'dea_rank' in sorted_df.columns:
+            display_cols.append('dea_rank')
+            
+        logger.info(f"Top 10 plans by rank:\n{sorted_df[display_cols].head(10).to_string()}")
         
         # Verify all ranks are present
         unique_ranks = sorted(sorted_df['dea_rank'].unique())
@@ -338,110 +356,9 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         logger.info(f"Sorting plans by {rank_column}")
         sorted_df = working_df.sort_values(rank_column)
         
-    # IMPORTANT: Force inclusion of all plans with ranks 1-3 at the beginning of the HTML table
-    # This ensures that plans with ranks 1, 2, and 3 are always displayed first
+    # We'll use the sequential rank column for display to ensure all ranks from 1 to N are shown
+    # without skipping any numbers
     added_plan_ids = set()  # Keep track of plans we've already added to avoid duplicates
-    
-    if is_dea and 'dea_rank' in working_df.columns:
-        # Get plans with ranks 1, 2, and 3
-        for rank in [1.0, 2.0, 3.0]:
-            rank_plans = working_df[working_df['dea_rank'] == rank]
-            if not rank_plans.empty:
-                logger.info(f"Found {len(rank_plans)} plans with rank {rank}")
-                
-                # Add each plan with this rank to the HTML
-                for _, row in rank_plans.iterrows():
-                    plan_id = row.get('id', None)
-                    plan_name = str(row.get('plan_name', f"Plan {plan_id if plan_id else 'Unknown'}")).strip()
-                    if len(plan_name) > 30:
-                        plan_name = plan_name[:27] + "..."
-                    
-                    # Get the rank value
-                    rank_display = row[rank_column] if rank_column in row and not pd.isna(row[rank_column]) else "N/A"
-                    
-                    # Format rank display
-                    if isinstance(rank_display, (int, float)):
-                        rank_display = f"{int(rank_display)}위"
-                    
-                    # Log the top plan being added
-                    logger.info(f"Adding top plan to HTML: {plan_name} with rank {rank_display}")
-                    
-                    # Keep track of this plan ID to avoid duplicates
-                    if plan_id is not None:
-                        added_plan_ids.add(plan_id)
-                    else:
-                        # If no ID, use plan name as a fallback
-                        added_plan_ids.add(plan_name)
-                    
-                    # Add the plan to the HTML
-                    # Since we don't have a helper function yet, add the plan directly here
-                    fee = int(row.get('fee', 0))
-                    fee_str = f"{fee:,}"
-                    
-                    # DEA metrics
-                    efficiency = row.get('dea_efficiency', 0)
-                    efficiency_str = "N/A" if pd.isna(efficiency) else f"{efficiency:.4f}"
-                    
-                    dea_score = row.get('dea_score', 0)
-                    dea_score_str = "N/A" if pd.isna(dea_score) else f"{dea_score:.4f}"
-                    value_class = "good-value" if not pd.isna(dea_score) and dea_score > 1.1 else ("bad-value" if not pd.isna(dea_score) and dea_score < 0.9 else "")
-                    
-                    super_efficiency = row.get('dea_super_efficiency', 0)
-                    super_efficiency_str = "N/A" if pd.isna(super_efficiency) else f"{super_efficiency:.4f}"
-                    
-                    # Get data, voice, and message values
-                    data_value = row.get('basic_data_clean', row.get('basic_data', 0))
-                    data_str = "무제한" if row.get('basic_data_unlimited', 0) == 1 else f"{data_value}GB"
-                    
-                    voice_value = row.get('voice_clean', row.get('voice', 0))
-                    voice_str = "무제한" if row.get('voice_unlimited', 0) == 1 else f"{int(voice_value)}분"
-                    
-                    message_value = row.get('message_clean', row.get('message', 0))
-                    message_str = "무제한" if row.get('message_unlimited', 0) == 1 else f"{int(message_value)}건"
-                    
-                    network = row.get('network', "")
-                    
-                    # Get additional feature details
-                    throttle_speed = row.get('speed_when_exhausted', 0)
-                    throttle_speed_str = "N/A" if pd.isna(throttle_speed) else ("No throttling" if throttle_speed == 0 else f"{throttle_speed:.1f} Mbps")
-                    
-                    tethering_gb = row.get('tethering_gb', 0)
-                    tethering_str = "N/A" if pd.isna(tethering_gb) else ("Not allowed" if tethering_gb == 0 else f"{tethering_gb:.1f} GB")
-                    
-                    # Determine data type
-                    if row.get('basic_data_unlimited', 0) == 1:
-                        data_type = "Throttled" if throttle_speed > 0 else "Unlimited"
-                    else:
-                        data_type = "Limited"
-                    
-                    # Get boolean features
-                    data_sharing = "Yes" if row.get('data_sharing', False) else "No"
-                    roaming = "Yes" if row.get('roaming_support', False) else "No"
-                    micro_payment = "Yes" if row.get('micro_payment', False) else "No"
-                    esim = "Yes" if row.get('is_esim', False) else "No"
-                    
-                    html += f"""
-                    <tr>
-                        <td>{rank_display}</td>
-                        <td>{plan_name}</td>
-                        <td>{row.get('mvno', 'Unknown')}</td>
-                        <td class="input-feature">{fee_str}</td>
-                        <td class="dea-metrics {value_class}">{dea_score_str}</td>
-                        <td class="dea-metrics">{efficiency_str}</td>
-                        <td class="dea-metrics">{super_efficiency_str}</td>
-                        <td class="output-feature">{data_str}</td>
-                        <td class="output-feature">{voice_str}</td>
-                        <td class="output-feature">{message_str}</td>
-                        <td class="core-feature">{network}</td>
-                        <td class="additional-feature">{throttle_speed_str}</td>
-                        <td class="additional-feature">{tethering_str}</td>
-                        <td class="additional-feature">{data_type}</td>
-                        <td class="additional-feature">{data_sharing}</td>
-                        <td class="additional-feature">{roaming}</td>
-                        <td class="additional-feature">{micro_payment}</td>
-                        <td class="additional-feature">{esim}</td>
-                    </tr>
-                    """
         
     # Now add the rest of the plans, skipping any we've already added
     for i, (_, row) in enumerate(sorted_df.iterrows()):
@@ -459,8 +376,12 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         if len(plan_name) > 30:
             plan_name = plan_name[:27] + "..."
         
-        # Get the rank value using the determined rank column
-        if rank_column in row and not pd.isna(row[rank_column]):
+        # Get the rank value - prefer sequential rank if available
+        if 'dea_rank_sequential' in row and not pd.isna(row['dea_rank_sequential']):
+            rank_display = row['dea_rank_sequential']
+        elif 'dea_rank_display' in row and not pd.isna(row['dea_rank_display']):
+            rank_display = row['dea_rank_display']
+        elif rank_column in row and not pd.isna(row[rank_column]):
             rank_display = row[rank_column]
         else:
             # If rank is not available, use position in sorted dataframe + 1
@@ -472,8 +393,8 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
             rank_display = f"{int(rank_display)}위"
             
         # Log the rank for debugging
-        if i < 5:  # Only log first 5 plans to avoid excessive logging
-            logger.info(f"Plan {row.get('plan_name', 'Unknown')}: rank_display={rank_display}, original rank={row.get(rank_column, 'N/A')}")
+        if i < 10:  # Log first 10 plans to ensure we see all ranks 1-10
+            logger.info(f"Plan {row.get('plan_name', 'Unknown')}: rank_display={rank_display}, sequential={row.get('dea_rank_sequential', 'N/A')}, standard={row.get('dea_rank', 'N/A')}")
 
             
         # DEA specific values
