@@ -544,6 +544,7 @@ def run_scipy_dea(
         if sample_size is not None:
             logger.warning("Results based on sampled data; may not represent full dataset.")
         
+        logger.info(f"Columns in DEA result DataFrame: {list(df_result.columns)}")
         return df_result
     
     except Exception as e:
