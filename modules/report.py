@@ -339,13 +339,8 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
             
         logger.info(f"Top 10 plans by rank:\n{sorted_df[display_cols].head(10).to_string()}")
         
-        # Verify all ranks are present
-        unique_ranks = sorted(sorted_df['dea_rank'].unique())
-        logger.info(f"Unique ranks in dataframe: {unique_ranks}")
-        
-        # Check if rank 1 exists
-        if 1.0 not in sorted_df['dea_rank'].values:
-            logger.warning("No plan with rank 1 found in the dataframe!")
+        # Log the number of plans we're processing
+        logger.info(f"Processing {len(sorted_df)} plans for HTML report")
             
         # Ensure we have all plans in the dataframe
         logger.info(f"Total number of plans in sorted_df: {len(sorted_df)}")
@@ -380,25 +375,15 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         if len(plan_name) > 30:
             plan_name = plan_name[:27] + "..."
         
-        # Get the rank value - prefer display_rank if available
+        # Get the rank value - use display_rank which is a simple sequential rank
         if 'display_rank' in row and not pd.isna(row['display_rank']):
-            rank_display = row['display_rank']
-        elif 'dea_rank_sequential' in row and not pd.isna(row['dea_rank_sequential']):
-            rank_display = row['dea_rank_sequential']
-        elif 'dea_rank_display' in row and not pd.isna(row['dea_rank_display']):
-            rank_display = row['dea_rank_display']
-        elif rank_column in row and not pd.isna(row[rank_column]):
-            rank_display = row[rank_column]
+            rank_int = int(row['display_rank'])
         else:
-            # If rank is not available, use position in sorted dataframe + 1
-            rank_display = i+1
+            # Fallback to position in sorted dataframe + 1
+            rank_int = i + 1
             
-        # Format rank display - if it's a number, add "위" (Korean for "rank")
-        if isinstance(rank_display, (int, float)):
-            # Ensure we're using integer ranks (no decimal places)
-            # Make sure we're displaying the correct rank (especially rank 1)
-            rank_int = int(rank_display)
-            rank_display = f"{rank_int}위"
+        # Format rank display with "위" (Korean for "rank")
+        rank_display = f"{rank_int}위"
             
         # Log the rank for debugging
         if i < 10:  # Log first 10 plans to ensure we see all ranks 1-10

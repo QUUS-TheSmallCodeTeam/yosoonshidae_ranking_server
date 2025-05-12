@@ -425,18 +425,7 @@ def run_scipy_dea(
         # This ensures we have plans with every rank from 1 to N without skipping
         df_result['dea_rank_sequential'] = df_result['dea_score'].rank(ascending=False, method='dense')
         
-        # Log the distribution of ranks to check for skipped ranks
-        rank_distribution = df_result['dea_rank'].value_counts().sort_index()
-        logger.info(f"Rank distribution:\n{rank_distribution.to_string()}")
-        
-        # Check if we have plans for each rank from 1 to 20
-        expected_ranks = set(range(1, 21))
-        actual_ranks = set(df_result['dea_rank'].unique())
-        missing_ranks = expected_ranks - actual_ranks
-        if missing_ranks:
-            logger.warning(f"Missing ranks in the top 20: {missing_ranks}")
-            
-        # Use the sequential rank for display purposes
+        # Create a sequential rank for display purposes that doesn't skip numbers
         df_result['dea_rank_display'] = df_result['dea_rank_sequential']
         
         # Replace any potential inf, -inf, or NaN values with appropriate finite values
