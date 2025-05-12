@@ -137,15 +137,9 @@ def read_root():
                 # Sort by DEA score descending to get the correct order
                 df_for_html = df_for_html.sort_values('dea_score', ascending=False)
                 
-                # 동점 순위를 보존하는 방식으로 display_rank 생성
-                # method='min'을 사용하여 동점인 경우 같은 순위를 부여하고 다음 순위는 건너뜀
-                df_for_html['display_rank'] = df_for_html['dea_score'].rank(ascending=False, method='min')
-                
-                # 1위가 반드시 존재하는지 확인
-                if 1.0 not in df_for_html['display_rank'].values:
-                    logger.warning("No plan with rank 1 found! Forcing top plan to have rank 1.")
-                    top_idx = df_for_html['dea_score'].idxmax()
-                    df_for_html.loc[top_idx, 'display_rank'] = 1.0
+                # 원본 dea_rank 열을 사용하여 정확한 순위와 동점 순위 유지
+                # 로그에서 확인한 바와 같이 dea_rank가 이미 정확하게 계산되어 있음
+                # 추가 순위 열을 생성하지 않고 원본 순위 사용
                 
                 # No need for extensive logging here
                 

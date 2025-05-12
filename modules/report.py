@@ -304,13 +304,19 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
     # Make a deep copy of the dataframe to avoid any reference issues
     working_df = df.copy()
     
-    # For DEA, use the display_rank column if available, otherwise use standard rank
+    # DEA 순위 처리 - 원본 dea_rank 열을 사용하여 정확한 순위와 동점 순위 유지
     if is_dea:
-        # Reset the index to make sure we don't lose any rows during sorting
+        # 인덱스 리셋으로 행 손실 방지
         working_df = working_df.reset_index(drop=True)
         
-        # Determine which rank column to use for sorting
-        if 'display_rank' in working_df.columns:
+        # 로그에서 확인된 대로 dea_rank 열이 원본 순위 정보를 가지고 있음
+        if 'dea_rank' in working_df.columns:
+            logger.info("Sorting plans by original DEA rank (ascending)")
+            rank_column = 'dea_rank'
+            # dea_rank로 정렬하여 원본 순위 순서 유지
+            sorted_df = working_df.sort_values('dea_rank')
+        # 대체 열 사용 (필요한 경우)
+        elif 'display_rank' in working_df.columns:
             logger.info("Sorting plans by display rank (ascending)")
             rank_column = 'display_rank'
             sorted_df = working_df.sort_values('display_rank')
@@ -318,16 +324,9 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
             logger.info("Sorting plans by sequential DEA rank (ascending)")
             rank_column = 'dea_rank_sequential'
             sorted_df = working_df.sort_values('dea_rank_sequential')
-        elif 'dea_rank_display' in working_df.columns:
-            logger.info("Sorting plans by display DEA rank (ascending)")
-            rank_column = 'dea_rank_display'
-            sorted_df = working_df.sort_values('dea_rank_display')
-        elif 'dea_rank' in working_df.columns:
-            logger.info("Sorting plans by standard DEA rank (ascending)")
-            rank_column = 'dea_rank'
-            sorted_df = working_df.sort_values('dea_rank')
         else:
-            logger.warning("No DEA rank column found, sorting by DEA score instead")
+            logger.warning("No rank column found, sorting by DEA score instead")
+            rank_column = 'dea_score'
             sorted_df = working_df.sort_values('dea_score', ascending=False)
         
         # No need for extensive logging here
@@ -387,9 +386,13 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         if len(plan_name) > 30:
             plan_name = plan_name[:27] + "..."
         
-        # display_rank 열을 사용하여 순위 표시 (동점 순위 및 1위 포함 보장)
-        if 'display_rank' in row and not pd.isna(row['display_rank']):
-            # 정확한 순위 값 유지 (소수점이 있는 경우 정수로 변환)
+        # 원본 dea_rank 열을 사용하여 정확한 순위 표시 (동점 순위 유지)
+        if 'dea_rank' in row and not pd.isna(row['dea_rank']):
+            # 정확한 순위 값 사용 (소수점이 있는 경우 정수로 변환)
+            rank_value = row['dea_rank']
+            rank_int = int(rank_value)
+        elif 'display_rank' in row and not pd.isna(row['display_rank']):
+            # 대체 순위 열 사용
             rank_value = row['display_rank']
             rank_int = int(rank_value)
         else:
