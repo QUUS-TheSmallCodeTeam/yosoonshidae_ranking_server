@@ -304,24 +304,56 @@ def run_scipy_dea(
         inputs_matrix = inputs.copy()
         outputs_matrix = outputs.copy()
         
-        # Parallel execution using ProcessPoolExecutor
-        max_workers = min(64, (os.cpu_count() or 4))  # Cap at 64 to prevent overload, use system CPU count
-        efficiencies = []
-        lp_results = []
-        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            # Submit tasks for all DMUs
-            future_to_index = {executor.submit(compute_efficiency, i, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary): i for i in range(n_dmu)}
-            for future in concurrent.futures.as_completed(future_to_index):
-                index = future_to_index[future]
+        # 병렬 처리로 인한 결과 순서 문제 수정
+        # 각 DMU의 결과를 인덱스와 함께 저장하여 순서 보장
+        max_workers = min(8, (os.cpu_count() or 4))  # 적절한 최대 작업자 수로 제한
+        efficiency_dict = {}
+        success_dict = {}
+        
+        # 순차 처리로 변경 시도
+        if True:  # 순차 처리 사용
+            logger.info("Using sequential processing to ensure consistent results")
+            for i in range(n_dmu):
                 try:
-                    efficiency, success = future.result()
-                    efficiencies.append(efficiency)
-                    lp_results.append(success)
-                    logger.info(f"Processed DMU {index+1}/{n_dmu} with efficiency {efficiency:.4f}")
+                    efficiency, success = compute_efficiency(i, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary)
+                    efficiency_dict[i] = efficiency
+                    success_dict[i] = success
+                    logger.info(f"Processed DMU {i+1}/{n_dmu} with efficiency {efficiency:.4f}")
                 except Exception as e:
-                    logger.error(f"Error processing DMU {index+1}: {e}")
-                    efficiencies.append(1.0)  # Default to efficient on error
-                    lp_results.append(False)
+                    logger.error(f"Error processing DMU {i+1}: {e}")
+                    efficiency_dict[i] = 1.0  # Default to efficient on error
+                    success_dict[i] = False
+        else:  # 병렬 처리 사용 (현재 비활성화)
+            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                # Submit tasks for all DMUs
+                future_to_index = {executor.submit(compute_efficiency, i, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary): i for i in range(n_dmu)}
+                for future in concurrent.futures.as_completed(future_to_index):
+                    index = future_to_index[future]
+                    try:
+                        efficiency, success = future.result()
+                        efficiency_dict[index] = efficiency
+                        success_dict[index] = success
+                        logger.info(f"Processed DMU {index+1}/{n_dmu} with efficiency {efficiency:.4f}")
+                    except Exception as e:
+                        logger.error(f"Error processing DMU {index+1}: {e}")
+                        efficiency_dict[index] = 1.0  # Default to efficient on error
+                        success_dict[index] = False
+        
+        # 인덱스 순서대로 결과 변환
+        efficiencies = [efficiency_dict[i] for i in range(n_dmu)]
+        lp_results = [success_dict[i] for i in range(n_dmu)]
+        
+        # 추가 검증 - 결과 크기 확인
+        if len(efficiencies) != n_dmu:
+            logger.error(f"Result size mismatch! Expected {n_dmu} results, got {len(efficiencies)}")
+            # 부족한 결과 채우기
+            if len(efficiencies) < n_dmu:
+                efficiencies.extend([1.0] * (n_dmu - len(efficiencies)))
+                lp_results.extend([False] * (n_dmu - len(lp_results)))
+            # 결과 잘라내기
+            elif len(efficiencies) > n_dmu:
+                efficiencies = efficiencies[:n_dmu]
+                lp_results = lp_results[:n_dmu]
         
         # Add results to DataFrame
         df_result = df_sample.copy()
