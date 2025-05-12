@@ -396,7 +396,9 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         # Format rank display - if it's a number, add "위" (Korean for "rank")
         if isinstance(rank_display, (int, float)):
             # Ensure we're using integer ranks (no decimal places)
-            rank_display = f"{int(rank_display)}위"
+            # Make sure we're displaying the correct rank (especially rank 1)
+            rank_int = int(rank_display)
+            rank_display = f"{rank_int}위"
             
         # Log the rank for debugging
         if i < 10:  # Log first 10 plans to ensure we see all ranks 1-10

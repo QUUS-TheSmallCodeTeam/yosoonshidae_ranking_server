@@ -142,8 +142,15 @@ def read_root():
                 # Sort by DEA score descending to get the correct order
                 df_for_html = df_for_html.sort_values('dea_score', ascending=False)
                 
-                # Create a new sequential rank column that starts from 1 and has no gaps
-                df_for_html['display_rank'] = range(1, len(df_for_html) + 1)
+                # Create a new display_rank column that preserves ties but ensures rank 1 exists
+                # Use the dense ranking method to handle ties without skipping ranks
+                df_for_html['display_rank'] = df_for_html['dea_score'].rank(ascending=False, method='dense')
+                
+                # Verify that rank 1 exists
+                if 1.0 not in df_for_html['display_rank'].values:
+                    logger.warning("No plan with display_rank 1 found! Forcing top plan to have rank 1.")
+                    top_idx = df_for_html['dea_score'].idxmax()
+                    df_for_html.loc[top_idx, 'display_rank'] = 1.0
                 
                 # Log the top 20 plans with their new display ranks
                 logger.info(f"Top 20 plans with display ranks:\n{df_for_html[['plan_name', 'dea_score', 'display_rank']].head(20).to_string()}")
