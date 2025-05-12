@@ -309,11 +309,25 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         # 인덱스 리셋으로 행 손실 방지
         working_df = working_df.reset_index(drop=True)
         
-        # 로그에서 확인된 대로 dea_rank 열이 원본 순위 정보를 가지고 있음
-        if 'dea_rank' in working_df.columns:
+        # DEA 순위는 dea_score를 기준으로 내림차순 정렬해야 함 (1위가 가장 높은 점수)
+        if 'dea_score' in working_df.columns:
+            logger.info("Sorting plans by DEA score (descending) to ensure correct rank order")
+            rank_column = 'dea_score'
+            # dea_score로 내림차순 정렬하여 가장 높은 점수가 위에 오도록 함
+            sorted_df = working_df.sort_values('dea_score', ascending=False)
+            
+            # 정렬 후 순위 확인
+            if 'dea_rank' in sorted_df.columns:
+                top_ranks = sorted_df['dea_rank'].head(5).tolist()
+                logger.info(f"Top 5 ranks after sorting by score: {top_ranks}")
+                
+                # 1위가 있는지 확인
+                if 1.0 not in top_ranks and len(top_ranks) > 0:
+                    logger.warning(f"No rank 1 in top 5 plans! First rank is {top_ranks[0]}")
+        # 대체 정렬 방식: dea_rank로 정렬
+        elif 'dea_rank' in working_df.columns:
             logger.info("Sorting plans by original DEA rank (ascending)")
             rank_column = 'dea_rank'
-            # dea_rank로 정렬하여 원본 순위 순서 유지
             sorted_df = working_df.sort_values('dea_rank')
         # 대체 열 사용 (필요한 경우)
         elif 'display_rank' in working_df.columns:
@@ -340,16 +354,30 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         logger.info(f"Sorting plans by {rank_column}")
         sorted_df = working_df.sort_values(rank_column)
         
-    # 순위별로 정렬된 데이터프레임에서 1위가 있는지 확인
-    has_rank_one = False
-    if 'display_rank' in sorted_df.columns:
-        has_rank_one = 1.0 in sorted_df['display_rank'].values
+    # 로그에 나타난 순위 정보 확인 - 원본 dea_rank 열 사용
+    if 'dea_rank' in sorted_df.columns:
+        unique_ranks = sorted(sorted_df['dea_rank'].unique())
+        logger.info(f"Unique ranks in sorted dataframe (first 10): {unique_ranks[:10]}")
+        
+        # 1위가 있는지 확인
+        has_rank_one = 1.0 in sorted_df['dea_rank'].values
+        if not has_rank_one:
+            logger.warning("No rank 1 found in dea_rank column! This should not happen based on logs.")
+            logger.info(f"Min rank in dataframe: {sorted_df['dea_rank'].min()}")
+            
+            # 데이터프레임 정보 출력
+            top_plans = sorted_df.sort_values('dea_score', ascending=False).head(5)
+            logger.info(f"Top 5 plans by score:\n{top_plans[['plan_name', 'dea_score', 'dea_rank']].to_string()}")
     
-    if not has_rank_one and len(sorted_df) > 0:
-        logger.warning("No rank 1 found in sorted dataframe! Forcing top plan to have rank 1.")
-        # 가장 높은 점수를 가진 플랜에 1위 부여
-        top_idx = sorted_df['dea_score'].idxmax() if 'dea_score' in sorted_df.columns else sorted_df.index[0]
-        sorted_df.loc[top_idx, 'display_rank'] = 1.0
+    # 만약 정렬 방식이 문제라면, dea_score로 다시 정렬하여 순위 순서 확인
+    sorted_by_score = sorted_df.sort_values('dea_score', ascending=False)
+    if 'dea_rank' in sorted_by_score.columns:
+        logger.info(f"Top 5 plans sorted by score with ranks:\n{sorted_by_score[['plan_name', 'dea_score', 'dea_rank']].head(5).to_string()}")
+        
+        # 정렬 방식 비교
+        if not sorted_df.equals(sorted_by_score):
+            logger.warning("Sorting by dea_rank and dea_score gives different results! Using score-based sorting for HTML.")
+            sorted_df = sorted_by_score
     
     # 테이블 시작
     html += f"""
@@ -388,16 +416,24 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         
         # 원본 dea_rank 열을 사용하여 정확한 순위 표시 (동점 순위 유지)
         if 'dea_rank' in row and not pd.isna(row['dea_rank']):
-            # 정확한 순위 값 사용 (소수점이 있는 경우 정수로 변환)
+            # 정확한 순위 값 사용 - 소수점이 있는 경우에도 정확히 표시
             rank_value = row['dea_rank']
-            rank_int = int(rank_value)
-        elif 'display_rank' in row and not pd.isna(row['display_rank']):
-            # 대체 순위 열 사용
-            rank_value = row['display_rank']
+            
+            # 디버그를 위해 처음 5개 플랜의 순위 정보 출력
+            if i < 5:
+                logger.info(f"Plan {i+1}: {row.get('plan_name', 'Unknown')} - dea_rank={rank_value}, dea_score={row.get('dea_score', 'N/A')}")
+                
+            # 화면 표시를 위해 정수로 변환
             rank_int = int(rank_value)
         else:
             # 순위 정보가 없는 경우 정렬된 순서 + 1로 대체
             rank_int = i + 1
+            logger.warning(f"No rank information for plan at position {i}: {row.get('plan_name', 'Unknown')}")
+            
+        # 만약 순위가 1이 아니고 현재 순서가 0이면 (첫 번째 플랜), 이것은 1위가 누락된 것임
+        if rank_int != 1 and i == 0:
+            logger.warning(f"First plan does not have rank 1! Instead has rank {rank_int}")
+            # 이 경우 로그만 남기고 순위를 강제로 변경하지는 않음
             
         # 한국어 순위 표시를 위한 포맷팅
         rank_display = f"{rank_int}위"

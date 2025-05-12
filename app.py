@@ -137,9 +137,23 @@ def read_root():
                 # Sort by DEA score descending to get the correct order
                 df_for_html = df_for_html.sort_values('dea_score', ascending=False)
                 
-                # 원본 dea_rank 열을 사용하여 정확한 순위와 동점 순위 유지
-                # 로그에서 확인한 바와 같이 dea_rank가 이미 정확하게 계산되어 있음
-                # 추가 순위 열을 생성하지 않고 원본 순위 사용
+                # HTML 보고서에서 순위가 올바르게 표시되도록 확인
+                
+                # 1. 순위 정보 확인
+                if 'dea_rank' in df_for_html.columns:
+                    unique_ranks = sorted(df_for_html['dea_rank'].unique())
+                    logger.info(f"Unique DEA ranks in dataframe before HTML generation: {unique_ranks[:10]}")
+                    
+                    # 1위가 있는지 확인
+                    has_rank_one = 1.0 in df_for_html['dea_rank'].values
+                    if not has_rank_one:
+                        logger.warning("No rank 1 found in original dataframe! This is unexpected based on logs.")
+                
+                # 2. 순위와 점수 정보 로그 출력
+                top_plans = df_for_html.sort_values('dea_score', ascending=False).head(5)
+                logger.info(f"Top 5 plans with ranks for HTML report:\n{top_plans[['plan_name', 'dea_score', 'dea_rank']].to_string()}")
+                
+                # 3. 원본 dea_rank 열을 사용하여 정확한 순위와 동점 순위 유지
                 
                 # No need for extensive logging here
                 
