@@ -406,7 +406,20 @@ def run_scipy_dea(
                 df_result.loc[dmu_idx, 'dea_score'] = super_eff
         
         # Calculate final rank based on DEA score (standard approach)
+        # Use method='min' to ensure ties get the same rank and the next rank is skipped
+        # This ensures the best plan always gets rank 1
         df_result['dea_rank'] = df_result['dea_score'].rank(ascending=False, method='min')
+        
+        # Log the top plans to verify ranking
+        top_plans = df_result.sort_values('dea_score', ascending=False).head(5)
+        logger.info(f"Top 5 plans by DEA score:\n{top_plans[['dea_score', 'dea_rank']].to_string()}")
+        
+        # Verify we have at least one plan with rank 1
+        if 1.0 not in df_result['dea_rank'].values:
+            logger.warning("No plan with rank 1 found! This indicates a ranking issue.")
+            # Force at least one plan to have rank 1 if there's an issue
+            top_idx = df_result['dea_score'].idxmax()
+            df_result.loc[top_idx, 'dea_rank'] = 1.0
         
         # Replace any potential inf, -inf, or NaN values with appropriate finite values
         # This ensures JSON serialization will work

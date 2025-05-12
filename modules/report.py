@@ -301,10 +301,31 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
     logger.info(f"Using rank column: {rank_column}")
     
     # Add rows for each plan
-    # For DEA, always sort by dea_score in descending order if available
-    if is_dea and 'dea_score' in df.columns:
-        logger.info("Sorting plans by DEA score (descending)")
-        sorted_df = df.sort_values('dea_score', ascending=False)
+    # For DEA, always sort by dea_rank in ascending order
+    if is_dea and 'dea_rank' in df.columns:
+        logger.info("Sorting plans by DEA rank (ascending)")
+        sorted_df = df.sort_values('dea_rank')
+        
+        # Log the top 10 plans to verify all are included
+        logger.info(f"Top 10 plans by DEA rank:\n{sorted_df[['plan_name', 'dea_score', 'dea_rank']].head(10).to_string()}")
+        
+        # Verify all ranks are present
+        unique_ranks = sorted(sorted_df['dea_rank'].unique())
+        logger.info(f"Unique ranks in dataframe: {unique_ranks}")
+        
+        # Check if rank 1 exists
+        if 1.0 not in sorted_df['dea_rank'].values:
+            logger.warning("No plan with rank 1 found in the dataframe!")
+            
+        # Ensure we have all plans in the dataframe
+        logger.info(f"Total number of plans in sorted_df: {len(sorted_df)}")
+        logger.info(f"Total number of plans in original df: {len(df)}")
+        
+        # Make sure we're not losing any plans
+        if len(sorted_df) != len(df):
+            logger.warning(f"Missing plans! sorted_df has {len(sorted_df)} plans but original df has {len(df)} plans")
+            # Use the original dataframe sorted by rank as a fallback
+            sorted_df = df.sort_values('dea_rank')
     else:
         logger.info(f"Sorting plans by {rank_column}")
         sorted_df = df.sort_values(rank_column)
@@ -315,14 +336,21 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
             plan_name = plan_name[:27] + "..."
         
         # Get the rank value using the determined rank column
-        if rank_column in row:
+        if rank_column in row and not pd.isna(row[rank_column]):
             rank_display = row[rank_column]
         else:
+            # If rank is not available, use position in sorted dataframe + 1
             rank_display = i+1
             
         # Format rank display - if it's a number, add "위" (Korean for "rank")
         if isinstance(rank_display, (int, float)):
+            # Ensure we're using integer ranks (no decimal places)
             rank_display = f"{int(rank_display)}위"
+            
+        # Log the rank for debugging
+        if i < 5:  # Only log first 5 plans to avoid excessive logging
+            logger.info(f"Plan {row.get('plan_name', 'Unknown')}: rank_display={rank_display}, original rank={row.get(rank_column, 'N/A')}")
+
             
         # DEA specific values
         fee = int(row.get('fee', 0))
