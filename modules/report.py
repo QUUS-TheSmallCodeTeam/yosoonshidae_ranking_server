@@ -301,10 +301,18 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
     logger.info(f"Using rank column: {rank_column}")
     
     # Add rows for each plan
+    # Make a deep copy of the dataframe to avoid any reference issues
+    working_df = df.copy()
+    
     # For DEA, always sort by dea_rank in ascending order
-    if is_dea and 'dea_rank' in df.columns:
+    if is_dea and 'dea_rank' in working_df.columns:
         logger.info("Sorting plans by DEA rank (ascending)")
-        sorted_df = df.sort_values('dea_rank')
+        
+        # Reset the index to make sure we don't lose any rows during sorting
+        working_df = working_df.reset_index(drop=True)
+        
+        # Sort by dea_rank
+        sorted_df = working_df.sort_values('dea_rank')
         
         # Log the top 10 plans to verify all are included
         logger.info(f"Top 10 plans by DEA rank:\n{sorted_df[['plan_name', 'dea_score', 'dea_rank']].head(10).to_string()}")
@@ -319,16 +327,16 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
             
         # Ensure we have all plans in the dataframe
         logger.info(f"Total number of plans in sorted_df: {len(sorted_df)}")
-        logger.info(f"Total number of plans in original df: {len(df)}")
+        logger.info(f"Total number of plans in original df: {len(working_df)}")
         
         # Make sure we're not losing any plans
-        if len(sorted_df) != len(df):
-            logger.warning(f"Missing plans! sorted_df has {len(sorted_df)} plans but original df has {len(df)} plans")
+        if len(sorted_df) != len(working_df):
+            logger.warning(f"Missing plans! sorted_df has {len(sorted_df)} plans but original df has {len(working_df)} plans")
             # Use the original dataframe sorted by rank as a fallback
-            sorted_df = df.sort_values('dea_rank')
+            sorted_df = working_df.sort_values('dea_rank')
     else:
         logger.info(f"Sorting plans by {rank_column}")
-        sorted_df = df.sort_values(rank_column)
+        sorted_df = working_df.sort_values(rank_column)
         
     for i, (_, row) in enumerate(sorted_df.iterrows()):
         plan_name = str(row.get('plan_name', f"Plan {row.get('id', i)}"))

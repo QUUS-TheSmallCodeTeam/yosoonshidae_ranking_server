@@ -126,11 +126,23 @@ def read_root():
             # Check if this is a DEA ranking based on column names
             is_dea = any(col for col in config.df_with_rankings.columns if col.startswith('dea_'))
             
+            # Log the dataframe info before generating the report
+            logger.info(f"Generating report from in-memory rankings with {len(config.df_with_rankings)} plans")
+            
+            # Check if rank 1 exists in the dataframe
+            if 'dea_rank' in config.df_with_rankings.columns:
+                unique_ranks = sorted(config.df_with_rankings['dea_rank'].unique())
+                logger.info(f"Unique ranks in dataframe: {unique_ranks}")
+                
+                # Log the top 10 plans by rank
+                top_10_by_rank = config.df_with_rankings.sort_values('dea_rank').head(10)
+                logger.info(f"Top 10 plans by rank for HTML report:\n{top_10_by_rank[['plan_name', 'dea_score', 'dea_rank']].to_string()}")
+            
             # Generate report with appropriate parameters
             if is_dea:
                 logger.info("Generating DEA report for main endpoint")
                 html_content = generate_html_report(
-                    config.df_with_rankings, 
+                    config.df_with_rankings.copy(), 
                     datetime.now(), 
                     is_dea=True, 
                     title="DEA Mobile Plan Rankings"
@@ -815,7 +827,15 @@ async def process_data(request: Request):
         logger.info(f"[{request_id}] Ranked DataFrame shape: {df_ranked.shape}")
         
         # Store the results in global state for access by other endpoints
-        config.df_with_rankings = df_ranked
+        # Make sure we're storing the complete dataframe with all plans
+        logger.info(f"Storing {len(df_ranked)} plans in global state for HTML report")
+        
+        # Log the top 10 plans by rank to verify all are included
+        top_10_by_rank = df_ranked.sort_values('dea_rank').head(10)
+        logger.info(f"Top 10 plans by rank to be stored:\n{top_10_by_rank[['plan_name', 'dea_score', 'dea_rank']].to_string()}")
+        
+        # Store the complete dataframe
+        config.df_with_rankings = df_ranked.copy()
         
         # Step 7: Generate HTML report
         timestamp_now = datetime.now()
