@@ -9,6 +9,7 @@ import concurrent.futures
 import os
 import warnings
 import logging
+from sklearn.preprocessing import MinMaxScaler
 
 # Setup logging
 logging.basicConfig(
@@ -298,11 +299,57 @@ def run_scipy_dea(
         # Use the original input values (not normalized)
         inputs = df_sample[target_variable].values.reshape(-1, 1)  # Input data, 2D array (n_dmu x 1)
             
-        outputs = df_sample[output_cols].values  # Output data, 2D array (n_dmu x n_output)
+        outputs_raw = df_sample[output_cols].values  # Output data, 2D array (n_dmu x n_output)
         
-        # Precompute shared arrays outside the per-DMU loop
+        # 스케일링 적용: 각 출력 변수를 0-1 범위로 정규화
+        logger.info("Applying MinMax scaling to output variables for fair comparison")
+        
+        # 스케일링 적용 전 원본 값 로깅
+        for i, col in enumerate(output_cols):
+            if col in df_sample.columns:
+                col_values = outputs_raw[:, i]
+                logger.info(f"Original {col} range: min={np.min(col_values):.4f}, max={np.max(col_values):.4f}, mean={np.mean(col_values):.4f}")
+        
+        # MinMaxScaler 적용 - 각 컬럼을 0-1 범위로 스케일링
+        scaler = MinMaxScaler()
+        
+        # 이진 특성(0/1)은 스케일링하지 않고 그대로 유지
+        binary_features = [
+            'basic_data_unlimited', 'daily_data_unlimited', 'voice_unlimited', 'message_unlimited',
+            'is_5g', 'has_throttled_data', 'has_unlimited_speed', 'data_sharing',
+            'roaming_support', 'micro_payment', 'is_esim'
+        ]
+        
+        binary_indices = [i for i, col in enumerate(output_cols) if col in binary_features]
+        non_binary_indices = [i for i, col in enumerate(output_cols) if col not in binary_features]
+        
+        # 출력 행렬 복사 및 비이진 특성만 스케일링
+        outputs_matrix = outputs_raw.copy()
+        
+        if non_binary_indices:  # 비이진 특성이 있으면 스케일링 적용
+            outputs_matrix[:, non_binary_indices] = scaler.fit_transform(outputs_raw[:, non_binary_indices])
+            
+            # 스케일링 후 값 로깅
+            for i, col in enumerate(output_cols):
+                if i in non_binary_indices:
+                    col_values = outputs_matrix[:, i]
+                    logger.info(f"Scaled {col} range: min={np.min(col_values):.4f}, max={np.max(col_values):.4f}, mean={np.mean(col_values):.4f}")
+        
+        # 이진 특성은 로깅만 수행
+        for i, col in enumerate(output_cols):
+            if i in binary_indices:
+                col_values = outputs_matrix[:, i]
+                logger.info(f"Binary feature {col}: {np.sum(col_values)}/{len(col_values)} positive values (kept as-is)")
+        
+        # 가중치 제약 제거 - 스케일링만 유지
+        weight_constraints = None
+        logger.info("Using DEA without weight constraints - applying only scaling for fair comparison")
+        
+        # 한가지 노트: DEA는 각 DMU가 자신에게 가장 유리한 가중치를 선택하도록 허용하지만,
+        # 스케일링을 통해 모든 변수가 동일한 범위에서 공정하게 비교되도록 보장
+        
+        # 입력 행렬 보존
         inputs_matrix = inputs.copy()
-        outputs_matrix = outputs.copy()
         
         # 병렬 처리로 인한 결과 순서 문제 수정
         # 각 DMU의 결과를 인덱스와 함께 저장하여 순서 보장
@@ -310,34 +357,38 @@ def run_scipy_dea(
         efficiency_dict = {}
         success_dict = {}
         
-        # 순차 처리로 변경 시도
-        if True:  # 순차 처리 사용
-            logger.info("Using sequential processing to ensure consistent results")
-            for i in range(n_dmu):
-                try:
-                    efficiency, success = compute_efficiency(i, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary)
-                    efficiency_dict[i] = efficiency
-                    success_dict[i] = success
-                    logger.info(f"Processed DMU {i+1}/{n_dmu} with efficiency {efficiency:.4f}")
-                except Exception as e:
-                    logger.error(f"Error processing DMU {i+1}: {e}")
-                    efficiency_dict[i] = 1.0  # Default to efficient on error
-                    success_dict[i] = False
-        else:  # 병렬 처리 사용 (현재 비활성화)
-            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-                # Submit tasks for all DMUs
-                future_to_index = {executor.submit(compute_efficiency, i, inputs_matrix, outputs_matrix, n_dmu, rts, weight_constraints, non_discretionary): i for i in range(n_dmu)}
-                for future in concurrent.futures.as_completed(future_to_index):
-                    index = future_to_index[future]
-                    try:
-                        efficiency, success = future.result()
-                        efficiency_dict[index] = efficiency
-                        success_dict[index] = success
-                        logger.info(f"Processed DMU {index+1}/{n_dmu} with efficiency {efficiency:.4f}")
-                    except Exception as e:
-                        logger.error(f"Error processing DMU {index+1}: {e}")
-                        efficiency_dict[index] = 1.0  # Default to efficient on error
-                        success_dict[index] = False
+        # 가중치 제약 사용 여부 로깅
+        if weight_constraints:
+            logger.info(f"Using weight constraints for {len(weight_constraints)} features: {list(weight_constraints.keys())}")
+        else:
+            logger.info("No weight constraints applied")
+            
+        # 순차 처리 사용 (일관성 보장)
+        logger.info("Using sequential processing to ensure consistent results")
+        for i in range(n_dmu):
+            try:
+                # 가중치 제약과 출력 변수 이름 전달
+                efficiency, success = compute_efficiency(
+                    dmu_idx=i, 
+                    inputs_matrix=inputs_matrix, 
+                    outputs_matrix=outputs_matrix, 
+                    n_dmu=n_dmu, 
+                    rts=rts, 
+                    weight_constraints=weight_constraints, 
+                    non_discretionary=non_discretionary,
+                    output_cols=output_cols  # 출력 변수 이름 전달
+                )
+                efficiency_dict[i] = efficiency
+                success_dict[i] = success
+                logger.info(f"Processed DMU {i+1}/{n_dmu} with efficiency {efficiency:.4f}")
+            except Exception as e:
+                logger.error(f"Error processing DMU {i+1}: {e}")
+                logger.error(f"Error details: {str(e)}")
+                efficiency_dict[i] = 1.0  # Default to efficient on error
+                success_dict[i] = False
+        
+        # 병렬 처리 코드는 삭제 - 순차처리만 사용하도록 변경
+        # (순차처리로 변경하여 일관성 보장)
         
         # 인덱스 순서대로 결과 변환
         efficiencies = [efficiency_dict[i] for i in range(n_dmu)]
