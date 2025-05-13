@@ -254,7 +254,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
                 <td>{feature}</td>
                 <td>{category}</td>
             </tr>
-    """
+            """
         
         html += """
         </table>

@@ -240,7 +240,8 @@ def calculate_plan_baseline_cost(row: pd.Series, frontiers: Dict[str, pd.Series]
             
             # Get the frontier-based cost for this feature value
             if feature in frontiers:
-                if isinstance(frontiers[feature].index, pd.Float64Index) or isinstance(frontiers[feature].index, pd.Int64Index):
+                # Check if the index is numeric using pandas-version-agnostic approach
+                if pd.api.types.is_numeric_dtype(frontiers[feature].index):
                     # Numeric index - use estimation
                     frontier_value = estimate_frontier_value(feature_value, frontiers[feature])
                     total_cost += frontier_value
