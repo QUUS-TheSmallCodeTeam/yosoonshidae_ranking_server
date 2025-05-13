@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
+import json
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -26,7 +27,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     Returns:
         HTML content as string
     """
-    import json
     # Get ranking method and log transform from the dataframe attributes if available
     ranking_method = df.attrs.get('ranking_method', 'relative')
     use_log_transform = df.attrs.get('use_log_transform', False)
@@ -343,7 +343,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         </tr>
                         <tr>
                             <td>Total Plans Analyzed</td>
-                            <td>" + str(len(df)) + "</td>
+                            <td>{len(df)}</td>
                         </tr>
                         <tr>
                             <td>Ranking Method</td>
@@ -351,15 +351,15 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         </tr>
                         <tr>
                             <td>Log Transform Applied</td>
-                            <td>" + ('Yes' if df.attrs.get('use_log_transform', False) else 'No') + "</td>
+                            <td>{'Yes' if df.attrs.get('use_log_transform', False) else 'No'}</td>
                         </tr>
                         <tr>
                             <td>Top Plan</td>
-                            <td>" + (df_sorted.iloc[0]['plan_name'] if len(df_sorted) > 0 else 'N/A') + "</td>
+                            <td>{df_sorted.iloc[0]['plan_name'] if len(df_sorted) > 0 else 'N/A'}</td>
                         </tr>
                         <tr>
                             <td>Top Plan Value</td>
-                            <td>" + (f"{df_sorted.iloc[0][value_col]:.4f}" if len(df_sorted) > 0 and isinstance(df_sorted.iloc[0][value_col], float) else str(df_sorted.iloc[0][value_col]) if len(df_sorted) > 0 else 'N/A') + "</td>
+                            <td>{f"{df_sorted.iloc[0][value_col]:.4f}" if len(df_sorted) > 0 and isinstance(df_sorted.iloc[0][value_col], float) else str(df_sorted.iloc[0][value_col]) if len(df_sorted) > 0 else 'N/A'}</td>
                         </tr>
                     </table>
                 </div>
@@ -376,7 +376,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 <div style="height: 500px; width: 100%;">
                     <canvas id="frontierChart"></canvas>
                 </div>
-                <script type="application/json" id="chartData">{chart_data_json}</script>
+                <script type="application/json" id="chartData">{json.dumps(chart_data_points)}</script>
             </div>
         </div>
     """
