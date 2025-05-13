@@ -22,13 +22,13 @@ from modules.preprocess import prepare_features
 from modules.utils import ensure_directories, save_raw_data, save_processed_data
 from modules.ranking import calculate_rankings_with_ties
 from modules.report import generate_html_report
-from modules.dea import calculate_rankings_with_dea
+from modules.cost_spec import calculate_cs_ratio, rank_plans_by_cs
 from modules.models import get_basic_feature_list
 from modules.spearman import calculate_rankings_with_spearman
 from fastapi import UploadFile, File
 
 # Initialize FastAPI
-app = FastAPI(title="Moyo Plan Ranking Model Server - DEA Method")
+app = FastAPI(title="Moyo Plan Ranking Model Server - Cost-Spec Method")
 
 # Global variables for storing data
 df_with_rankings = None  # Global variable to store the latest rankings
@@ -777,7 +777,7 @@ def read_root():
 
 @app.post("/process")
 async def process_data(request: Request):
-    """Process plan data using the DEA method."""
+    """Process plan data using the Cost-Spec ratio method."""
     start_time = time.time()
     request_id = str(uuid.uuid4())
     logger.info(f"[{request_id}] Received /process request")
@@ -809,16 +809,15 @@ async def process_data(request: Request):
 
         logger.info(f"[{request_id}] Received {len(data)} plans")
         
-        # Extract DEA options with defaults
+        # Extract options
         feature_set = options.get('featureSet', 'basic')
-        target_variable = options.get('targetVariable', 'fee')
-        rts = options.get('rts', 'vrs')  # Default to VRS for better discrimination
+        fee_column = options.get('feeColumn', 'fee')  # Fee column to use for comparison
         
-        logger.info(f"[{request_id}] Using DEA options: feature_set={feature_set}, target_variable={target_variable}, rts={rts}")
-
+        logger.info(f"[{request_id}] Using Cost-Spec method with feature_set={feature_set}, fee_column={fee_column}")
+        
         # Step 3: Save raw data
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        raw_data_path = config.spearman_raw_dir / f"raw_data_{timestamp}.json"
+        raw_data_path = Path(f"./data/raw/raw_data_{timestamp}.json")
         if not raw_data_path.parent.exists():
             raw_data_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -838,126 +837,91 @@ async def process_data(request: Request):
         gc.collect()
         
         # Step 5: Save processed data
-        processed_data_path = config.spearman_processed_dir / f"processed_data_{timestamp}.csv"
+        processed_data_path = Path(f"./data/processed/processed_data_{timestamp}.csv")
         if not processed_data_path.parent.exists():
             processed_data_path.parent.mkdir(parents=True, exist_ok=True)
         
         processed_df.to_csv(processed_data_path, index=False, encoding='utf-8')
         
-        # Step 6: Apply DEA ranking method with options
-        df_ranked = calculate_rankings_with_dea(
+        # Step 6: Apply Cost-Spec ranking method with options
+        df_ranked = rank_plans_by_cs(
             processed_df,
             feature_set=feature_set,
-            target_variable=target_variable,
-            rts=rts
+            fee_column=fee_column
         )
         
         logger.info(f"[{request_id}] Ranked DataFrame shape: {df_ranked.shape}")
         
         # Store the results in global state for access by other endpoints
-        # Make sure we're storing the complete dataframe with all plans
         logger.info(f"Storing {len(df_ranked)} plans in global state for HTML report")
         
         # Log the top 10 plans by rank to verify all are included
-        top_10_by_rank = df_ranked.sort_values('dea_rank').head(10)
-        logger.info(f"Top 10 plans by rank to be stored:\n{top_10_by_rank[['plan_name', 'dea_score', 'dea_rank']].to_string()}")
+        top_10_by_rank = df_ranked.sort_values('rank_number').head(10)
+        logger.info(f"Top 10 plans by rank to be stored:\n{top_10_by_rank[['plan_name', 'CS', 'rank_number']].to_string()}")
         
         # Store the complete dataframe
         config.df_with_rankings = df_ranked.copy()
         
         # Step 7: Generate HTML report
         timestamp_now = datetime.now()
-        report_filename = f"dea_ranking_{timestamp_now.strftime('%Y%m%d_%H%M%S')}.html"
-        report_path = config.dea_report_dir / report_filename
+        report_filename = f"cs_ranking_{timestamp_now.strftime('%Y%m%d_%H%M%S')}.html"
+        report_path = Path(f"./reports/cs/{report_filename}")
         if not report_path.parent.exists():
             report_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Generate HTML content
-        # Pass is_dea=True to indicate this is a DEA report
-        html_report = generate_html_report(df_ranked, timestamp_now, is_dea=True, title="DEA Mobile Plan Rankings")
+        # Pass is_cs=True to indicate this is a Cost-Spec report
+        html_report = generate_html_report(df_ranked, timestamp_now, is_cs=True, title="Cost-Spec Mobile Plan Rankings")
         
         # Write HTML content to file
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(html_report)
         
-        # Step 8: Prepare response with DEA ranking data
+        # Step 8: Prepare response with CS ranking data
         # First, ensure all float values are JSON-serializable
         # Replace inf, -inf, and NaN with appropriate values
         df_ranked = df_ranked.replace([np.inf, -np.inf], np.finfo(np.float64).max)
         df_ranked = df_ranked.replace(np.nan, 0)
         
-        all_rankings = {}
+        # Create all_ranked_plans for the response
+        columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
+                             "rank_number", "rank_display", "B", "CS"]
+        available_columns = [col for col in columns_to_include if col in df_ranked.columns]
         
-        # For DEA, we only have one ranking method
-        rank_col = 'dea_rank'
-        value_col = 'dea_score'
+        # Sort by CS ratio (descending) and add value_ratio field for compatibility
+        all_ranked_plans = df_ranked.sort_values("CS", ascending=False)[available_columns].to_dict(orient="records")
         
-        if rank_col in df_ranked.columns and value_col in df_ranked.columns:
-            columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
-                                rank_col, "dea_efficiency", value_col]
-            available_columns = [col for col in columns_to_include if col in df_ranked.columns]
-            
-            # Sort by the ranking column and convert to records
-            all_rankings['dea'] = df_ranked.sort_values(rank_col)[available_columns].to_dict(orient="records")
-            logger.info(f"[{request_id}] Included DEA rankings with {len(all_rankings['dea'])} plans")
+        # Ensure each plan has a value_ratio field (required for edge function DB upsert)
+        for plan in all_ranked_plans:
+            # Add value_ratio field using CS for compatibility
+            plan["value_ratio"] = plan.get("CS", 0)
         
-        # Get top 10 plans by DEA score
-        top_10_value_col = "dea_score"
+        logger.info(f"[{request_id}] Prepared all_ranked_plans with {len(all_ranked_plans)} plans")
         
-        # Get top 10 plans
-        top_10_plans = []
-        try:
-            columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
-                               "dea_rank", "dea_efficiency", top_10_value_col]
-            available_columns = [col for col in columns_to_include if col in df_ranked.columns]
-            
-            top_10_plans = df_ranked.sort_values(top_10_value_col, ascending=False).head(10)[available_columns].to_dict(orient="records")
-            logger.info(f"[{request_id}] Extracted top 10 plans based on {top_10_value_col}")
-        except Exception as e:
-            logger.error(f"[{request_id}] Error extracting top plans: {e}")
-            
-        # Create all_ranked_plans (structured for edge function compatibility)
-        all_ranked_plans = []
-        try:
-            # Use the same columns as top_10_plans but include value_ratio explicitly for DB upsert
-            columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
-                               "dea_rank", "dea_efficiency", top_10_value_col]
-                               
-            available_columns = [col for col in columns_to_include if col in df_ranked.columns]
-            
-            # Get all plans, sorted by DEA score
-            all_ranked_plans = df_ranked.sort_values(top_10_value_col, ascending=False)[available_columns].to_dict(orient="records")
-            
-            # Ensure each plan has a value_ratio field (required for edge function DB upsert)
-            for plan in all_ranked_plans:
-                # Add value_ratio field using dea_score for compatibility
-                plan["value_ratio"] = plan.get(top_10_value_col, 0)
-            
-            logger.info(f"[{request_id}] Prepared all_ranked_plans with {len(all_ranked_plans)} plans")
-        except Exception as e:
-            logger.error(f"[{request_id}] Error preparing all_ranked_plans: {e}")
+        # Get top 10 plans for the response
+        top_10_plans = all_ranked_plans[:10] if len(all_ranked_plans) >= 10 else all_ranked_plans
         
         # Calculate timing
         end_time = time.time()
         processing_time = end_time - start_time
         
+        # Prepare response
         response = {
             "request_id": request_id,
-            "message": "Data processing complete using DEA method",
+            "message": "Data processing complete using Cost-Spec method",
             "status": "success",
             "processing_time_seconds": round(processing_time, 4),
             "options": {
                 "featureSet": feature_set,
-                "targetVariable": target_variable,
-                "rts": rts
+                "feeColumn": fee_column
             },
+            "ranking_method": "cs",
             "results": {
-                "raw_data_path": raw_data_path,
-                "processed_data_path": processed_data_path,
-                "report_path": report_path,
-                "report_url": f"/reports/{Path(report_path).name}" if report_path else None
+                "raw_data_path": str(raw_data_path),
+                "processed_data_path": str(processed_data_path),
+                "report_path": str(report_path),
+                "report_url": f"/reports/cs/{report_filename}"
             },
-            "ranking_method": "dea",
             "top_10_plans": top_10_plans,
             "all_ranked_plans": all_ranked_plans
         }

@@ -13,13 +13,14 @@ import pandas as pd
 # Configure logging
 logger = logging.getLogger(__name__)
 
-def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Rankings"):
+def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile Plan Rankings"):
     """Generate an HTML report of the rankings.
     
     Args:
         df: DataFrame with ranking data
         timestamp: Timestamp for the report
         is_dea: Whether this is a DEA report (default: False)
+        is_cs: Whether this is a Cost-Spec report (default: False)
         title: Title for the report (default: "Mobile Plan Rankings")
         
     Returns:
@@ -36,7 +37,12 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
     timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
     
     # Set report title based on method
-    report_title = "DEA Mobile Plan Rankings" if is_dea else title
+    if is_dea:
+        report_title = "DEA Mobile Plan Rankings"
+    elif is_cs:
+        report_title = "Cost-Spec Mobile Plan Rankings"
+    else:
+        report_title = title
     
     # Create HTML
     html = f"""
@@ -60,6 +66,7 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
             /* Feature category colors */
             .core-feature {{ background-color: #e6f7ff; }}
             .dea-metrics {{ background-color: #fff0f6; }}
+            .cs-metrics {{ background-color: #f9f0ff; }}
             .input-feature {{ background-color: #f9f0ff; }}
             .output-feature {{ background-color: #f6ffed; }}
             
@@ -95,7 +102,7 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         </style>
     </head>
     <body>
-        <h1>Mobile Plan Rankings (Spearman Method)</h1>
+        <h1>{report_title}</h1>
         <p>Generated: {timestamp_str}</p>
         
         <div class="note">
@@ -124,7 +131,7 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         </div>
     """
     
-    # Add DEA explanation section if this is a DEA report
+    # Add method explanation section based on the method
     if is_dea:
         html += """
         <h2>DEA Calculation Explanation</h2>
@@ -139,6 +146,20 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
                 <li><strong>Super-Efficiency:</strong> A score that helps differentiate between efficient plans (higher is better)</li>
             </ul>
             <p>Plans are ranked based on their DEA Score (higher is better).</p>
+        </div>
+        """
+    elif is_cs:
+        html += """
+        <h2>Cost-Spec Ratio Explanation</h2>
+        <div class="note">
+            <p><strong>Cost-Spec Ratio (CS)</strong> is a method that evaluates the value of mobile plans by comparing their fees to a theoretical baseline cost.</p>
+            <p>In this analysis:</p>
+            <ul>
+                <li><strong>Baseline Feature Cost (E):</strong> For each feature value, the minimum fee among plans with that value</li>
+                <li><strong>Plan Baseline Cost (B):</strong> Sum of baseline costs for all features in a plan</li>
+                <li><strong>Cost-Spec Ratio (CS):</strong> B / fee - the ratio of theoretical cost to actual fee</li>
+            </ul>
+            <p>Plans are ranked based on their CS Ratio (higher is better).</p>
         </div>
         """
     
@@ -214,577 +235,345 @@ def generate_html_report(df, timestamp, is_dea=False, title="Mobile Plan Ranking
         </div>
     """
     
-    # Add main data table
-    # DEA Plan Rankings table header
-    html += """
-    <h2>DEA Plan Rankings</h2>
-    <div class="container">
-    <table id="rankings-table">
-        <tr>
-            <th>Rank</th>
-            <th>Plan Name</th>
-            <th>Provider</th>
-            <th class="input-feature">Fee (Input)</th>
-            <th class="dea-metrics">DEA Score</th>
-            <th class="dea-metrics">Efficiency</th>
-            <th class="dea-metrics">Super-Efficiency</th>
-            
-            <!-- Core output features used in DEA calculation -->
-            <th class="output-feature">Data (GB)</th>
-            <th class="output-feature">Voice (Min)</th>
-            <th class="output-feature">SMS</th>
-            <th class="core-feature">Network</th>
-            
-            <!-- Additional features -->
-            <th class="additional-feature">Throttle Speed</th>
-            <th class="additional-feature">Tethering</th>
-            <th class="additional-feature">Data Type</th>
-            <th class="additional-feature">Data Sharing</th>
-            <th class="additional-feature">Roaming</th>
-            <th class="additional-feature">Micro Payment</th>
-            <th class="additional-feature">eSIM</th>
-    """
-    
-    # Add headers for all features used in the calculation
-    for feature in used_features:
-        # Clean up feature name for display
-        display_name = feature.replace('_clean', '').replace('_', ' ').title()
-        html += f"<th>{display_name}</th>"
-    
-    html += """
-            </tr>
-    """
-    
-    # Determine which rank column to use
-    rank_column = None
-    
-    # Check for available rank columns based on the method
-    if is_dea:
-        # For DEA, first check for dea-specific rank columns
-        for possible_column in ['dea_rank', 'dea_efficiency_rank', 'rank']:
-            if possible_column in df.columns:
-                rank_column = possible_column
-                break
-    else:
-        # For Spearman, look for standard rank columns
-        for possible_column in ['rank', 'rank_with_ties']:
-            if possible_column in df.columns:
-                rank_column = possible_column
-                break
-            
-    if rank_column is None:
-        # If no rank column is found, create a simple rank based on index or efficiency
-        logger.warning("No rank column found in data, creating a temporary rank")
-        
-        if is_dea and 'dea_score' in df.columns:
-            # For DEA, sort by score (descending) if available
-            logger.info("Creating temporary rank based on DEA score")
-            df = df.sort_values('dea_score', ascending=False)
-            df['temp_rank'] = range(1, len(df) + 1)
-        elif is_dea and 'dea_efficiency' in df.columns:
-            # For DEA, sort by efficiency (descending) if available
-            logger.info("Creating temporary rank based on DEA efficiency")
-            df = df.sort_values('dea_efficiency', ascending=False)
-            df['temp_rank'] = range(1, len(df) + 1)
-        elif not is_dea and 'value_ratio' in df.columns:
-            # For Spearman, sort by value ratio (descending) if available
-            logger.info("Creating temporary rank based on value ratio")
-            df = df.sort_values('value_ratio', ascending=False)
-            df['temp_rank'] = range(1, len(df) + 1)
-        else:
-            # Fallback to simple index-based rank
-            logger.info("Creating simple index-based rank")
-            df['temp_rank'] = range(1, len(df) + 1)
-            
-        rank_column = 'temp_rank'
-    
-    logger.info(f"Using rank column: {rank_column}")
-    
-    # Add rows for each plan
-    # Make a deep copy of the dataframe to avoid any reference issues
-    working_df = df.copy()
-    
-    # DEA 순위 처리 - 원본 dea_rank 열을 사용하여 정확한 순위와 동점 순위 유지
-    if is_dea:
-        # 인덱스 리셋으로 행 손실 방지
-        working_df = working_df.reset_index(drop=True)
-        
-        # DEA 순위는 dea_score를 기준으로 내림차순 정렬해야 함 (1위가 가장 높은 점수)
-        if 'dea_score' in working_df.columns:
-            logger.info("Sorting plans by DEA score (descending) to ensure correct rank order")
-            rank_column = 'dea_score'
-            # dea_score로 내림차순 정렬하여 가장 높은 점수가 위에 오도록 함
-            sorted_df = working_df.sort_values('dea_score', ascending=False)
-            
-            # 정렬 후 순위 확인
-            if 'dea_rank' in sorted_df.columns:
-                top_ranks = sorted_df['dea_rank'].head(5).tolist()
-                logger.info(f"Top 5 ranks after sorting by score: {top_ranks}")
-                
-                # 1위가 있는지 확인
-                if 1.0 not in top_ranks and len(top_ranks) > 0:
-                    logger.warning(f"No rank 1 in top 5 plans! First rank is {top_ranks[0]}")
-        # 대체 정렬 방식: dea_rank로 정렬
-        elif 'dea_rank' in working_df.columns:
-            logger.info("Sorting plans by original DEA rank (ascending)")
-            rank_column = 'dea_rank'
-            sorted_df = working_df.sort_values('dea_rank')
-        # 대체 열 사용 (필요한 경우)
-        elif 'display_rank' in working_df.columns:
-            logger.info("Sorting plans by display rank (ascending)")
-            rank_column = 'display_rank'
-            sorted_df = working_df.sort_values('display_rank')
-        elif 'dea_rank_sequential' in working_df.columns:
-            logger.info("Sorting plans by sequential DEA rank (ascending)")
-            rank_column = 'dea_rank_sequential'
-            sorted_df = working_df.sort_values('dea_rank_sequential')
-        else:
-            logger.warning("No rank column found, sorting by DEA score instead")
-            rank_column = 'dea_score'
-            sorted_df = working_df.sort_values('dea_score', ascending=False)
-        
-        # No need for extensive logging here
-        
-        # Make sure we're not losing any plans
-        if len(sorted_df) != len(working_df):
-            logger.warning(f"Missing plans! sorted_df has {len(sorted_df)} plans but original df has {len(working_df)} plans")
-            # Use the original dataframe sorted by rank as a fallback
-            sorted_df = working_df.sort_values('dea_rank')
-    else:
-        logger.info(f"Sorting plans by {rank_column}")
-        sorted_df = working_df.sort_values(rank_column)
-        
-    # 로그에 나타난 순위 정보 확인 - 원본 dea_rank 열 사용
-    if 'dea_rank' in sorted_df.columns:
-        unique_ranks = sorted(sorted_df['dea_rank'].unique())
-        logger.info(f"Unique ranks in sorted dataframe (first 10): {unique_ranks[:10]}")
-        
-        # 1위가 있는지 확인
-        has_rank_one = 1.0 in sorted_df['dea_rank'].values
-        if not has_rank_one:
-            logger.warning("No rank 1 found in dea_rank column! This should not happen based on logs.")
-            logger.info(f"Min rank in dataframe: {sorted_df['dea_rank'].min()}")
-            
-            # 데이터프레임 정보 출력
-            top_plans = sorted_df.sort_values('dea_score', ascending=False).head(5)
-            logger.info(f"Top 5 plans by score:\n{top_plans[['plan_name', 'dea_score', 'dea_rank']].to_string()}")
-    
-    # 만약 정렬 방식이 문제라면, dea_score로 다시 정렬하여 순위 순서 확인
-    sorted_by_score = sorted_df.sort_values('dea_score', ascending=False)
-    if 'dea_rank' in sorted_by_score.columns:
-        logger.info(f"Top 5 plans sorted by score with ranks:\n{sorted_by_score[['plan_name', 'dea_score', 'dea_rank']].head(5).to_string()}")
-        
-        # 정렬 방식 비교
-        if not sorted_df.equals(sorted_by_score):
-            logger.warning("Sorting by dea_rank and dea_score gives different results! Using score-based sorting for HTML.")
-            sorted_df = sorted_by_score
-    
-    # 순위 가지고 있는 플랜들이 모두 포함되어 있는지 확인
-    if 'dea_rank' in sorted_df.columns:
-        # 순위별 플랜 개수 확인
-        rank_counts = sorted_df['dea_rank'].value_counts().sort_index()
-        logger.info(f"Plans per rank: {rank_counts.head(10).to_dict()}")
-        
-        # 순위 1부터 5까지의 플랜들이 있는지 확인
-        missing_ranks = [r for r in range(1, 6) if r not in sorted_df['dea_rank'].values]
-        if missing_ranks:
-            logger.warning(f"Missing ranks in the HTML report: {missing_ranks}")
-            
-            # 누락된 순위의 플랜들이 있는지 확인
-            for rank in missing_ranks:
-                logger.warning(f"Checking for plans with rank {rank} in original data")
-                original_plans = df[df['dea_rank'] == float(rank)]
-                if not original_plans.empty:
-                    logger.warning(f"Found {len(original_plans)} plans with rank {rank} in original data but missing from HTML")
-                    logger.warning(f"Sample missing plan: {original_plans.iloc[0]['plan_name']}")
-    
-    # 테이블 시작
-    html += f"""
-        <h2>Plan Rankings</h2>
+    # Add Features List
+    if used_features:
+        html += """
+        <h2>Features Used</h2>
         <div class="container">
-        <table id="main-table">
+        <table>
             <tr>
-                <th>Rank</th>
-                <th>Plan Name</th>
-                <th>Provider</th>
-                <th>Fee (Input)</th>
-                <th>DEA Score</th>
-                <th>Efficiency</th>
-                <th>Super-Efficiency</th>
-                <th>Data (GB)</th>
-                <th>Voice (Min)</th>
-                <th>SMS</th>
-                <th>Network</th>
-                <th>Throttle Speed</th>
-                <th>Tethering</th>
-                <th>Data Type</th>
-                <th>Data Sharing</th>
-                <th>Roaming</th>
-                <th>Micro Payment</th>
-                <th>eSIM</th>
+                <th>Feature</th>
+                <th>Category</th>
             </tr>
-    """
-    
-    # 순위별 플랜 개수 확인 - 테이블 생성 전
-    if 'dea_rank' in sorted_df.columns:
-        # 순위별 플랜 개수 확인
-        rank_counts = sorted_df['dea_rank'].value_counts().sort_index()
-        logger.info(f"Plans per rank before table generation: {rank_counts.head(10).to_dict()}")
-    
-    # 정렬된 데이터프레임의 크기 확인
-    logger.info(f"Number of plans in sorted dataframe: {len(sorted_df)}")
-    
-    # 순위별로 정렬하여 추가 확인
-    if 'dea_rank' in sorted_df.columns:
-        # 순위별로 정렬
-        sorted_df = sorted_df.sort_values('dea_rank')
-        top_plans_by_rank = sorted_df.head(5)
-        logger.info(f"Top 5 plans sorted by rank:\n{top_plans_by_rank[['plan_name', 'dea_score', 'dea_rank']].to_string()}")
-    
-    # 점수별로 정렬하여 추가 확인
-    if 'dea_score' in sorted_df.columns:
-        # 점수별로 정렬
-        sorted_by_score = sorted_df.sort_values('dea_score', ascending=False)
-        top_plans_by_score = sorted_by_score.head(5)
-        logger.info(f"Top 5 plans sorted by score:\n{top_plans_by_score[['plan_name', 'dea_score', 'dea_rank']].to_string()}")
+        """
         
-        # 점수 기준 정렬을 사용하여 모든 플랜이 포함되도록 함
-        sorted_df = sorted_by_score
-    
-    # Process each plan for the HTML table
-    for i, (_, row) in enumerate(sorted_df.iterrows()):
-        # Get the plan name
-        plan_name = str(row.get('plan_name', f"Plan {row.get('id', i)}"))
-            
-        if len(plan_name) > 30:
-            plan_name = plan_name[:27] + "..."
-        
-        # 원본 dea_rank 열을 사용하여 정확한 순위 표시 (동점 순위 유지)
-        if 'dea_rank' in row and not pd.isna(row['dea_rank']):
-            # 정확한 순위 값 사용 - 소수점이 있는 경우에도 정확히 표시
-            rank_value = row['dea_rank']
-            
-            # 디버그를 위해 처음 5개 플랜의 순위 정보 출력
-            if i < 5:
-                logger.info(f"Plan {i+1}: {row.get('plan_name', 'Unknown')} - dea_rank={rank_value}, dea_score={row.get('dea_score', 'N/A')}")
-                
-            # 화면 표시를 위해 정수로 변환
-            rank_int = int(rank_value)
-        else:
-            # 순위 정보가 없는 경우 정렬된 순서 + 1로 대체
-            rank_int = i + 1
-            logger.warning(f"No rank information for plan at position {i}: {row.get('plan_name', 'Unknown')}")
-            
-        # 만약 순위가 1이 아니고 현재 순서가 0이면 (첫 번째 플랜), 이것은 1위가 누락된 것임
-        if rank_int != 1 and i == 0:
-            logger.warning(f"First plan does not have rank 1! Instead has rank {rank_int}")
-            # 이 경우 로그만 남기고 순위를 강제로 변경하지는 않음
-            
-        # 한국어 순위 표시를 위한 포맷팅
-        rank_display = f"{rank_int}위"
-            
-        # No need for rank debugging logs
-
-            
-        # DEA specific values
-        fee = int(row.get('fee', 0))
-        fee_str = f"{fee:,}"
-        
-        # DEA metrics
-        efficiency = row.get('dea_efficiency', 0)
-        if pd.isna(efficiency):
-            efficiency_str = "N/A"
-        else:
-            efficiency_str = f"{efficiency:.4f}"
-            
-        dea_score = row.get('dea_score', 0)
-        if pd.isna(dea_score):
-            dea_score_str = "N/A"
-            value_class = ""
-        else:
-            dea_score_str = f"{dea_score:.4f}"
-            value_class = "good-value" if dea_score > 1.1 else ("bad-value" if dea_score < 0.9 else "")
-        
-        super_efficiency = row.get('dea_super_efficiency', 0)
-        if pd.isna(super_efficiency):
-            super_efficiency_str = "N/A"
-        else:
-            super_efficiency_str = f"{super_efficiency:.4f}"
-            
-        # Get data, voice, and message values for DEA outputs
-        data_value = row.get('basic_data_clean', row.get('basic_data', 0))
-        if pd.isna(data_value):
-            data_value = 0
-        if row.get('basic_data_unlimited', 0) == 1:
-            data_str = "무제한"
-        else:
-            data_str = f"{data_value}GB"
-                
-            voice_value = row.get('voice_clean', row.get('voice', 0))
-            if pd.isna(voice_value):
-                voice_value = 0
-            if row.get('voice_unlimited', 0) == 1:
-                voice_str = "무제한"
-            else:
-                voice_str = f"{int(voice_value)}분"
-                
-            message_value = row.get('message_clean', row.get('message', 0))
-            if pd.isna(message_value):
-                message_value = 0
-            if row.get('message_unlimited', 0) == 1:
-                message_str = "무제한"
-            else:
-                message_str = f"{int(message_value)}건"
-            
-            network = row.get('network', "")
-            if network == "5G":
-                network = "5G"
-            elif network == "LTE":
-                network = "LTE"
-            else:
-                network = ""
-                
-            # Get additional feature details
-            throttle_speed = row.get('throttle_speed_normalized', 0)
-            if pd.isna(throttle_speed):
-                throttle_speed_str = "N/A"
-            elif throttle_speed == 0:
-                throttle_speed_str = "No throttling"
-            else:
-                # Convert normalized value (0-1) to actual Mbps (max is 10 Mbps as defined in preprocess.py)
-                speed_mbps = throttle_speed * 10.0
-                throttle_speed_str = f"{speed_mbps:.1f} Mbps"
-                
-            tethering_gb = row.get('tethering_gb', 0)
-            if pd.isna(tethering_gb):
-                tethering_str = "N/A"
-            elif tethering_gb == 0:
-                tethering_str = "Not allowed"
-            else:
-                tethering_str = f"{tethering_gb:.1f} GB"
-                
-            # Determine data type based on unlimited flags
-            if row.get('basic_data_unlimited', 0) == 1:
-                if throttle_speed > 0:
-                    data_type = "Throttled"
-                else:
-                    data_type = "Unlimited"
-            else:
-                data_type = "Limited"
-                
-            # Get boolean features
-            data_sharing = "Yes" if row.get('data_sharing', False) else "No"
-            roaming = "Yes" if row.get('roaming_support', False) else "No"
-            micro_payment = "Yes" if row.get('micro_payment', False) else "No"
-            esim = "Yes" if row.get('is_esim', False) else "No"
-            
+        for feature in used_features:
+            category = "Output" if feature != "fee" else "Input"
             html += f"""
             <tr>
-                <td>{rank_display}</td>
-                <td>{plan_name}</td>
-                <td>{row.get('mvno', 'Unknown')}</td>
-                <td class="input-feature">{fee_str}</td>
-                <td class="dea-metrics {value_class}">{dea_score_str}</td>
-                <td class="dea-metrics">{efficiency_str}</td>
-                <td class="dea-metrics">{super_efficiency_str}</td>
-                <td class="output-feature">{data_str}</td>
-                <td class="output-feature">{voice_str}</td>
-                <td class="output-feature">{message_str}</td>
-                <td class="core-feature">{network}</td>
-                <td class="additional-feature">{throttle_speed_str}</td>
-                <td class="additional-feature">{tethering_str}</td>
-                <td class="additional-feature">{data_type}</td>
-                <td class="additional-feature">{data_sharing}</td>
-                <td class="additional-feature">{roaming}</td>
-                <td class="additional-feature">{micro_payment}</td>
-                <td class="additional-feature">{esim}</td>
+                <td>{feature}</td>
+                <td>{category}</td>
             </tr>
             """
         
-    # Close the table
+        html += """
+        </table>
+        </div>
+        """
+    
+    # Add rankings table
+    html += """
+        <h2>Plan Rankings</h2>
+        <div class="container">
+        <table>
+            <tr>
+                <th>Rank</th>
+                <th>Plan Name</th>
+                <th>MVNO</th>
+                <th>Fee (KRW)</th>
+                <th>Original Fee (KRW)</th>
+    """
+    
+    # Add method-specific columns
+    if is_dea:
+        html += """
+                <th>DEA Efficiency</th>
+                <th>DEA Score</th>
+        """
+    elif is_cs:
+        html += """
+                <th>Baseline Cost (B)</th>
+                <th>CS Ratio</th>
+        """
+    else:
+        html += """
+                <th>Value Ratio</th>
+                <th>Delta P</th>
+                <th>Delta P - Fee</th>
+        """
+    
+    # Continue with feature columns
+    html += """
+                <th>Data (GB)</th>
+                <th>Voice (min)</th>
+                <th>Message (SMS)</th>
+                <th>Additional Call (min)</th>
+                <th>5G</th>
+            </tr>
+    """
+    
+    # Generate table rows
+    rank_col = 'dea_rank' if is_dea else ('rank_number' if is_cs else 'rank')
+    value_col = 'dea_score' if is_dea else ('CS' if is_cs else 'value_ratio')
+    
+    # Sort by the appropriate ranking column
+    if rank_col in df.columns:
+        df_sorted = df.sort_values(rank_col)
+    else:
+        df_sorted = df.sort_values('rank', ascending=True) if 'rank' in df.columns else df
+    
+    for _, row in df_sorted.iterrows():
+        # Format rank
+        if is_dea:
+            rank = int(row['dea_rank']) if 'dea_rank' in row and not pd.isna(row['dea_rank']) else ""
+            rank_str = f"{rank}" if rank else ""
+        elif is_cs:
+            rank = int(row['rank_number']) if 'rank_number' in row and not pd.isna(row['rank_number']) else ""
+            rank_str = f"{rank}" if rank else ""
+        else:
+            rank_str = row['rank_display'] if 'rank_display' in row else ""
+        
+        # Get plan data
+        plan_name = row['plan_name'] if 'plan_name' in row else ""
+        mvno = row['mvno'] if 'mvno' in row else ""
+        fee = int(row['fee']) if 'fee' in row and not pd.isna(row['fee']) else 0
+        original_fee = int(row['original_fee']) if 'original_fee' in row and not pd.isna(row['original_fee']) else 0
+        
+        # Method-specific metrics
+        if is_dea:
+            dea_efficiency = row['dea_efficiency'] if 'dea_efficiency' in row else ""
+            dea_score = row['dea_score'] if 'dea_score' in row else ""
+            
+            method_specific_cols = f"""
+                <td>{dea_efficiency:.4f if isinstance(dea_efficiency, float) else dea_efficiency}</td>
+                <td class="good-value">{dea_score:.4f if isinstance(dea_score, float) else dea_score}</td>
+            """
+        elif is_cs:
+            baseline_cost = int(row['B']) if 'B' in row and not pd.isna(row['B']) else 0
+            cs_ratio = row['CS'] if 'CS' in row else ""
+            
+            method_specific_cols = f"""
+                <td>{baseline_cost:,}</td>
+                <td class="good-value">{cs_ratio:.4f if isinstance(cs_ratio, float) else cs_ratio}</td>
+            """
+        else:
+            value_ratio = row['value_ratio'] if 'value_ratio' in row else ""
+            delta_p = row.get('delta_p', "")
+            delta_p_minus_fee = row.get('delta_p_minus_fee', "")
+            
+            # Format delta_p and delta_p_minus_fee
+            delta_p_str = f"{int(delta_p):,}" if isinstance(delta_p, (int, float)) else str(delta_p)
+            delta_p_minus_fee_str = f"{int(delta_p_minus_fee):,}" if isinstance(delta_p_minus_fee, (int, float)) else str(delta_p_minus_fee)
+            
+            method_specific_cols = f"""
+                <td class="good-value">{value_ratio:.4f if isinstance(value_ratio, float) else value_ratio}</td>
+                <td>{delta_p_str}</td>
+                <td>{delta_p_minus_fee_str}</td>
+            """
+        
+        # Get feature data
+        data_gb = row['basic_data_clean'] if 'basic_data_clean' in row else "N/A"
+        voice = row['voice_clean'] if 'voice_clean' in row else "N/A"
+        message = row['message_clean'] if 'message_clean' in row else "N/A"
+        additional_call = row['additional_call'] if 'additional_call' in row else "N/A"
+        is_5g = "Yes" if row.get('is_5g') == 1 else "No"
+        
+        # Handle unlimited values
+        if 'basic_data_unlimited' in row and row['basic_data_unlimited'] == 1:
+            data_gb = "Unlimited"
+        if 'voice_unlimited' in row and row['voice_unlimited'] == 1:
+            voice = "Unlimited"
+        if 'message_unlimited' in row and row['message_unlimited'] == 1:
+            message = "Unlimited"
+        
+        # Generate the row HTML
+        html += f"""
+            <tr>
+                <td>{rank_str}</td>
+                <td>{plan_name}</td>
+                <td>{mvno}</td>
+                <td>{fee:,}</td>
+                <td>{original_fee:,}</td>
+                {method_specific_cols}
+                <td>{data_gb}</td>
+                <td>{voice}</td>
+                <td>{message}</td>
+                <td>{additional_call}</td>
+                <td>{is_5g}</td>
+            </tr>
+        """
+    
+    # Close the table and add collapsible details
     html += """
         </table>
         </div>
+        
+        <h2>Detailed Plan Information</h2>
     """
     
-    # Add JavaScript for interactive controls
+    # Add collapsible sections for each plan
+    for _, row in df_sorted.iterrows():
+        plan_name = row['plan_name'] if 'plan_name' in row else "Unknown Plan"
+        mvno = row['mvno'] if 'mvno' in row else "Unknown Provider"
+        
+        html += f"""
+        <button type="button" class="collapsible">{plan_name} - {mvno}</button>
+        <div class="content">
+            <table>
+                <tr>
+                    <th>Feature</th>
+                    <th>Value</th>
+                </tr>
+        """
+        
+        # Add all features and values to the table
+        for col in sorted(row.index):
+            # Skip null values and internal columns
+            if col in ('index', 'level_0') or pd.isna(row[col]):
+                continue
+            
+            # Format value based on type
+            if isinstance(row[col], (int, float)):
+                if col.endswith('unlimited') or col.startswith('is_') or col.startswith('has_'):
+                    # Boolean-like values
+                    value = "Yes" if row[col] == 1 else "No"
+                elif col in ('fee', 'original_fee', 'post_discount_fee', 'discount_fee'):
+                    # Currency values
+                    value = f"{int(row[col]):,} KRW"
+                else:
+                    # Regular numeric values
+                    value = f"{row[col]}"
+            else:
+                value = str(row[col])
+            
+            html += f"""
+                <tr>
+                    <td>{col}</td>
+                    <td>{value}</td>
+                </tr>
+            """
+        
+        html += """
+            </table>
+        </div>
+        """
+    
+    # Add JavaScript for interactive elements
     html += """
-    <script>
-    /* Current state */
-    let currentState = {
-        rankMethod: "relative",
-        feeType: "original",
-        logTransform: true
-    };
-    
-    /* Store all table containers */
-    let tableContainers = {};
-    
-    /* Initialize on page load */
-    document.addEventListener('DOMContentLoaded', function() {
-        /* Find the main table in the document */
-        const mainTable = document.getElementById('main-table');
-        if (!mainTable) return;
-        
-        /* Create container divs for different views if they don't exist */
-        createTableContainers();
-        
-        /* Set up initial view */
-        setTimeout(function() {
-            updateVisibleContainer();
-        }, 200);
-    });
-    
-    /* Create containers for different ranking views */
-    function createTableContainers() {
-        /* Clone the table for each ranking method and fee type */
-        const rankMethods = ['relative', 'absolute', 'net'];
-        const feeTypes = ['original', 'discounted'];
-        
-        /* Get the parent of the main table */
-        const mainTableContainer = document.getElementById('main-table-container');
-        
-        /* Create container for all tables */
-        const container = document.createElement('div');
-        container.className = 'rankings-container';
-        mainTableContainer.parentNode.insertBefore(container, mainTableContainer);
-        
-        /* Hide the original table */
-        mainTableContainer.style.display = 'none';
-        
-        /* For each combination, create a container with a cloned table */
-        rankMethods.forEach(method => {
-            feeTypes.forEach(feeType => {
-                const containerId = `${method}-${feeType}`;
-                const newContainer = document.createElement('div');
-                newContainer.id = containerId;
-                newContainer.className = 'container hidden';
-                newContainer.innerHTML = mainTableContainer.innerHTML;
-                container.appendChild(newContainer);
-                
-                tableContainers[containerId] = newContainer;
+        <script>
+        /* Add collapsible functionality */
+        var coll = document.getElementsByClassName("collapsible");
+        var i;
+
+        for (i = 0; i < coll.length; i++) {
+            coll[i].addEventListener("click", function() {
+                this.classList.toggle("active");
+                var content = this.nextElementSibling;
+                if (content.style.display === "block") {
+                    content.style.display = "none";
+                } else {
+                    content.style.display = "block";
+                }
             });
-        });
-        
-        /* Set the default view to visible */
-        const defaultContainer = document.getElementById('relative-original');
-        if (defaultContainer) {
-            defaultContainer.classList.remove('hidden');
-        }
-    }
-    
-    /* Change ranking method */
-    function changeRankMethod(method) {
-        /* Update buttons */
-        document.getElementById('relative-btn').classList.remove('active');
-        document.getElementById('absolute-btn').classList.remove('active');
-        document.getElementById('net-btn').classList.remove('active');
-        
-        /* Update button styles */
-        document.getElementById(method + '-btn').classList.add('active');
-        
-        /* Update state */
-        currentState.rankMethod = method;
-        
-        /* Update visible container */
-        updateVisibleContainer();
-    }
-    
-    /* Change fee type */
-    function changeFeeType(type) {
-        /* Update buttons */
-        document.getElementById('original-fee-btn').classList.remove('active');
-        document.getElementById('discounted-fee-btn').classList.remove('active');
-        
-        /* Update button styles */
-        document.getElementById(type + '-fee-btn').classList.add('active');
-        
-        /* Update state */
-        currentState.feeType = type;
-        
-        /* Update visible container */
-        updateVisibleContainer();
-    }
-    
-    /* Toggle log transform */
-    function toggleLogTransform(enabled) {
-        document.getElementById('log-transform-on-btn').classList.remove('active');
-        document.getElementById('log-transform-off-btn').classList.remove('active');
-        
-        if (enabled) {
-            document.getElementById('log-transform-on-btn').classList.add('active');
-        } else {
-            document.getElementById('log-transform-off-btn').classList.add('active');
         }
         
-        currentState.logTransform = enabled;
+        /* Current state */
+        let currentState = {
+            rankMethod: "relative",
+            feeType: "original",
+            logTransform: true
+        };
         
-        // Note: In a real implementation, this would trigger a recalculation
-        alert("Changing log transform would require recalculating all rankings. This feature is shown for UI demonstration only.");
-    }
-    
-    /* Update visible container based on current state */
-    function updateVisibleContainer() {
-        /* Hide all containers */
-        const containers = document.querySelectorAll('.rankings-container .container');
-        containers.forEach(container => {
-            container.classList.add('hidden');
-        });
-        
-        /* Show the selected container */
-        const containerId = `${currentState.rankMethod}-${currentState.feeType}`;
-        const containerElement = document.getElementById(containerId);
-        if (containerElement) {
-            containerElement.classList.remove('hidden');
-        } else {
-            /* Fallback to relative-original if the selected container doesn't exist */
-            document.getElementById('relative-original').classList.remove('hidden');
-            /* Update state and buttons to match */
-            currentState.rankMethod = 'relative';
-            currentState.feeType = 'original';
-            document.getElementById('relative-btn').classList.add('active');
-            document.getElementById('original-fee-btn').classList.add('active');
+        /* Change ranking method */
+        function changeRankMethod(method) {
+            /* Update buttons */
+            document.getElementById('relative-btn').classList.remove('active');
+            document.getElementById('absolute-btn').classList.remove('active');
+            document.getElementById('net-btn').classList.remove('active');
+            document.getElementById(method + '-btn').classList.add('active');
+            
+            /* Update button styles */
+            document.getElementById('relative-btn').style.backgroundColor = '#007bff';
+            document.getElementById('absolute-btn').style.backgroundColor = '#007bff';
+            document.getElementById('net-btn').style.backgroundColor = '#007bff';
+            document.getElementById(method + '-btn').style.backgroundColor = '#28a745';
+            
+            /* Update state */
+            currentState.rankMethod = method;
+            console.log("Ranking method changed to: " + method);
         }
-    }
-    </script>
+        
+        /* Change fee type */
+        function changeFeeType(type) {
+            /* Update buttons */
+            document.getElementById('original-fee-btn').classList.remove('active');
+            document.getElementById('discounted-fee-btn').classList.remove('active');
+            document.getElementById(type + '-fee-btn').classList.add('active');
+            
+            /* Update button styles */
+            document.getElementById('original-fee-btn').style.backgroundColor = '#007bff';
+            document.getElementById('discounted-fee-btn').style.backgroundColor = '#007bff';
+            document.getElementById(type + '-fee-btn').style.backgroundColor = '#28a745';
+            
+            /* Update state */
+            currentState.feeType = type;
+            console.log("Fee type changed to: " + type);
+        }
+        
+        /* Toggle log transform */
+        function toggleLogTransform(enabled) {
+            /* Update buttons */
+            document.getElementById('log-transform-on-btn').classList.remove('active');
+            document.getElementById('log-transform-off-btn').classList.remove('active');
+            
+            if (enabled) {
+                document.getElementById('log-transform-on-btn').classList.add('active');
+                document.getElementById('log-transform-on-btn').style.backgroundColor = '#28a745';
+                document.getElementById('log-transform-off-btn').style.backgroundColor = '#007bff';
+            } else {
+                document.getElementById('log-transform-off-btn').classList.add('active');
+                document.getElementById('log-transform-on-btn').style.backgroundColor = '#007bff';
+                document.getElementById('log-transform-off-btn').style.backgroundColor = '#28a745';
+            }
+            
+            /* Update state */
+            currentState.logTransform = enabled;
+            console.log("Log transform set to: " + enabled);
+        }
+        </script>
     </body>
     </html>
     """
     
     return html
 
-def save_report(html_content, timestamp):
-    """Save an HTML report to the reports directory."""
+def save_report(html_content, timestamp, directory=None, prefix="ranking", description=None):
+    """Save an HTML report to a file.
+    
+    Args:
+        html_content: HTML content as string
+        timestamp: Timestamp to use in filename
+        directory: Directory to save to (optional)
+        prefix: Prefix for the filename (default: "ranking")
+        description: Optional description to include in filename
+    
+    Returns:
+        Path object of the saved file
+    """
+    # Generate filename with timestamp
+    filename_parts = [prefix]
+    if description:
+        filename_parts.append(description)
+    
     timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
+    filename = f"{'-'.join(filename_parts)}_{timestamp_str}.html"
     
-    # Define report directories
-    report_dirs = [Path("./reports"), Path("/tmp/reports")]
+    # Determine directory
+    if directory is None:
+        directory = Path("./reports")
     
-    # Ensure report directories exist
-    saved_paths = []
-    for report_dir in report_dirs:
-        try:
-            os.makedirs(report_dir, exist_ok=True)
-            report_path = report_dir / f"plan_rankings_spearman_{timestamp_str}.html"
-            
-            with open(report_path, "w", encoding="utf-8") as f:
-                f.write(html_content)
-            logger.info(f"Report saved to {report_path}")
-            saved_paths.append(str(report_path))
-        except Exception as e:
-            logger.error(f"Failed to save report to {report_dir}: {e}")
+    # Create directory if it doesn't exist
+    os.makedirs(directory, exist_ok=True)
     
-    # If we saved to any location, return the first one
-    if saved_paths:
-        return saved_paths[0]
+    # Create file path
+    file_path = Path(directory) / filename
     
-    # If all save attempts failed, try a fallback location
+    # Write content to file
     try:
-        fallback_path = Path(f"/tmp/plan_rankings_spearman_{timestamp_str}.html")
-        with open(fallback_path, "w", encoding="utf-8") as f:
+        with open(file_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
-        logger.info(f"Report saved to fallback location: {fallback_path}")
-        return str(fallback_path)
+        logger.info(f"Report saved to {file_path}")
+        return file_path
     except Exception as e:
-        logger.error(f"Failed to save report to fallback location: {e}")
+        logger.error(f"Error saving report: {e}")
         return None
