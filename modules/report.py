@@ -40,54 +40,9 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     # Set report title based on method
     report_title = "Cost-Spec Mobile Plan Rankings"
     
-    # Prepare data for frontier chart visualization
-    # Determine the value column based on the ranking method
-    value_col = 'CS'
-    
     # Sort the DataFrame based on rank column
     rank_col = 'rank_number'
     df_sorted = df.sort_values(rank_col) if rank_col in df.columns else df
-    
-    # Prepare data for chart - create JSON objects for all plans
-    chart_data_points = []
-    
-    # Sort plans by fee to find frontier
-    df_sorted_by_fee = df.sort_values('fee')  # Use original df, not df_sorted
-    max_value_at_fee = -float('inf')
-    
-    for _, row in df_sorted_by_fee.iterrows():
-        fee = float(row['fee']) if 'fee' in row and not pd.isna(row['fee']) else 0
-        value = float(row[value_col]) if value_col in row and not pd.isna(row[value_col]) else 0
-        plan_name = row['plan_name'] if 'plan_name' in row else 'Unknown'
-        mvno = row['mvno'] if 'mvno' in row else 'Unknown'
-        
-        # Get rank based on ranking method
-        rank = int(row['rank_number']) if 'rank_number' in row and not pd.isna(row['rank_number']) else 0
-        
-        # Determine if this is a frontier point
-        is_frontier = value > max_value_at_fee
-        if is_frontier:
-            max_value_at_fee = value
-        
-        # Create data point
-        data_point = {
-            'fee': fee,
-            'value': value,
-            'plan_name': str(plan_name),
-            'mvno': str(mvno),
-            'rank': rank,
-            'is_frontier': is_frontier
-        }
-        chart_data_points.append(data_point)
-    
-    # Convert to JSON to embed in HTML
-    # Ensure JSON is properly formatted by using a safe JSON dump
-    try:
-        chart_data_json = json.dumps(chart_data_points)
-    except Exception as e:
-        logger.error(f"Error serializing chart data: {e}")
-        # Provide a fallback empty array if serialization fails
-        chart_data_json = "[]"
     
     # Calculate feature contributions to baseline costs
     feature_contribution_data = {}
@@ -119,7 +74,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     # Top plan info
     if len(df_sorted) > 0:
         top_plan_name = str(df_sorted.iloc[0]['plan_name']) if 'plan_name' in df_sorted.iloc[0] else 'N/A'
-        top_value = df_sorted.iloc[0][value_col] if value_col in df_sorted.iloc[0] else None
+        top_value = df_sorted.iloc[0]['CS'] if 'CS' in df_sorted.iloc[0] else None
         if isinstance(top_value, float):
             top_plan_value = f"{top_value:.4f}"
         else:
@@ -135,7 +90,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     # Core continuous features to visualize (those that likely have frontiers)
     core_continuous_features = [
         'basic_data_clean', 'daily_data_clean', 'voice_clean', 
-        'message_clean', 'speed_when_exhausted', 'additional_call'
+        'message_clean', 'speed_when_exhausted', 'additional_call',
+        'tethering_gb'
     ]
     
     # Prepare data points for feature-specific charts
@@ -503,146 +459,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 </div>
             </div>
         </div>
-    """
-    
-    # Add frontier chart section with inline chart data
-    html += f"""
-        <h2>Value Frontier Analysis</h2>
-        <div class="container">
-            <div style="display: flex; flex-direction: column;">
-                <div style="margin-bottom: 20px;">
-                    <p>The chart below shows the frontier analysis of plans based on their fee (x-axis) and value metrics (y-axis). 
-                    Plans on the frontier represent the best value at their price point.</p>
-                </div>
-                <div style="height: 500px; width: 100%;">
-                    <canvas id="frontierChart"></canvas>
-                </div>
-            </div>
-        </div>
-        
-        <script>
-        // Chart data is embedded directly here
-        const chartData = {chart_data_json};
-        
-        // Create the frontier chart
-        document.addEventListener('DOMContentLoaded', function() {{
-            try {{
-                console.log('Initializing chart...');
-                const ctx = document.getElementById('frontierChart');
-                if (!ctx) {{
-                    console.error('Could not find frontier chart canvas element');
-                    return;
-                }}
-                console.log('Canvas found');
-                
-                // Check chart data
-                if (!Array.isArray(chartData)) {{
-                    console.error('Chart data is not an array:', typeof chartData);
-                    return;
-                }}
-                
-                console.log('Data loaded - Plans:', chartData.length);
-                
-                // Split into frontier and non-frontier points
-                const frontierPlans = chartData.filter(plan => plan.is_frontier);
-                const otherPlans = chartData.filter(plan => !plan.is_frontier);
-                
-                console.log('Data sorted - Frontier plans:', frontierPlans.length, ', Other plans:', otherPlans.length);
-                
-                // Create the datasets for Chart.js
-                const frontierDataset = {{
-                    label: 'Frontier Plans',
-                    data: frontierPlans.map(plan => ({{
-                        x: plan.fee,
-                        y: plan.value,
-                        plan_name: plan.plan_name,
-                        mvno: plan.mvno,
-                        rank: plan.rank
-                    }})),
-                    backgroundColor: 'rgba(255, 99, 132, 1)',
-                    borderColor: 'rgba(255, 99, 132, 1)',
-                    pointRadius: 8,
-                    pointHoverRadius: 10
-                }};
-                
-                const otherDataset = {{
-                    label: 'Other Plans',
-                    data: otherPlans.map(plan => ({{
-                        x: plan.fee,
-                        y: plan.value,
-                        plan_name: plan.plan_name,
-                        mvno: plan.mvno,
-                        rank: plan.rank
-                    }})),
-                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                    borderColor: 'rgba(54, 162, 235, 0.5)',
-                    pointRadius: 6,
-                    pointHoverRadius: 8
-                }};
-                
-                // Create chart
-                console.log('Creating chart...');
-                try {{
-                    const frontierChart = new Chart(ctx, {{
-                        type: 'scatter',
-                        data: {{
-                            datasets: [frontierDataset, otherDataset]
-                        }},
-                        options: {{
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {{
-                                tooltip: {{
-                                    callbacks: {{
-                                        label: function(context) {{
-                                            const point = context.raw;
-                                            return [
-                                                `${{point.plan_name}} (${{point.mvno}})`, 
-                                                `Rank: ${{point.rank}}`, 
-                                                `Fee: ${{point.x.toLocaleString()}} KRW`, 
-                                                `Value: ${{point.y.toFixed(4)}}`
-                                            ];
-                                        }}
-                                    }}
-                                }},
-                                legend: {{
-                                    position: 'top',
-                                }},
-                                title: {{
-                                    display: true,
-                                    text: 'Plan Value Frontier Analysis'
-                                }}
-                            }},
-                            scales: {{
-                                x: {{
-                                    title: {{
-                                        display: true,
-                                        text: 'Fee (KRW)'
-                                    }},
-                                    ticks: {{
-                                        callback: function(value) {{
-                                            return value.toLocaleString();
-                                        }}
-                                    }}
-                                }},
-                                y: {{
-                                    title: {{
-                                        display: true,
-                                        text: 'CS Ratio'
-                                    }}
-                                }}
-                            }}
-                        }}
-                    }});
-                    console.log('Chart created successfully!');
-                }} catch (err) {{
-                    console.error('Error creating chart:', err);
-                }}
-            }} catch (err) {{
-                console.error('Error in chart initialization:', err);
-            }}
-        }});
-        </script>
     """
     
     # Add Feature Frontier Charts section
