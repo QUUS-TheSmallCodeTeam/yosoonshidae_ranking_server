@@ -49,25 +49,12 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
     # Determine the value column based on the ranking method
     value_col = 'dea_score' if is_dea else ('CS' if is_cs else 'value_ratio')
     
-    # Process data directly for Chart.js
-    # We'll prepare two datasets - frontier points and regular points
-    # Sort the dataframe by fee for frontier analysis
+    # Prepare data for chart - create JSON objects for all plans
+    chart_data_points = []
+    
+    # Sort plans by fee to find frontier
     df_sorted_by_fee = df.sort_values('fee')
-    
-    # Find the frontier points (for each fee point, what is the maximum value)
-    frontier_fees = []
-    frontier_values = []
-    frontier_names = []
-    frontier_ranks = []
-    
-    # Non-frontier points
-    other_fees = []
-    other_values = []
-    other_names = []
-    other_ranks = []
-    
     max_value_at_fee = -float('inf')
-    prev_fee = -1
     
     for _, row in df_sorted_by_fee.iterrows():
         fee = float(row['fee']) if 'fee' in row and not pd.isna(row['fee']) else 0
@@ -83,29 +70,24 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
         else:
             rank = int(row['rank']) if 'rank' in row and not pd.isna(row['rank']) else 0
         
-        # Simple algorithm to find frontier points
-        if value > max_value_at_fee:
+        # Determine if this is a frontier point
+        is_frontier = value > max_value_at_fee
+        if is_frontier:
             max_value_at_fee = value
-            frontier_fees.append(fee)
-            frontier_values.append(value)
-            frontier_names.append(f"{plan_name} ({mvno})")
-            frontier_ranks.append(rank)
-        else:
-            other_fees.append(fee)
-            other_values.append(value)
-            other_names.append(f"{plan_name} ({mvno})")
-            other_ranks.append(rank)
+        
+        # Create data point
+        data_point = {
+            'fee': fee,
+            'value': value,
+            'plan_name': plan_name,
+            'mvno': mvno,
+            'rank': rank,
+            'is_frontier': is_frontier
+        }
+        chart_data_points.append(data_point)
     
-    # Convert to JavaScript arrays
-    frontier_fees_js = json.dumps(frontier_fees)
-    frontier_values_js = json.dumps(frontier_values)
-    frontier_names_js = json.dumps(frontier_names)
-    frontier_ranks_js = json.dumps(frontier_ranks)
-    
-    other_fees_js = json.dumps(other_fees)
-    other_values_js = json.dumps(other_values)
-    other_names_js = json.dumps(other_names)
-    other_ranks_js = json.dumps(other_ranks)
+    # Convert to JSON to embed in HTML
+    chart_data_json = json.dumps(chart_data_points)
     
     # Create HTML
     html = f"""
@@ -434,23 +416,23 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
                         </tr>
                         <tr>
                             <td>Total Plans Analyzed</td>
-                            <td>{len(df)}</td>
+                            <td>" + str(len(df)) + "</td>
                         </tr>
                         <tr>
                             <td>Ranking Method</td>
-                            <td>{df.attrs.get('ranking_method', 'relative')}</td>
+                            <td>" + str(df.attrs.get('ranking_method', 'relative')) + "</td>
                         </tr>
                         <tr>
                             <td>Log Transform Applied</td>
-                            <td>{'Yes' if df.attrs.get('use_log_transform', False) else 'No'}</td>
+                            <td>" + ('Yes' if df.attrs.get('use_log_transform', False) else 'No') + "</td>
                         </tr>
                         <tr>
                             <td>Top Plan</td>
-                            <td>{df_sorted.iloc[0]['plan_name'] if len(df_sorted) > 0 else 'N/A'}</td>
+                            <td>" + (df_sorted.iloc[0]['plan_name'] if len(df_sorted) > 0 else 'N/A') + "</td>
                         </tr>
                         <tr>
                             <td>Top Plan Value</td>
-                            <td>{f"{df_sorted.iloc[0][value_col]:.4f}" if len(df_sorted) > 0 and isinstance(df_sorted.iloc[0][value_col], float) else df_sorted.iloc[0][value_col] if len(df_sorted) > 0 else 'N/A'}</td>
+                            <td>" + (f"{df_sorted.iloc[0][value_col]:.4f}" if len(df_sorted) > 0 and isinstance(df_sorted.iloc[0][value_col], float) else str(df_sorted.iloc[0][value_col]) if len(df_sorted) > 0 else 'N/A') + "</td>
                         </tr>
                     </table>
                 </div>
@@ -467,6 +449,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
                 <div style="height: 500px; width: 100%;">
                     <canvas id="frontierChart"></canvas>
                 </div>
+                <script type="application/json" id="chartData">" + chart_data_json + "</script>
             </div>
         </div>
     """
@@ -490,49 +473,39 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
             }
             console.log('Canvas found');
             
-            // Data is now directly embedded as JavaScript arrays
-            // Frontier points data
-            const frontierFees = {frontier_fees_js};
-            const frontierValues = {frontier_values_js};
-            const frontierNames = {frontier_names_js};
-            const frontierRanks = {frontier_ranks_js};
-            
-            // Other points data
-            const otherFees = {other_fees_js};
-            const otherValues = {other_values_js};
-            const otherNames = {other_names_js};
-            const otherRanks = {other_ranks_js};
-            
-            console.log('Data loaded:', 
-                        'Frontier points:', frontierFees.length,
-                        'Other points:', otherFees.length);
-            
-            // Create datasets for Chart.js
-            // Convert array data to format needed for scatter plot
-            const frontierData = [];
-            for (let i = 0; i < frontierFees.length; i++) {
-                frontierData.push({
-                    x: frontierFees[i],
-                    y: frontierValues[i],
-                    name: frontierNames[i],
-                    rank: frontierRanks[i]
-                });
+            // Get chart data from the embedded JSON
+            const chartDataElement = document.getElementById('chartData');
+            if (!chartDataElement) {
+                console.error('Could not find chart data element');
+                return;
             }
             
-            const otherData = [];
-            for (let i = 0; i < otherFees.length; i++) {
-                otherData.push({
-                    x: otherFees[i],
-                    y: otherValues[i],
-                    name: otherNames[i],
-                    rank: otherRanks[i]
-                });
+            // Parse the JSON data
+            let allPlans;
+            try {
+                allPlans = JSON.parse(chartDataElement.textContent);
+                console.log('Successfully parsed JSON data, number of plans:', allPlans.length);
+            } catch (err) {
+                console.error('Error parsing JSON data:', err);
+                return;
             }
+            
+            // Split into frontier and non-frontier points
+            const frontierPlans = allPlans.filter(plan => plan.is_frontier);
+            const otherPlans = allPlans.filter(plan => !plan.is_frontier);
+            
+            console.log('Data loaded - Frontier plans:', frontierPlans.length, ', Other plans:', otherPlans.length);
             
             // Create the datasets for Chart.js
             const frontierDataset = {
                 label: 'Frontier Plans',
-                data: frontierData,
+                data: frontierPlans.map(plan => ({
+                    x: plan.fee,
+                    y: plan.value,
+                    plan_name: plan.plan_name,
+                    mvno: plan.mvno,
+                    rank: plan.rank
+                })),
                 backgroundColor: 'rgba(255, 99, 132, 1)',
                 borderColor: 'rgba(255, 99, 132, 1)',
                 pointRadius: 8,
@@ -541,7 +514,13 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
             
             const otherDataset = {
                 label: 'Other Plans',
-                data: otherData,
+                data: otherPlans.map(plan => ({
+                    x: plan.fee,
+                    y: plan.value,
+                    plan_name: plan.plan_name,
+                    mvno: plan.mvno,
+                    rank: plan.rank
+                })),
                 backgroundColor: 'rgba(54, 162, 235, 0.5)',
                 borderColor: 'rgba(54, 162, 235, 0.5)',
                 pointRadius: 6,
@@ -565,7 +544,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
                                     label: function(context) {
                                         const point = context.raw;
                                         return [
-                                            point.name, 
+                                            `${point.plan_name} (${point.mvno})`, 
                                             `Rank: ${point.rank}`, 
                                             `Fee: ${point.x.toLocaleString()} KRW`, 
                                             `Value: ${point.y.toFixed(4)}`
