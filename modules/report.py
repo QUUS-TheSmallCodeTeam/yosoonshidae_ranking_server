@@ -89,9 +89,32 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         # Provide a fallback empty array if serialization fails
         chart_data_json = "[]"
     
+    # Calculate feature contributions to baseline costs
+    feature_contribution_data = {}
+    
+    # Get contribution columns (from cost_spec.py)
+    contribution_cols = [col for col in df.columns if col.startswith("contribution_")]
+    
+    # Calculate average, min, max contribution for each feature
+    for col in contribution_cols:
+        feature_name = col.replace("contribution_", "")
+        avg_contrib = df[col].mean() if col in df.columns else 0
+        max_contrib = df[col].max() if col in df.columns else 0
+        min_contrib = df[col].min() if col in df.columns else 0
+        
+        # Percentage of baseline cost
+        avg_baseline_cost = df['B'].mean() if 'B' in df.columns else 1
+        contribution_percentage = (avg_contrib / avg_baseline_cost * 100) if avg_baseline_cost > 0 else 0
+        
+        feature_contribution_data[feature_name] = {
+            'avg_contribution': avg_contrib,
+            'max_contribution': max_contrib,
+            'min_contribution': min_contrib,
+            'percentage': contribution_percentage
+        }
+    
     # Build calculation summary data
     total_plans = len(df)
-    log_transform_text = "Yes" if use_log_transform else "No"
     
     # Top plan info
     if len(df_sorted) > 0:
@@ -113,7 +136,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         <title>{report_title} - {timestamp_str}</title>
         <style>
             body {{ font-family: Arial, sans-serif; margin: 20px; }}
-            h1, h2 {{ color: #333; }}
+            h1, h2, h3 {{ color: #333; }}
             table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; font-size: 14px; }}
             th, td {{ padding: 8px; text-align: left; border: 1px solid #ddd; }}
             th {{ background-color: #f2f2f2; position: sticky; top: 0; z-index: 10; }}
@@ -130,7 +153,23 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             .input-feature {{ background-color: #f9f0ff; }}
             .output-feature {{ background-color: #f6ffed; }}
             
-            /* No collapsible sections - removed as requested */
+            /* Bar chart styles */
+            .bar-container {{ 
+                width: 100%; 
+                background-color: #f1f1f1; 
+                margin-top: 5px;
+                border-radius: 4px;
+                overflow: hidden;
+            }}
+            .bar {{ 
+                height: 20px; 
+                background-color: #4CAF50; 
+                text-align: right; 
+                color: white; 
+                padding-right: 5px;
+                border-radius: 4px;
+            }}
+            
             .hidden {{ display: none; }}
         </style>
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -157,70 +196,53 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         </div>
         """
     
-    # Add feature weights section
+    # Add feature contributions section (new section)
     html += """
-        <h2>Feature Weights</h2>
+        <h2>Feature Contributions to Baseline Cost</h2>
         <div class="container">
+        <div class="note">
+            <p>This section shows how each feature contributes to the baseline cost calculation. The baseline cost for each feature is determined by finding the minimum fee among plans with that feature value. Features with higher contributions have a greater impact on the overall ranking.</p>
+        </div>
         <table>
             <tr>
                 <th>Feature</th>
-                <th>Weight</th>
-                <th>Average Contribution (KRW)</th>
+                <th>Avg Contribution (KRW)</th>
+                <th>Min Contribution (KRW)</th>
+                <th>Max Contribution (KRW)</th>
+                <th>% of Baseline Cost</th>
+                <th>Contribution Distribution</th>
             </tr>
     """
     
-    # Get the feature weights from dataframe attributes
-    weights = df.attrs.get('feature_weights', {})
-    
-    # Get contribution columns
-    contribution_cols = [col for col in df.columns if col.startswith("contribution_")]
-    
-    # Sort contribution columns by average contribution (descending)
-    sorted_contribution_cols = sorted(
-        contribution_cols,
-        key=lambda x: df[x].mean() if not pd.isna(df[x].mean()) else -float('inf'),
+    # Sort features by average contribution (descending)
+    sorted_features = sorted(
+        feature_contribution_data.items(),
+        key=lambda x: x[1]['avg_contribution'],
         reverse=True
     )
     
-    for col in sorted_contribution_cols:
-        feature_name = col.replace("contribution_", "")
-        avg_contrib = df[col].mean()
+    # Add rows for each feature contribution
+    for feature_name, data in sorted_features:
+        avg_contrib = data['avg_contribution']
+        min_contrib = data['min_contribution']
+        max_contrib = data['max_contribution']
+        percentage = data['percentage']
         
-        # Get the corresponding weight for this feature
-        feature_weight = weights.get(feature_name, float('nan'))
+        # Create a simple bar chart for the percentage
+        bar_width = min(percentage, 100)  # Cap at 100%
         
-        if pd.isna(avg_contrib):
-            if pd.isna(feature_weight):
-                html += f"""
+        html += f"""
         <tr>
             <td>{feature_name}</td>
-            <td>N/A</td>
-            <td>N/A</td>
-        </tr>
-        """
-            else:
-                html += f"""
-        <tr>
-            <td>{feature_name}</td>
-            <td>{feature_weight:.4f}</td>
-            <td>N/A</td>
-        </tr>
-        """
-        else:
-            if pd.isna(feature_weight):
-                html += f"""
-        <tr>
-            <td>{feature_name}</td>
-            <td>N/A</td>
             <td>{int(avg_contrib):,} KRW</td>
-        </tr>
-        """
-            else:
-                html += f"""
-        <tr>
-            <td>{feature_name}</td>
-            <td>{feature_weight:.4f}</td>
-            <td>{int(avg_contrib):,} KRW</td>
+            <td>{int(min_contrib):,} KRW</td>
+            <td>{int(max_contrib):,} KRW</td>
+            <td>{percentage:.1f}%</td>
+            <td>
+                <div class="bar-container">
+                    <div class="bar" style="width: {bar_width}%">{percentage:.1f}%</div>
+                </div>
+            </td>
         </tr>
         """
     
@@ -334,17 +356,16 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         </div>
     """
     
-    # Add calculation summary table with hardcoded values (no template literals)
+    # Add calculation summary table with updated metrics
     html += f"""
-        <h2>Ranking Calculation Results</h2>
+        <h2>Calculation Summary</h2>
         <div class="container">
             <div class="note">
-                <p><strong>Ranking Methodology:</strong> This section explains how plans are ranked based on their value and performance metrics.</p>
+                <p><strong>Feature Importance:</strong> This summary shows the overall contribution of features to the baseline cost, which determines the CS ratio and ranking.</p>
             </div>
             
             <div style="display: flex; flex-wrap: wrap;">
                 <div style="flex: 1; min-width: 300px; margin-right: 20px;">
-                    <h3>Calculation Summary</h3>
                     <table>
                         <tr>
                             <th>Metric</th>
@@ -355,19 +376,19 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                             <td>{total_plans}</td>
                         </tr>
                         <tr>
-                            <td>Ranking Method</td>
-                            <td>Cost-Spec Ratio</td>
+                            <td>Top Contributing Feature</td>
+                            <td>{sorted_features[0][0] if sorted_features else 'N/A'}</td>
                         </tr>
                         <tr>
-                            <td>Log Transform Applied</td>
-                            <td>{log_transform_text}</td>
+                            <td>Avg Baseline Cost</td>
+                            <td>{int(df['B'].mean()) if 'B' in df.columns else 0:,} KRW</td>
                         </tr>
                         <tr>
                             <td>Top Plan</td>
                             <td>{top_plan_name}</td>
                         </tr>
                         <tr>
-                            <td>Top Plan Value</td>
+                            <td>Top Plan CS Ratio</td>
                             <td>{top_plan_value}</td>
                         </tr>
                     </table>
