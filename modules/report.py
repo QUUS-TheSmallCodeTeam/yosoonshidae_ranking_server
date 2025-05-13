@@ -73,15 +73,21 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         data_point = {
             'fee': fee,
             'value': value,
-            'plan_name': plan_name,
-            'mvno': mvno,
+            'plan_name': str(plan_name),
+            'mvno': str(mvno),
             'rank': rank,
             'is_frontier': is_frontier
         }
         chart_data_points.append(data_point)
     
     # Convert to JSON to embed in HTML
-    chart_data_json = json.dumps(chart_data_points)
+    # Ensure JSON is properly formatted by using a safe JSON dump
+    try:
+        chart_data_json = json.dumps(chart_data_points)
+    except Exception as e:
+        logger.error(f"Error serializing chart data: {e}")
+        # Provide a fallback empty array if serialization fails
+        chart_data_json = "[]"
     
     # Build the summary table separately
     # Prepare the metric values for the summary table
@@ -128,6 +134,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             /* No collapsible sections - removed as requested */
             .hidden {{ display: none; }}
         </style>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     </head>
     <body>
         <h1>{report_title}</h1>
@@ -376,7 +383,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 <div style="height: 500px; width: 100%;">
                     <canvas id="frontierChart"></canvas>
                 </div>
-                <script type="application/json" id="chartData">{json.dumps(chart_data_points)}</script>
+                <script type="application/json" id="chartData">{chart_data_json}</script>
             </div>
         </div>
     """
