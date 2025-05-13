@@ -89,6 +89,23 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
     # Convert to JSON to embed in HTML
     chart_data_json = json.dumps(chart_data_points)
     
+    # Build the summary table separately
+    # Prepare the metric values for the summary table
+    total_plans = str(len(df))
+    ranking_method = str(df.attrs.get('ranking_method', 'relative'))
+    log_transform = 'Yes' if df.attrs.get('use_log_transform', False) else 'No'
+    
+    if len(df_sorted) > 0:
+        top_plan = df_sorted.iloc[0]['plan_name']
+        top_value = df_sorted.iloc[0][value_col]
+        if isinstance(top_value, float):
+            top_plan_value = f"{top_value:.4f}"
+        else:
+            top_plan_value = str(top_value)
+    else:
+        top_plan = 'N/A'
+        top_plan_value = 'N/A'
+    
     # Create HTML
     html = f"""
     <!DOCTYPE html>
@@ -449,7 +466,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
                 <div style="height: 500px; width: 100%;">
                     <canvas id="frontierChart"></canvas>
                 </div>
-                <script type="application/json" id="chartData">" + chart_data_json + "</script>
+                <script type="application/json" id="chartData">{chart_data_json}</script>
             </div>
         </div>
     """
