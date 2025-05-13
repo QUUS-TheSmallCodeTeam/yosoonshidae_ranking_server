@@ -49,10 +49,33 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
     # Determine the value column based on the ranking method
     value_col = 'dea_score' if is_dea else ('CS' if is_cs else 'value_ratio')
     
-    # Create a list of plan data points for the frontier chart
-    plan_data_points = []
-    for _, row in df.iterrows():
-        # Get the rank value depending on the ranking method
+    # Process data directly for Chart.js
+    # We'll prepare two datasets - frontier points and regular points
+    # Sort the dataframe by fee for frontier analysis
+    df_sorted_by_fee = df.sort_values('fee')
+    
+    # Find the frontier points (for each fee point, what is the maximum value)
+    frontier_fees = []
+    frontier_values = []
+    frontier_names = []
+    frontier_ranks = []
+    
+    # Non-frontier points
+    other_fees = []
+    other_values = []
+    other_names = []
+    other_ranks = []
+    
+    max_value_at_fee = -float('inf')
+    prev_fee = -1
+    
+    for _, row in df_sorted_by_fee.iterrows():
+        fee = float(row['fee']) if 'fee' in row and not pd.isna(row['fee']) else 0
+        value = float(row[value_col]) if value_col in row and not pd.isna(row[value_col]) else 0
+        plan_name = row['plan_name'] if 'plan_name' in row else 'Unknown'
+        mvno = row['mvno'] if 'mvno' in row else 'Unknown'
+        
+        # Get rank based on ranking method
         if is_dea:
             rank = int(row['dea_rank']) if 'dea_rank' in row and not pd.isna(row['dea_rank']) else 0
         elif is_cs:
@@ -60,22 +83,29 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
         else:
             rank = int(row['rank']) if 'rank' in row and not pd.isna(row['rank']) else 0
         
-        # Get the value metric
-        value_metric = row[value_col] if value_col in row and not pd.isna(row[value_col]) else 0
-        
-        # Create a data point
-        data_point = {
-            'planName': row['plan_name'] if 'plan_name' in row else 'Unknown',
-            'mvno': row['mvno'] if 'mvno' in row else 'Unknown',
-            'fee': float(row['fee']) if 'fee' in row and not pd.isna(row['fee']) else 0,
-            'valueMetric': float(value_metric),
-            'rank': rank,
-            'data': float(row['basic_data_clean']) if 'basic_data_clean' in row and not pd.isna(row['basic_data_clean']) else 0
-        }
-        plan_data_points.append(data_point)
+        # Simple algorithm to find frontier points
+        if value > max_value_at_fee:
+            max_value_at_fee = value
+            frontier_fees.append(fee)
+            frontier_values.append(value)
+            frontier_names.append(f"{plan_name} ({mvno})")
+            frontier_ranks.append(rank)
+        else:
+            other_fees.append(fee)
+            other_values.append(value)
+            other_names.append(f"{plan_name} ({mvno})")
+            other_ranks.append(rank)
     
-    # Convert to JSON for JavaScript
-    plan_data_json = json.dumps(plan_data_points)
+    # Convert to JavaScript arrays
+    frontier_fees_js = json.dumps(frontier_fees)
+    frontier_values_js = json.dumps(frontier_values)
+    frontier_names_js = json.dumps(frontier_names)
+    frontier_ranks_js = json.dumps(frontier_ranks)
+    
+    other_fees_js = json.dumps(other_fees)
+    other_values_js = json.dumps(other_values)
+    other_names_js = json.dumps(other_names)
+    other_ranks_js = json.dumps(other_ranks)
     
     # Create HTML
     html = f"""
@@ -533,117 +563,134 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
     
     /* Create the frontier chart */
     document.addEventListener('DOMContentLoaded', function() {
-        const ctx = document.getElementById('frontierChart');
-        
-        // Data for plotting
-        const planData = {plan_data_json};
-        
-        // Extract required data for plotting
-        const fees = planData.map(plan => plan.fee);
-        const values = planData.map(plan => plan.valueMetric);
-        const planNames = planData.map(plan => plan.planName);
-        const mvnoNames = planData.map(plan => plan.mvno);
-        const ranks = planData.map(plan => plan.rank);
-        
-        // Determine frontier points
-        const frontierPoints = [];
-        const nonFrontierPoints = [];
-        
-        // Sort plans by fee (x-axis)
-        const sortedPlans = [...planData].sort((a, b) => a.fee - b.fee);
-        
-        // Simple algorithm to find frontier points (can be improved)
-        let maxValue = -Infinity;
-        for (const plan of sortedPlans) {
-            if (plan.valueMetric > maxValue) {
-                maxValue = plan.valueMetric;
-                frontierPoints.push(plan);
-            } else {
-                nonFrontierPoints.push(plan);
+        try {
+            console.log('Initializing chart...');
+            const ctx = document.getElementById('frontierChart');
+            if (!ctx) {
+                console.error('Could not find frontier chart canvas element');
+                return;
             }
-        }
-        
-        // Create datasets
-        const frontierDataset = {
-            label: 'Frontier Plans',
-            data: frontierPoints.map(plan => ({
-                x: plan.fee,
-                y: plan.valueMetric,
-                rank: plan.rank,
-                planName: plan.planName,
-                mvno: plan.mvno
-            })),
-            backgroundColor: 'rgba(255, 99, 132, 1)',
-            borderColor: 'rgba(255, 99, 132, 1)',
-            pointRadius: 8,
-            pointHoverRadius: 10
-        };
-        
-        const nonFrontierDataset = {
-            label: 'Other Plans',
-            data: nonFrontierPoints.map(plan => ({
-                x: plan.fee,
-                y: plan.valueMetric,
-                rank: plan.rank,
-                planName: plan.planName,
-                mvno: plan.mvno
-            })),
-            backgroundColor: 'rgba(54, 162, 235, 0.5)',
-            borderColor: 'rgba(54, 162, 235, 0.5)',
-            pointRadius: 6,
-            pointHoverRadius: 8
-        };
-        
-        // Create chart
-        const frontierChart = new Chart(ctx, {
-            type: 'scatter',
-            data: {
-                datasets: [frontierDataset, nonFrontierDataset]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const point = context.raw;
-                                return [`${point.planName} (${point.mvno})`, 
-                                        `Rank: ${point.rank}`, 
-                                        `Fee: ${point.x.toLocaleString()} KRW`, 
-                                        `Value: ${point.y.toFixed(4)}`];
+            console.log('Canvas found');
+            
+            // Data is now directly embedded as JavaScript arrays
+            // Frontier points data
+            const frontierFees = {frontier_fees_js};
+            const frontierValues = {frontier_values_js};
+            const frontierNames = {frontier_names_js};
+            const frontierRanks = {frontier_ranks_js};
+            
+            // Other points data
+            const otherFees = {other_fees_js};
+            const otherValues = {other_values_js};
+            const otherNames = {other_names_js};
+            const otherRanks = {other_ranks_js};
+            
+            console.log('Data loaded:', 
+                        'Frontier points:', frontierFees.length,
+                        'Other points:', otherFees.length);
+            
+            // Create datasets for Chart.js
+            // Convert array data to format needed for scatter plot
+            const frontierData = [];
+            for (let i = 0; i < frontierFees.length; i++) {
+                frontierData.push({
+                    x: frontierFees[i],
+                    y: frontierValues[i],
+                    name: frontierNames[i],
+                    rank: frontierRanks[i]
+                });
+            }
+            
+            const otherData = [];
+            for (let i = 0; i < otherFees.length; i++) {
+                otherData.push({
+                    x: otherFees[i],
+                    y: otherValues[i],
+                    name: otherNames[i],
+                    rank: otherRanks[i]
+                });
+            }
+            
+            // Create the datasets for Chart.js
+            const frontierDataset = {
+                label: 'Frontier Plans',
+                data: frontierData,
+                backgroundColor: 'rgba(255, 99, 132, 1)',
+                borderColor: 'rgba(255, 99, 132, 1)',
+                pointRadius: 8,
+                pointHoverRadius: 10
+            };
+            
+            const otherDataset = {
+                label: 'Other Plans',
+                data: otherData,
+                backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                borderColor: 'rgba(54, 162, 235, 0.5)',
+                pointRadius: 6,
+                pointHoverRadius: 8
+            };
+            
+            // Create chart
+            console.log('Creating chart...');
+            try {
+                const frontierChart = new Chart(ctx, {
+                    type: 'scatter',
+                    data: {
+                        datasets: [frontierDataset, otherDataset]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const point = context.raw;
+                                        return [
+                                            point.name, 
+                                            `Rank: ${point.rank}`, 
+                                            `Fee: ${point.x.toLocaleString()} KRW`, 
+                                            `Value: ${point.y.toFixed(4)}`
+                                        ];
+                                    }
+                                }
+                            },
+                            legend: {
+                                position: 'top',
+                            },
+                            title: {
+                                display: true,
+                                text: 'Plan Value Frontier Analysis'
                             }
-                        }
-                    },
-                    legend: {
-                        position: 'top',
-                    },
-                    title: {
-                        display: true,
-                        text: 'Plan Value Frontier Analysis'
-                    }
-                },
-                scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Fee (KRW)'
                         },
-                        ticks: {
-                            callback: function(value) {
-                                return value.toLocaleString();
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Fee (KRW)'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return value.toLocaleString();
+                                    }
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Value Metric'
+                                }
                             }
                         }
-                    },
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Value Metric'
-                        }
                     }
-                }
+                });
+                console.log('Chart created successfully!');
+            } catch (err) {
+                console.error('Error creating chart:', err);
             }
-        });
+        } catch (err) {
+            console.error('Error in chart initialization:', err);
+        }
     });
     </script>
     </body>
