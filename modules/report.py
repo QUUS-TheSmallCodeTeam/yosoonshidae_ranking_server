@@ -89,21 +89,20 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         # Provide a fallback empty array if serialization fails
         chart_data_json = "[]"
     
-    # Build the summary table separately
-    # Prepare the metric values for the summary table
-    total_plans = str(len(df))
-    ranking_method = str(df.attrs.get('ranking_method', 'relative'))
-    log_transform = 'Yes' if df.attrs.get('use_log_transform', False) else 'No'
+    # Build calculation summary data
+    total_plans = len(df)
+    log_transform_text = "Yes" if use_log_transform else "No"
     
+    # Top plan info
     if len(df_sorted) > 0:
-        top_plan = df_sorted.iloc[0]['plan_name']
-        top_value = df_sorted.iloc[0][value_col]
+        top_plan_name = str(df_sorted.iloc[0]['plan_name']) if 'plan_name' in df_sorted.iloc[0] else 'N/A'
+        top_value = df_sorted.iloc[0][value_col] if value_col in df_sorted.iloc[0] else None
         if isinstance(top_value, float):
             top_plan_value = f"{top_value:.4f}"
         else:
-            top_plan_value = str(top_value)
+            top_plan_value = "N/A"
     else:
-        top_plan = 'N/A'
+        top_plan_name = 'N/A'
         top_plan_value = 'N/A'
     
     # Create HTML
@@ -329,11 +328,14 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             </tr>
         """
     
-    # Close the table
+    # Close the rankings table
     html += """
         </table>
         </div>
-        
+    """
+    
+    # Add calculation summary table with hardcoded values (no template literals)
+    html += f"""
         <h2>Ranking Calculation Results</h2>
         <div class="container">
             <div class="note">
@@ -350,7 +352,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         </tr>
                         <tr>
                             <td>Total Plans Analyzed</td>
-                            <td>{len(df)}</td>
+                            <td>{total_plans}</td>
                         </tr>
                         <tr>
                             <td>Ranking Method</td>
@@ -358,21 +360,24 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         </tr>
                         <tr>
                             <td>Log Transform Applied</td>
-                            <td>{'Yes' if df.attrs.get('use_log_transform', False) else 'No'}</td>
+                            <td>{log_transform_text}</td>
                         </tr>
                         <tr>
                             <td>Top Plan</td>
-                            <td>{df_sorted.iloc[0]['plan_name'] if len(df_sorted) > 0 else 'N/A'}</td>
+                            <td>{top_plan_name}</td>
                         </tr>
                         <tr>
                             <td>Top Plan Value</td>
-                            <td>{f"{df_sorted.iloc[0][value_col]:.4f}" if len(df_sorted) > 0 and isinstance(df_sorted.iloc[0][value_col], float) else str(df_sorted.iloc[0][value_col]) if len(df_sorted) > 0 else 'N/A'}</td>
+                            <td>{top_plan_value}</td>
                         </tr>
                     </table>
                 </div>
             </div>
         </div>
-        
+    """
+    
+    # Add frontier chart section with inline chart data
+    html += f"""
         <h2>Value Frontier Analysis</h2>
         <div class="container">
             <div style="display: flex; flex-direction: column;">
@@ -383,147 +388,136 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 <div style="height: 500px; width: 100%;">
                     <canvas id="frontierChart"></canvas>
                 </div>
-                <script type="application/json" id="chartData">{chart_data_json}</script>
             </div>
         </div>
+        
+        <script>
+        // Chart data is embedded directly here
+        const chartData = {chart_data_json};
+        
+        // Create the frontier chart
+        document.addEventListener('DOMContentLoaded', function() {{
+            try {{
+                console.log('Initializing chart...');
+                const ctx = document.getElementById('frontierChart');
+                if (!ctx) {{
+                    console.error('Could not find frontier chart canvas element');
+                    return;
+                }}
+                console.log('Canvas found');
+                
+                // Check chart data
+                if (!Array.isArray(chartData)) {{
+                    console.error('Chart data is not an array:', typeof chartData);
+                    return;
+                }}
+                
+                console.log('Data loaded - Plans:', chartData.length);
+                
+                // Split into frontier and non-frontier points
+                const frontierPlans = chartData.filter(plan => plan.is_frontier);
+                const otherPlans = chartData.filter(plan => !plan.is_frontier);
+                
+                console.log('Data sorted - Frontier plans:', frontierPlans.length, ', Other plans:', otherPlans.length);
+                
+                // Create the datasets for Chart.js
+                const frontierDataset = {{
+                    label: 'Frontier Plans',
+                    data: frontierPlans.map(plan => ({{
+                        x: plan.fee,
+                        y: plan.value,
+                        plan_name: plan.plan_name,
+                        mvno: plan.mvno,
+                        rank: plan.rank
+                    }})),
+                    backgroundColor: 'rgba(255, 99, 132, 1)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    pointRadius: 8,
+                    pointHoverRadius: 10
+                }};
+                
+                const otherDataset = {{
+                    label: 'Other Plans',
+                    data: otherPlans.map(plan => ({{
+                        x: plan.fee,
+                        y: plan.value,
+                        plan_name: plan.plan_name,
+                        mvno: plan.mvno,
+                        rank: plan.rank
+                    }})),
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                    borderColor: 'rgba(54, 162, 235, 0.5)',
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                }};
+                
+                // Create chart
+                console.log('Creating chart...');
+                try {{
+                    const frontierChart = new Chart(ctx, {{
+                        type: 'scatter',
+                        data: {{
+                            datasets: [frontierDataset, otherDataset]
+                        }},
+                        options: {{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {{
+                                tooltip: {{
+                                    callbacks: {{
+                                        label: function(context) {{
+                                            const point = context.raw;
+                                            return [
+                                                `${{point.plan_name}} (${{point.mvno}})`, 
+                                                `Rank: ${{point.rank}}`, 
+                                                `Fee: ${{point.x.toLocaleString()}} KRW`, 
+                                                `Value: ${{point.y.toFixed(4)}}`
+                                            ];
+                                        }}
+                                    }}
+                                }},
+                                legend: {{
+                                    position: 'top',
+                                }},
+                                title: {{
+                                    display: true,
+                                    text: 'Plan Value Frontier Analysis'
+                                }}
+                            }},
+                            scales: {{
+                                x: {{
+                                    title: {{
+                                        display: true,
+                                        text: 'Fee (KRW)'
+                                    }},
+                                    ticks: {{
+                                        callback: function(value) {{
+                                            return value.toLocaleString();
+                                        }}
+                                    }}
+                                }},
+                                y: {{
+                                    title: {{
+                                        display: true,
+                                        text: 'CS Ratio'
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }});
+                    console.log('Chart created successfully!');
+                }} catch (err) {{
+                    console.error('Error creating chart:', err);
+                }}
+            }} catch (err) {{
+                console.error('Error in chart initialization:', err);
+            }}
+        }});
+        </script>
     """
     
-    # No detailed plan sections - removed as requested
-    
-    # Add JavaScript for interactive elements
+    # Close HTML
     html += """
-    <script>
-        
-    /* No control panel functions needed */
-    
-    /* Create the frontier chart */
-    document.addEventListener('DOMContentLoaded', function() {
-        try {
-            console.log('Initializing chart...');
-            const ctx = document.getElementById('frontierChart');
-            if (!ctx) {
-                console.error('Could not find frontier chart canvas element');
-                return;
-            }
-            console.log('Canvas found');
-            
-            // Get chart data from the embedded JSON
-            const chartDataElement = document.getElementById('chartData');
-            if (!chartDataElement) {
-                console.error('Could not find chart data element');
-                return;
-            }
-            
-            // Parse the JSON data
-            let allPlans;
-            try {
-                allPlans = JSON.parse(chartDataElement.textContent);
-                console.log('Successfully parsed JSON data, number of plans:', allPlans.length);
-            } catch (err) {
-                console.error('Error parsing JSON data:', err);
-                return;
-            }
-            
-            // Split into frontier and non-frontier points
-            const frontierPlans = allPlans.filter(plan => plan.is_frontier);
-            const otherPlans = allPlans.filter(plan => !plan.is_frontier);
-            
-            console.log('Data loaded - Frontier plans:', frontierPlans.length, ', Other plans:', otherPlans.length);
-            
-            // Create the datasets for Chart.js
-            const frontierDataset = {
-                label: 'Frontier Plans',
-                data: frontierPlans.map(plan => ({
-                    x: plan.fee,
-                    y: plan.value,
-                    plan_name: plan.plan_name,
-                    mvno: plan.mvno,
-                    rank: plan.rank
-                })),
-                backgroundColor: 'rgba(255, 99, 132, 1)',
-                borderColor: 'rgba(255, 99, 132, 1)',
-                pointRadius: 8,
-                pointHoverRadius: 10
-            };
-            
-            const otherDataset = {
-                label: 'Other Plans',
-                data: otherPlans.map(plan => ({
-                    x: plan.fee,
-                    y: plan.value,
-                    plan_name: plan.plan_name,
-                    mvno: plan.mvno,
-                    rank: plan.rank
-                })),
-                backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                borderColor: 'rgba(54, 162, 235, 0.5)',
-                pointRadius: 6,
-                pointHoverRadius: 8
-            };
-            
-            // Create chart
-            console.log('Creating chart...');
-            try {
-                const frontierChart = new Chart(ctx, {
-                    type: 'scatter',
-                    data: {
-                        datasets: [frontierDataset, otherDataset]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        const point = context.raw;
-                                        return [
-                                            `${point.plan_name} (${point.mvno})`, 
-                                            `Rank: ${point.rank}`, 
-                                            `Fee: ${point.x.toLocaleString()} KRW`, 
-                                            `Value: ${point.y.toFixed(4)}`
-                                        ];
-                                    }
-                                }
-                            },
-                            legend: {
-                                position: 'top',
-                            },
-                            title: {
-                                display: true,
-                                text: 'Plan Value Frontier Analysis'
-                            }
-                        },
-                        scales: {
-                            x: {
-                                title: {
-                                    display: true,
-                                    text: 'Fee (KRW)'
-                                },
-                                ticks: {
-                                    callback: function(value) {
-                                        return value.toLocaleString();
-                                    }
-                                }
-                            },
-                            y: {
-                                title: {
-                                    display: true,
-                                    text: 'CS Ratio'
-                                }
-                            }
-                        }
-                    }
-                });
-                console.log('Chart created successfully!');
-            } catch (err) {
-                console.error('Error creating chart:', err);
-            }
-        } catch (err) {
-            console.error('Error in chart initialization:', err);
-        }
-    });
-    </script>
     </body>
     </html>
     """
