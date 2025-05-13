@@ -128,6 +128,78 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         top_plan_name = 'N/A'
         top_plan_value = 'N/A'
     
+    # Prepare feature frontier data
+    # This will hold feature values and their corresponding baseline costs
+    feature_frontier_data = {}
+    
+    # Core continuous features to visualize (those that likely have frontiers)
+    core_continuous_features = [
+        'basic_data_clean', 'daily_data_clean', 'voice_clean', 
+        'message_clean', 'speed_when_exhausted', 'additional_call'
+    ]
+    
+    # Prepare data points for feature-specific charts
+    for feature in core_continuous_features:
+        if feature not in df.columns:
+            continue
+            
+        # Get the corresponding contribution column
+        contribution_col = f"contribution_{feature}"
+        if contribution_col not in df.columns:
+            continue
+            
+        # Collect all unique feature values and their contributions
+        feature_values = []
+        contribution_values = []
+        is_frontier_points = []
+        plan_names = []
+        
+        # Group plans by feature value and get minimum contribution
+        # This simulates how the frontier is calculated
+        grouped = df.groupby(feature)[contribution_col].min().reset_index()
+        
+        # Track the minimum cost seen so far to identify frontier points
+        min_cost_so_far = float('inf')
+        
+        # Sort by feature value (ascending)
+        grouped = grouped.sort_values(feature)
+        
+        # For each unique feature value, identify if it's a frontier point
+        for _, row in grouped.iterrows():
+            feature_value = row[feature]
+            contribution = row[contribution_col]
+            
+            # If this contribution is lower than previous minimum, it's a frontier point
+            is_frontier = contribution <= min_cost_so_far
+            if is_frontier:
+                min_cost_so_far = contribution
+                
+            # Add data point
+            feature_values.append(feature_value)
+            contribution_values.append(contribution)
+            is_frontier_points.append(is_frontier)
+            
+            # Find a plan with this feature value and contribution for display
+            matching_plans = df[(df[feature] == feature_value) & 
+                               (df[contribution_col] == contribution)]
+            plan_name = matching_plans.iloc[0]['plan_name'] if not matching_plans.empty else "Unknown"
+            plan_names.append(plan_name)
+        
+        # Add to feature frontier data
+        feature_frontier_data[feature] = {
+            'values': feature_values,
+            'contributions': contribution_values,
+            'is_frontier': is_frontier_points,
+            'plan_names': plan_names
+        }
+    
+    # Serialize feature frontier data to JSON
+    try:
+        feature_frontier_json = json.dumps(feature_frontier_data)
+    except Exception as e:
+        logger.error(f"Error serializing feature frontier data: {e}")
+        feature_frontier_json = "{}"
+    
     # Create HTML
     html = f"""
     <!DOCTYPE html>
@@ -168,6 +240,29 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 color: white; 
                 padding-right: 5px;
                 border-radius: 4px;
+            }}
+            
+            /* Feature charts grid */
+            .chart-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
+                gap: 20px;
+                margin-top: 20px;
+            }}
+            
+            .chart-container {{
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                padding: 15px;
+                background-color: white;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }}
+            
+            .chart-title {{
+                font-size: 16px;
+                font-weight: bold;
+                margin-bottom: 10px;
+                text-align: center;
             }}
             
             .hidden {{ display: none; }}
@@ -545,6 +640,181 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 }}
             }} catch (err) {{
                 console.error('Error in chart initialization:', err);
+            }}
+        }});
+        </script>
+    """
+    
+    # Add Feature Frontier Charts section
+    html += """
+        <h2>Feature Frontier Analysis</h2>
+        <div class="container">
+            <div class="note">
+                <p><strong>Feature Frontier Analysis:</strong> These charts show how each feature contributes to the baseline cost. Points on the frontier (red) represent the minimum cost for each feature value and are used in the baseline calculation. The baseline cost increases as feature value increases, reflecting that higher feature values typically cost more.</p>
+            </div>
+    """
+    
+    # Add div for the feature charts grid
+    html += """
+            <div class="chart-grid" id="feature-charts-container">
+                <!-- Feature charts will be generated here -->
+            </div>
+    """
+    
+    # Close container
+    html += """
+        </div>
+    """
+    
+    # Add JavaScript for feature frontier charts
+    html += f"""
+        <script>
+        // Feature frontier data
+        const featureFrontierData = {feature_frontier_json};
+        
+        // Create feature frontier charts
+        document.addEventListener('DOMContentLoaded', function() {{
+            console.log('Initializing feature frontier charts...');
+            
+            // Feature display names
+            const featureDisplayNames = {{
+                'basic_data_clean': 'Basic Data (GB)',
+                'daily_data_clean': 'Daily Data (GB)',
+                'voice_clean': 'Voice Minutes',
+                'message_clean': 'SMS Messages',
+                'additional_call': 'Additional Call Minutes',
+                'speed_when_exhausted': 'Throttled Speed (Mbps)',
+                'tethering_gb': 'Tethering Data (GB)'
+            }};
+            
+            // Get the container
+            const container = document.getElementById('feature-charts-container');
+            if (!container) {{
+                console.error('Could not find feature charts container');
+                return;
+            }}
+            
+            // Create a chart for each feature
+            for (const [feature, data] of Object.entries(featureFrontierData)) {{
+                // Create chart container
+                const chartContainer = document.createElement('div');
+                chartContainer.className = 'chart-container';
+                
+                // Create chart title
+                const chartTitle = document.createElement('div');
+                chartTitle.className = 'chart-title';
+                chartTitle.textContent = featureDisplayNames[feature] || feature;
+                chartContainer.appendChild(chartTitle);
+                
+                // Create canvas for chart
+                const canvas = document.createElement('canvas');
+                canvas.id = `chart-${{feature}}`;
+                chartContainer.appendChild(canvas);
+                
+                // Add to main container
+                container.appendChild(chartContainer);
+                
+                // Prepare datasets
+                const frontierPoints = [];
+                const nonFrontierPoints = [];
+                
+                // Split data into frontier and non-frontier points
+                for (let i = 0; i < data.values.length; i++) {{
+                    const point = {{
+                        x: data.values[i],
+                        y: data.contributions[i],
+                        plan_name: data.plan_names[i]
+                    }};
+                    
+                    if (data.is_frontier[i]) {{
+                        frontierPoints.push(point);
+                    }} else {{
+                        nonFrontierPoints.push(point);
+                    }}
+                }}
+                
+                // Create Chart.js chart
+                try {{
+                    const frontierDataset = {{
+                        label: 'Frontier Points',
+                        data: frontierPoints,
+                        backgroundColor: 'rgba(255, 99, 132, 1)',
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        pointRadius: 6,
+                        pointHoverRadius: 10,
+                        showLine: true,
+                        tension: 0.1
+                    }};
+                    
+                    const nonFrontierDataset = {{
+                        label: 'Other Points',
+                        data: nonFrontierPoints,
+                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                        borderColor: 'rgba(54, 162, 235, 0.5)',
+                        pointRadius: 4,
+                        pointHoverRadius: 8
+                    }};
+                    
+                    const datasets = [frontierDataset];
+                    if (nonFrontierPoints.length > 0) {{
+                        datasets.push(nonFrontierDataset);
+                    }}
+                    
+                    new Chart(canvas, {{
+                        type: 'scatter',
+                        data: {{
+                            datasets: datasets
+                        }},
+                        options: {{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            aspectRatio: 1.5,
+                            plugins: {{
+                                tooltip: {{
+                                    callbacks: {{
+                                        label: function(context) {{
+                                            const point = context.raw;
+                                            return [
+                                                `Plan: ${{point.plan_name}}`,
+                                                `Value: ${{point.x}}`,
+                                                `Cost: ${{point.y.toLocaleString()}} KRW`
+                                            ];
+                                        }}
+                                    }}
+                                }},
+                                legend: {{
+                                    position: 'top',
+                                }},
+                                title: {{
+                                    display: false
+                                }}
+                            }},
+                            scales: {{
+                                x: {{
+                                    title: {{
+                                        display: true,
+                                        text: featureDisplayNames[feature] || feature
+                                    }}
+                                }},
+                                y: {{
+                                    title: {{
+                                        display: true,
+                                        text: 'Baseline Cost (KRW)'
+                                    }},
+                                    ticks: {{
+                                        callback: function(value) {{
+                                            return value.toLocaleString();
+                                        }}
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }});
+                    
+                    console.log(`Chart for ${{feature}} created successfully`);
+                }} catch (err) {{
+                    console.error(`Error creating chart for ${{feature}}:`, err);
+                }}
             }}
         }});
         </script>
