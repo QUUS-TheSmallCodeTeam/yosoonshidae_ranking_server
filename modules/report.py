@@ -233,19 +233,19 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
     html += """
         </table>
         </div>
-    """
+        """
     
     # Add Features List
     if used_features:
         html += """
-        <h2>Features Used</h2>
+            <h2>Features Used</h2>
         <div class="container">
-        <table>
-            <tr>
-                <th>Feature</th>
-                <th>Category</th>
-            </tr>
-        """
+            <table>
+                <tr>
+                    <th>Feature</th>
+                    <th>Category</th>
+                </tr>
+            """
         
         for feature in used_features:
             category = "Output" if feature != "fee" else "Input"
@@ -254,7 +254,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
                 <td>{feature}</td>
                 <td>{category}</td>
             </tr>
-            """
+    """
         
         html += """
         </table>
@@ -443,20 +443,20 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
                 value = str(row[col])
             
             html += f"""
-                <tr>
+            <tr>
                     <td>{col}</td>
                     <td>{value}</td>
-                </tr>
+            </tr>
             """
         
-        html += """
-            </table>
+    html += """
+        </table>
         </div>
-        """
+    """
     
     # Add JavaScript for interactive elements
     html += """
-        <script>
+    <script>
         /* Add collapsible functionality */
         var coll = document.getElementsByClassName("collapsible");
         var i;
@@ -473,70 +473,70 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
             });
         }
         
-        /* Current state */
-        let currentState = {
-            rankMethod: "relative",
-            feeType: "original",
-            logTransform: true
-        };
-        
-        /* Change ranking method */
-        function changeRankMethod(method) {
-            /* Update buttons */
-            document.getElementById('relative-btn').classList.remove('active');
-            document.getElementById('absolute-btn').classList.remove('active');
-            document.getElementById('net-btn').classList.remove('active');
+    /* Current state */
+    let currentState = {
+        rankMethod: "relative",
+        feeType: "original",
+        logTransform: true
+    };
+    
+    /* Change ranking method */
+    function changeRankMethod(method) {
+        /* Update buttons */
+        document.getElementById('relative-btn').classList.remove('active');
+        document.getElementById('absolute-btn').classList.remove('active');
+        document.getElementById('net-btn').classList.remove('active');
             document.getElementById(method + '-btn').classList.add('active');
-            
-            /* Update button styles */
+        
+        /* Update button styles */
             document.getElementById('relative-btn').style.backgroundColor = '#007bff';
             document.getElementById('absolute-btn').style.backgroundColor = '#007bff';
             document.getElementById('net-btn').style.backgroundColor = '#007bff';
             document.getElementById(method + '-btn').style.backgroundColor = '#28a745';
-            
-            /* Update state */
-            currentState.rankMethod = method;
+        
+        /* Update state */
+        currentState.rankMethod = method;
             console.log("Ranking method changed to: " + method);
         }
-        
-        /* Change fee type */
-        function changeFeeType(type) {
-            /* Update buttons */
-            document.getElementById('original-fee-btn').classList.remove('active');
-            document.getElementById('discounted-fee-btn').classList.remove('active');
+    
+    /* Change fee type */
+    function changeFeeType(type) {
+        /* Update buttons */
+        document.getElementById('original-fee-btn').classList.remove('active');
+        document.getElementById('discounted-fee-btn').classList.remove('active');
             document.getElementById(type + '-fee-btn').classList.add('active');
-            
-            /* Update button styles */
+        
+        /* Update button styles */
             document.getElementById('original-fee-btn').style.backgroundColor = '#007bff';
             document.getElementById('discounted-fee-btn').style.backgroundColor = '#007bff';
             document.getElementById(type + '-fee-btn').style.backgroundColor = '#28a745';
-            
-            /* Update state */
-            currentState.feeType = type;
+        
+        /* Update state */
+        currentState.feeType = type;
             console.log("Fee type changed to: " + type);
         }
-        
-        /* Toggle log transform */
-        function toggleLogTransform(enabled) {
+    
+    /* Toggle log transform */
+    function toggleLogTransform(enabled) {
             /* Update buttons */
-            document.getElementById('log-transform-on-btn').classList.remove('active');
-            document.getElementById('log-transform-off-btn').classList.remove('active');
-            
-            if (enabled) {
-                document.getElementById('log-transform-on-btn').classList.add('active');
+        document.getElementById('log-transform-on-btn').classList.remove('active');
+        document.getElementById('log-transform-off-btn').classList.remove('active');
+        
+        if (enabled) {
+            document.getElementById('log-transform-on-btn').classList.add('active');
                 document.getElementById('log-transform-on-btn').style.backgroundColor = '#28a745';
                 document.getElementById('log-transform-off-btn').style.backgroundColor = '#007bff';
-            } else {
-                document.getElementById('log-transform-off-btn').classList.add('active');
+        } else {
+            document.getElementById('log-transform-off-btn').classList.add('active');
                 document.getElementById('log-transform-on-btn').style.backgroundColor = '#007bff';
                 document.getElementById('log-transform-off-btn').style.backgroundColor = '#28a745';
-            }
-            
-            /* Update state */
-            currentState.logTransform = enabled;
-            console.log("Log transform set to: " + enabled);
         }
-        </script>
+        
+            /* Update state */
+        currentState.logTransform = enabled;
+            console.log("Log transform set to: " + enabled);
+    }
+    </script>
     </body>
     </html>
     """
