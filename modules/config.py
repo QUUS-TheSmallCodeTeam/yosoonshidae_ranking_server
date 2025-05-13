@@ -42,9 +42,9 @@ class Config:
     data_dir: Path = DATA_DIR
     report_dir: Path = REPORT_DIR_BASE
     
-    # DEA-specific paths
-    dea_input_dir: Path = DATA_DIR / "dea_input"
-    dea_report_dir: Path = REPORT_DIR_BASE / "dea_reports"
+    # CS-specific paths
+    cs_input_dir: Path = DATA_DIR / "cs_input"
+    cs_report_dir: Path = REPORT_DIR_BASE / "cs_reports"
     
     # Spearman-specific paths
     spearman_raw_dir: Path = DATA_DIR / "raw"
@@ -62,8 +62,8 @@ class Config:
             self.app_dir,
             self.data_dir,
             self.report_dir,
-            self.dea_input_dir,
-            self.dea_report_dir,
+            self.cs_input_dir,
+            self.cs_report_dir,
             self.spearman_raw_dir,
             self.spearman_processed_dir,
             self.spearman_report_dir
