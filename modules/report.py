@@ -13,14 +13,14 @@ import pandas as pd
 # Configure logging
 logger = logging.getLogger(__name__)
 
-def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile Plan Rankings"):
+def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile Plan Rankings"):
     """Generate an HTML report of the rankings.
     
     Args:
         df: DataFrame with ranking data
         timestamp: Timestamp for the report
-        is_dea: Whether this is a DEA report (default: False)
-        is_cs: Whether this is a Cost-Spec report (default: False)
+        is_dea: Deprecated parameter, kept for backward compatibility
+        is_cs: Whether this is a Cost-Spec report (default: True)
         title: Title for the report (default: "Mobile Plan Rankings")
         
     Returns:
@@ -38,22 +38,21 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
     timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
     
     # Set report title based on method
-    if is_dea:
-        report_title = "DEA Mobile Plan Rankings"
-    elif is_cs:
-        report_title = "Cost-Spec Mobile Plan Rankings"
-    else:
-        report_title = title
+    report_title = "Cost-Spec Mobile Plan Rankings"
     
     # Prepare data for frontier chart visualization
     # Determine the value column based on the ranking method
-    value_col = 'dea_score' if is_dea else ('CS' if is_cs else 'value_ratio')
+    value_col = 'CS'
+    
+    # Sort the DataFrame based on rank column
+    rank_col = 'rank_number'
+    df_sorted = df.sort_values(rank_col) if rank_col in df.columns else df
     
     # Prepare data for chart - create JSON objects for all plans
     chart_data_points = []
     
     # Sort plans by fee to find frontier
-    df_sorted_by_fee = df.sort_values('fee')
+    df_sorted_by_fee = df.sort_values('fee')  # Use original df, not df_sorted
     max_value_at_fee = -float('inf')
     
     for _, row in df_sorted_by_fee.iterrows():
@@ -63,12 +62,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
         mvno = row['mvno'] if 'mvno' in row else 'Unknown'
         
         # Get rank based on ranking method
-        if is_dea:
-            rank = int(row['dea_rank']) if 'dea_rank' in row and not pd.isna(row['dea_rank']) else 0
-        elif is_cs:
-            rank = int(row['rank_number']) if 'rank_number' in row and not pd.isna(row['rank_number']) else 0
-        else:
-            rank = int(row['rank']) if 'rank' in row and not pd.isna(row['rank']) else 0
+        rank = int(row['rank_number']) if 'rank_number' in row and not pd.isna(row['rank_number']) else 0
         
         # Determine if this is a frontier point
         is_frontier = value > max_value_at_fee
@@ -112,7 +106,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
     <html>
     <head>
         <title>{report_title} - {timestamp_str}</title>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
             body {{ font-family: Arial, sans-serif; margin: 20px; }}
             h1, h2 {{ color: #333; }}
@@ -128,7 +121,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
             
             /* Feature category colors */
             .core-feature {{ background-color: #e6f7ff; }}
-            .dea-metrics {{ background-color: #fff0f6; }}
             .cs-metrics {{ background-color: #f9f0ff; }}
             .input-feature {{ background-color: #f9f0ff; }}
             .output-feature {{ background-color: #f6ffed; }}
@@ -141,28 +133,11 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
         <h1>{report_title}</h1>
         <p>Generated: {timestamp_str}</p>
         
-
+ 
     """
     
-    # Add method explanation section based on the method
-    if is_dea:
-        html += """
-        <h2>DEA Calculation Explanation</h2>
-        <div class="note">
-            <p><strong>Data Envelopment Analysis (DEA)</strong> is a method that evaluates the efficiency of decision-making units (in this case, mobile plans).</p>
-            <p>In this analysis:</p>
-            <ul>
-                <li><strong>Input:</strong> Plan price (fee)</li>
-                <li><strong>Outputs:</strong> Data, Voice, SMS, and other features</li>
-                <li><strong>DEA Efficiency:</strong> A score between 0 and 1, where 1 means the plan is efficient (on the efficiency frontier)</li>
-                <li><strong>DEA Score:</strong> For inefficient plans, this is 1/efficiency. For efficient plans, this is the super-efficiency score</li>
-                <li><strong>Super-Efficiency:</strong> A score that helps differentiate between efficient plans (higher is better)</li>
-            </ul>
-            <p>Plans are ranked based on their DEA Score (higher is better).</p>
-        </div>
-        """
-    elif is_cs:
-        html += """
+    # Add method explanation section - CS method only now
+    html += """
         <h2>Cost-Spec Ratio Explanation</h2>
         <div class="note">
             <p><strong>Cost-Spec Ratio (CS)</strong> is a method that evaluates the value of mobile plans by comparing their fees to a theoretical baseline cost.</p>
@@ -285,28 +260,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
                 <th>MVNO</th>
                 <th>Fee (KRW)</th>
                 <th>Original Fee (KRW)</th>
-    """
-    
-    # Add method-specific columns
-    if is_dea:
-        html += """
-                <th>DEA Efficiency</th>
-                <th>DEA Score</th>
-        """
-    elif is_cs:
-        html += """
                 <th>Baseline Cost (B)</th>
                 <th>CS Ratio</th>
-        """
-    else:
-        html += """
-                <th>Value Ratio</th>
-                <th>Delta P</th>
-                <th>Delta P - Fee</th>
-        """
-    
-    # Continue with feature columns
-    html += """
                 <th>Data (GB)</th>
                 <th>Voice (min)</th>
                 <th>Message (SMS)</th>
@@ -316,25 +271,10 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
     """
     
     # Generate table rows
-    rank_col = 'dea_rank' if is_dea else ('rank_number' if is_cs else 'rank')
-    value_col = 'dea_score' if is_dea else ('CS' if is_cs else 'value_ratio')
-    
-    # Sort by the appropriate ranking column
-    if rank_col in df.columns:
-        df_sorted = df.sort_values(rank_col)
-    else:
-        df_sorted = df.sort_values('rank', ascending=True) if 'rank' in df.columns else df
-    
     for _, row in df_sorted.iterrows():
         # Format rank
-        if is_dea:
-            rank = int(row['dea_rank']) if 'dea_rank' in row and not pd.isna(row['dea_rank']) else ""
-            rank_str = f"{rank}" if rank else ""
-        elif is_cs:
-            rank = int(row['rank_number']) if 'rank_number' in row and not pd.isna(row['rank_number']) else ""
-            rank_str = f"{rank}" if rank else ""
-        else:
-            rank_str = row['rank_display'] if 'rank_display' in row else ""
+        rank = int(row['rank_number']) if 'rank_number' in row and not pd.isna(row['rank_number']) else ""
+        rank_str = f"{rank}" if rank else ""
         
         # Get plan data
         plan_name = row['plan_name'] if 'plan_name' in row else ""
@@ -342,43 +282,12 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
         fee = int(row['fee']) if 'fee' in row and not pd.isna(row['fee']) else 0
         original_fee = int(row['original_fee']) if 'original_fee' in row and not pd.isna(row['original_fee']) else 0
         
-        # Method-specific metrics
-        if is_dea:
-            dea_efficiency = row['dea_efficiency'] if 'dea_efficiency' in row else ""
-            dea_score = row['dea_score'] if 'dea_score' in row else ""
-            
-            method_specific_cols = f"""
-                <td>{dea_efficiency:.4f if isinstance(dea_efficiency, float) else dea_efficiency}</td>
-                <td class="good-value">{dea_score:.4f if isinstance(dea_score, float) else dea_score}</td>
-            """
-        elif is_cs:
-            baseline_cost = int(row['B']) if 'B' in row and not pd.isna(row['B']) else 0
-            cs_ratio = row['CS'] if 'CS' in row else ""
-            
-            # Format CS ratio with proper handling of types
-            formatted_cs_ratio = f"{cs_ratio:.4f}" if isinstance(cs_ratio, float) else str(cs_ratio)
-            
-            method_specific_cols = f"""
-                <td>{baseline_cost:,}</td>
-                <td class="good-value">{formatted_cs_ratio}</td>
-            """
-        else:
-            value_ratio = row['value_ratio'] if 'value_ratio' in row else ""
-            delta_p = row.get('delta_p', "")
-            delta_p_minus_fee = row.get('delta_p_minus_fee', "")
-            
-            # Format delta_p and delta_p_minus_fee
-            delta_p_str = f"{int(delta_p):,}" if isinstance(delta_p, (int, float)) else str(delta_p)
-            delta_p_minus_fee_str = f"{int(delta_p_minus_fee):,}" if isinstance(delta_p_minus_fee, (int, float)) else str(delta_p_minus_fee)
-            
-            # Format value ratio with proper handling of types
-            formatted_value_ratio = f"{value_ratio:.4f}" if isinstance(value_ratio, float) else str(value_ratio)
-            
-            method_specific_cols = f"""
-                <td class="good-value">{formatted_value_ratio}</td>
-                <td>{delta_p_str}</td>
-                <td>{delta_p_minus_fee_str}</td>
-            """
+        # CS-specific metrics
+        baseline_cost = int(row['B']) if 'B' in row and not pd.isna(row['B']) else 0
+        cs_ratio = row['CS'] if 'CS' in row else ""
+        
+        # Format CS ratio with proper handling of types
+        formatted_cs_ratio = f"{cs_ratio:.4f}" if isinstance(cs_ratio, float) else str(cs_ratio)
         
         # Get feature data
         data_gb = row['basic_data_clean'] if 'basic_data_clean' in row else "N/A"
@@ -403,7 +312,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
                 <td>{mvno}</td>
                 <td>{fee:,}</td>
                 <td>{original_fee:,}</td>
-                {method_specific_cols}
+                <td>{baseline_cost:,}</td>
+                <td class="good-value">{formatted_cs_ratio}</td>
                 <td>{data_gb}</td>
                 <td>{voice}</td>
                 <td>{message}</td>
@@ -412,7 +322,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
             </tr>
         """
     
-    # Close the table and add collapsible details
+    # Close the table
     html += """
         </table>
         </div>
@@ -437,7 +347,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
                         </tr>
                         <tr>
                             <td>Ranking Method</td>
-                            <td>" + str(df.attrs.get('ranking_method', 'relative')) + "</td>
+                            <td>Cost-Spec Ratio</td>
                         </tr>
                         <tr>
                             <td>Log Transform Applied</td>
@@ -592,7 +502,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
                             y: {
                                 title: {
                                     display: true,
-                                    text: 'Value Metric'
+                                    text: 'CS Ratio'
                                 }
                             }
                         }
