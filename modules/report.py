@@ -294,8 +294,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 <th>Voice (min)</th>
                 <th>Message (SMS)</th>
                 <th>Additional Call (min)</th>
-                <th>Throttled Speed</th>
-                <th>Speed Score</th>
+                <th>Throttled Speed (Mbps)</th>
                 <th>5G</th>
             </tr>
     """
@@ -326,20 +325,16 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         additional_call = row['additional_call'] if 'additional_call' in row else "N/A"
         is_5g = "Yes" if row.get('is_5g') == 1 else "No"
         
-        # Throttled speed data
+        # Throttled speed data - using raw speed since that's used in calculations
         raw_speed = row['speed_when_exhausted'] if 'speed_when_exhausted' in row else 0
-        speed_score = row['throttle_speed_normalized'] if 'throttle_speed_normalized' in row else 0
         
         # Format throttled speed
         if 'has_unlimited_speed' in row and row['has_unlimited_speed'] == 1:
             throttled_speed = "Unlimited"
-            speed_score_str = "1.0"
         elif raw_speed > 0:
             throttled_speed = f"{raw_speed} Mbps"
-            speed_score_str = f"{speed_score:.2f}"
         else:
             throttled_speed = "N/A"
-            speed_score_str = "0.00"
         
         # Handle unlimited values
         if 'basic_data_unlimited' in row and row['basic_data_unlimited'] == 1:
@@ -364,7 +359,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 <td>{message}</td>
                 <td>{additional_call}</td>
                 <td>{throttled_speed}</td>
-                <td>{speed_score_str}</td>
                 <td>{is_5g}</td>
             </tr>
         """
