@@ -26,6 +26,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
     Returns:
         HTML content as string
     """
+    import json
     # Get ranking method and log transform from the dataframe attributes if available
     ranking_method = df.attrs.get('ranking_method', 'relative')
     use_log_transform = df.attrs.get('use_log_transform', False)
@@ -44,12 +45,45 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
     else:
         report_title = title
     
+    # Prepare data for frontier chart visualization
+    # Determine the value column based on the ranking method
+    value_col = 'dea_score' if is_dea else ('CS' if is_cs else 'value_ratio')
+    
+    # Create a list of plan data points for the frontier chart
+    plan_data_points = []
+    for _, row in df.iterrows():
+        # Get the rank value depending on the ranking method
+        if is_dea:
+            rank = int(row['dea_rank']) if 'dea_rank' in row and not pd.isna(row['dea_rank']) else 0
+        elif is_cs:
+            rank = int(row['rank_number']) if 'rank_number' in row and not pd.isna(row['rank_number']) else 0
+        else:
+            rank = int(row['rank']) if 'rank' in row and not pd.isna(row['rank']) else 0
+        
+        # Get the value metric
+        value_metric = row[value_col] if value_col in row and not pd.isna(row[value_col]) else 0
+        
+        # Create a data point
+        data_point = {
+            'planName': row['plan_name'] if 'plan_name' in row else 'Unknown',
+            'mvno': row['mvno'] if 'mvno' in row else 'Unknown',
+            'fee': float(row['fee']) if 'fee' in row and not pd.isna(row['fee']) else 0,
+            'valueMetric': float(value_metric),
+            'rank': rank,
+            'data': float(row['basic_data_clean']) if 'basic_data_clean' in row and not pd.isna(row['basic_data_clean']) else 0
+        }
+        plan_data_points.append(data_point)
+    
+    # Convert to JSON for JavaScript
+    plan_data_json = json.dumps(plan_data_points)
+    
     # Create HTML
     html = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <title>{report_title} - {timestamp_str}</title>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
             body {{ font-family: Arial, sans-serif; margin: 20px; }}
             h1, h2 {{ color: #333; }}
@@ -404,7 +438,57 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
         </table>
         </div>
         
-        <h2>Detailed Plan Information</h2>
+        <h2>Ranking Calculation Results</h2>
+        <div class="container">
+            <div class="note">
+                <p><strong>Ranking Methodology:</strong> This section explains how plans are ranked based on their value and performance metrics.</p>
+            </div>
+            
+            <div style="display: flex; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 300px; margin-right: 20px;">
+                    <h3>Calculation Summary</h3>
+                    <table>
+                        <tr>
+                            <th>Metric</th>
+                            <th>Value</th>
+                        </tr>
+                        <tr>
+                            <td>Total Plans Analyzed</td>
+                            <td>{len(df)}</td>
+                        </tr>
+                        <tr>
+                            <td>Ranking Method</td>
+                            <td>{df.attrs.get('ranking_method', 'relative')}</td>
+                        </tr>
+                        <tr>
+                            <td>Log Transform Applied</td>
+                            <td>{'Yes' if df.attrs.get('use_log_transform', False) else 'No'}</td>
+                        </tr>
+                        <tr>
+                            <td>Top Plan</td>
+                            <td>{df_sorted.iloc[0]['plan_name'] if len(df_sorted) > 0 else 'N/A'}</td>
+                        </tr>
+                        <tr>
+                            <td>Top Plan Value</td>
+                            <td>{f"{df_sorted.iloc[0][value_col]:.4f}" if len(df_sorted) > 0 and isinstance(df_sorted.iloc[0][value_col], float) else df_sorted.iloc[0][value_col] if len(df_sorted) > 0 else 'N/A'}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <h2>Value Frontier Analysis</h2>
+        <div class="container">
+            <div style="display: flex; flex-direction: column;">
+                <div style="margin-bottom: 20px;">
+                    <p>The chart below shows the frontier analysis of plans based on their fee (x-axis) and value metrics (y-axis). 
+                    Plans on the frontier represent the best value at their price point.</p>
+                </div>
+                <div style="height: 500px; width: 100%;">
+                    <canvas id="frontierChart"></canvas>
+                </div>
+            </div>
+        </div>
     """
     
     # Add collapsible sections for each plan
@@ -536,6 +620,121 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
         currentState.logTransform = enabled;
             console.log("Log transform set to: " + enabled);
     }
+    
+    /* Create the frontier chart */
+    document.addEventListener('DOMContentLoaded', function() {
+        const ctx = document.getElementById('frontierChart');
+        
+        // Data for plotting
+        const planData = {plan_data_json};
+        
+        // Extract required data for plotting
+        const fees = planData.map(plan => plan.fee);
+        const values = planData.map(plan => plan.valueMetric);
+        const planNames = planData.map(plan => plan.planName);
+        const mvnoNames = planData.map(plan => plan.mvno);
+        const ranks = planData.map(plan => plan.rank);
+        
+        // Determine frontier points
+        const frontierPoints = [];
+        const nonFrontierPoints = [];
+        
+        // Sort plans by fee (x-axis)
+        const sortedPlans = [...planData].sort((a, b) => a.fee - b.fee);
+        
+        // Simple algorithm to find frontier points (can be improved)
+        let maxValue = -Infinity;
+        for (const plan of sortedPlans) {
+            if (plan.valueMetric > maxValue) {
+                maxValue = plan.valueMetric;
+                frontierPoints.push(plan);
+            } else {
+                nonFrontierPoints.push(plan);
+            }
+        }
+        
+        // Create datasets
+        const frontierDataset = {
+            label: 'Frontier Plans',
+            data: frontierPoints.map(plan => ({
+                x: plan.fee,
+                y: plan.valueMetric,
+                rank: plan.rank,
+                planName: plan.planName,
+                mvno: plan.mvno
+            })),
+            backgroundColor: 'rgba(255, 99, 132, 1)',
+            borderColor: 'rgba(255, 99, 132, 1)',
+            pointRadius: 8,
+            pointHoverRadius: 10
+        };
+        
+        const nonFrontierDataset = {
+            label: 'Other Plans',
+            data: nonFrontierPoints.map(plan => ({
+                x: plan.fee,
+                y: plan.valueMetric,
+                rank: plan.rank,
+                planName: plan.planName,
+                mvno: plan.mvno
+            })),
+            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+            borderColor: 'rgba(54, 162, 235, 0.5)',
+            pointRadius: 6,
+            pointHoverRadius: 8
+        };
+        
+        // Create chart
+        const frontierChart = new Chart(ctx, {
+            type: 'scatter',
+            data: {
+                datasets: [frontierDataset, nonFrontierDataset]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const point = context.raw;
+                                return [`${point.planName} (${point.mvno})`, 
+                                        `Rank: ${point.rank}`, 
+                                        `Fee: ${point.x.toLocaleString()} KRW`, 
+                                        `Value: ${point.y.toFixed(4)}`];
+                            }
+                        }
+                    },
+                    legend: {
+                        position: 'top',
+                    },
+                    title: {
+                        display: true,
+                        text: 'Plan Value Frontier Analysis'
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Fee (KRW)'
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return value.toLocaleString();
+                            }
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Value Metric'
+                        }
+                    }
+                }
+            }
+        });
+    });
     </script>
     </body>
     </html>
