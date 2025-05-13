@@ -134,29 +134,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
             .input-feature {{ background-color: #f9f0ff; }}
             .output-feature {{ background-color: #f6ffed; }}
             
-            /* Collapsible sections */
-            .collapsible {{ 
-                background-color: #f1f1f1;
-                color: #444;
-                cursor: pointer;
-                padding: 18px;
-                width: 100%;
-                border: none;
-                text-align: left;
-                outline: none;
-                font-size: 15px;
-                margin-bottom: 5px;
-            }}
-            
-            .active, .collapsible:hover {{ background-color: #ccc; }}
-            
-            .content {{ 
-                padding: 0 18px;
-                display: none;
-                overflow: hidden;
-                background-color: #f9f9f9;
-                margin-bottom: 10px;
-            }}
+            /* No collapsible sections - removed as requested */
             .hidden {{ display: none; }}
         </style>
     </head>
@@ -493,71 +471,11 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
         </div>
     """
     
-    # Add collapsible sections for each plan
-    for _, row in df_sorted.iterrows():
-        plan_name = row['plan_name'] if 'plan_name' in row else "Unknown Plan"
-        mvno = row['mvno'] if 'mvno' in row else "Unknown Provider"
-        
-        html += f"""
-        <button type="button" class="collapsible">{plan_name} - {mvno}</button>
-        <div class="content">
-            <table>
-                <tr>
-                    <th>Feature</th>
-                    <th>Value</th>
-                </tr>
-        """
-        
-        # Add all features and values to the table
-        for col in sorted(row.index):
-            # Skip null values and internal columns
-            if col in ('index', 'level_0') or pd.isna(row[col]):
-                continue
-            
-            # Format value based on type
-            if isinstance(row[col], (int, float)):
-                if col.endswith('unlimited') or col.startswith('is_') or col.startswith('has_'):
-                    # Boolean-like values
-                    value = "Yes" if row[col] == 1 else "No"
-                elif col in ('fee', 'original_fee', 'post_discount_fee', 'discount_fee'):
-                    # Currency values
-                    value = f"{int(row[col]):,} KRW"
-                else:
-                    # Regular numeric values
-                    value = f"{row[col]}"
-            else:
-                value = str(row[col])
-            
-            html += f"""
-            <tr>
-                    <td>{col}</td>
-                    <td>{value}</td>
-            </tr>
-            """
-        
-    html += """
-        </table>
-        </div>
-    """
+    # No detailed plan sections - removed as requested
     
     # Add JavaScript for interactive elements
     html += """
     <script>
-        /* Add collapsible functionality */
-        var coll = document.getElementsByClassName("collapsible");
-        var i;
-
-        for (i = 0; i < coll.length; i++) {
-            coll[i].addEventListener("click", function() {
-                this.classList.toggle("active");
-                var content = this.nextElementSibling;
-                if (content.style.display === "block") {
-                    content.style.display = "none";
-                } else {
-                    content.style.display = "block";
-                }
-            });
-        }
         
     /* No control panel functions needed */
     
