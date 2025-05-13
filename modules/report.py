@@ -127,11 +127,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
                 background-color: #f9f9f9;
                 margin-bottom: 10px;
             }}
-            .button-group {{ margin-bottom: 15px; }}
-            button {{ padding: 10px 15px; background-color: #007bff; color: white; border: none; 
-                     border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px; }}
-            button:hover {{ background-color: #0056b3; }}
-            button.active {{ background-color: #28a745; }}
             .hidden {{ display: none; }}
         </style>
     </head>
@@ -139,30 +134,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
         <h1>{report_title}</h1>
         <p>Generated: {timestamp_str}</p>
         
-        <div class="note">
-            <strong>Instructions:</strong> Use the buttons below to toggle between different ranking methods,
-            fee types, and log transformation options.
-        </div>
-        
-        <h2>Control Panel</h2>
-        <div class="button-group">
-            <strong>Ranking Method:</strong><br>
-            <button id="relative-btn" {"class='active'" if ranking_method == 'relative' else ""} onclick="changeRankMethod('relative')">Relative Value (ΔP/fee)</button>
-            <button id="absolute-btn" {"class='active'" if ranking_method == 'absolute' else ""} onclick="changeRankMethod('absolute')">Absolute Value (ΔP)</button>
-            <button id="net-btn" {"class='active'" if ranking_method == 'net' else ""} onclick="changeRankMethod('net')">Net Value (ΔP-fee)</button>
-        </div>
-        
-        <div class="button-group">
-            <strong>Fee Type:</strong><br>
-            <button id="original-fee-btn" class="active" onclick="changeFeeType('original')">Original Fee</button>
-            <button id="discounted-fee-btn" onclick="changeFeeType('discounted')">Discounted Fee</button>
-        </div>
-        
-        <div class="button-group">
-            <strong>Log Transform:</strong><br>
-            <button id="log-transform-on-btn" {"class='active'" if use_log_transform else ""} onclick="toggleLogTransform(true)">On</button>
-            <button id="log-transform-off-btn" {"class='active'" if not use_log_transform else ""} onclick="toggleLogTransform(false)">Off</button>
-        </div>
+
     """
     
     # Add method explanation section based on the method
@@ -557,69 +529,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
             });
         }
         
-    /* Current state */
-    let currentState = {
-        rankMethod: "relative",
-        feeType: "original",
-        logTransform: true
-    };
-    
-    /* Change ranking method */
-    function changeRankMethod(method) {
-        /* Update buttons */
-        document.getElementById('relative-btn').classList.remove('active');
-        document.getElementById('absolute-btn').classList.remove('active');
-        document.getElementById('net-btn').classList.remove('active');
-            document.getElementById(method + '-btn').classList.add('active');
-        
-        /* Update button styles */
-            document.getElementById('relative-btn').style.backgroundColor = '#007bff';
-            document.getElementById('absolute-btn').style.backgroundColor = '#007bff';
-            document.getElementById('net-btn').style.backgroundColor = '#007bff';
-            document.getElementById(method + '-btn').style.backgroundColor = '#28a745';
-        
-        /* Update state */
-        currentState.rankMethod = method;
-            console.log("Ranking method changed to: " + method);
-        }
-    
-    /* Change fee type */
-    function changeFeeType(type) {
-        /* Update buttons */
-        document.getElementById('original-fee-btn').classList.remove('active');
-        document.getElementById('discounted-fee-btn').classList.remove('active');
-            document.getElementById(type + '-fee-btn').classList.add('active');
-        
-        /* Update button styles */
-            document.getElementById('original-fee-btn').style.backgroundColor = '#007bff';
-            document.getElementById('discounted-fee-btn').style.backgroundColor = '#007bff';
-            document.getElementById(type + '-fee-btn').style.backgroundColor = '#28a745';
-        
-        /* Update state */
-        currentState.feeType = type;
-            console.log("Fee type changed to: " + type);
-        }
-    
-    /* Toggle log transform */
-    function toggleLogTransform(enabled) {
-            /* Update buttons */
-        document.getElementById('log-transform-on-btn').classList.remove('active');
-        document.getElementById('log-transform-off-btn').classList.remove('active');
-        
-        if (enabled) {
-            document.getElementById('log-transform-on-btn').classList.add('active');
-                document.getElementById('log-transform-on-btn').style.backgroundColor = '#28a745';
-                document.getElementById('log-transform-off-btn').style.backgroundColor = '#007bff';
-        } else {
-            document.getElementById('log-transform-off-btn').classList.add('active');
-                document.getElementById('log-transform-on-btn').style.backgroundColor = '#007bff';
-                document.getElementById('log-transform-off-btn').style.backgroundColor = '#28a745';
-        }
-        
-            /* Update state */
-        currentState.logTransform = enabled;
-            console.log("Log transform set to: " + enabled);
-    }
+    /* No control panel functions needed */
     
     /* Create the frontier chart */
     document.addEventListener('DOMContentLoaded', function() {
