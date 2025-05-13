@@ -342,9 +342,12 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
             baseline_cost = int(row['B']) if 'B' in row and not pd.isna(row['B']) else 0
             cs_ratio = row['CS'] if 'CS' in row else ""
             
+            # Format CS ratio with proper handling of types
+            formatted_cs_ratio = f"{cs_ratio:.4f}" if isinstance(cs_ratio, float) else str(cs_ratio)
+            
             method_specific_cols = f"""
                 <td>{baseline_cost:,}</td>
-                <td class="good-value">{cs_ratio:.4f if isinstance(cs_ratio, float) else cs_ratio}</td>
+                <td class="good-value">{formatted_cs_ratio}</td>
             """
         else:
             value_ratio = row['value_ratio'] if 'value_ratio' in row else ""
@@ -355,8 +358,11 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=False, title="Mobile
             delta_p_str = f"{int(delta_p):,}" if isinstance(delta_p, (int, float)) else str(delta_p)
             delta_p_minus_fee_str = f"{int(delta_p_minus_fee):,}" if isinstance(delta_p_minus_fee, (int, float)) else str(delta_p_minus_fee)
             
+            # Format value ratio with proper handling of types
+            formatted_value_ratio = f"{value_ratio:.4f}" if isinstance(value_ratio, float) else str(value_ratio)
+            
             method_specific_cols = f"""
-                <td class="good-value">{value_ratio:.4f if isinstance(value_ratio, float) else value_ratio}</td>
+                <td class="good-value">{formatted_value_ratio}</td>
                 <td>{delta_p_str}</td>
                 <td>{delta_p_minus_fee_str}</td>
             """
