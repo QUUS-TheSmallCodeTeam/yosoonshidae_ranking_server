@@ -536,7 +536,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             continue
 
         # 1. Get the list of plans on the visual frontier for the current feature_analyzed
-        current_feature_frontier_plans = feature_frontier_data[feature_analyzed]['actual_frontier_plans_series']
+        current_feature_frontier_plans = all_chart_data[feature_analyzed]['actual_frontier_plans_series']
 
         # 2. Find plans in this list with the minimum value for feature_analyzed
         min_val_for_feature_on_frontier = min(p[feature_analyzed] for p in current_feature_frontier_plans)
@@ -597,9 +597,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             if f_other not in visual_frontiers_for_residual_table or not visual_frontiers_for_residual_table[f_other]:
                 logger.warning(f"Visual frontier (value,cost) tuples for other feature '{f_other}' not found or empty. Cannot estimate its cost for plan '{target_plan_name_display}'.")
                 all_other_costs_valid_for_sum = False # Mark that we can't get a complete sum
-                # For now, let's allow partial sum if some are estimable, but the total won't be "complete"
-                # To be stricter, we could 'break' here and set combined_est_cost_others to None.
-                # However, the request implies showing the math, so we sum what we can.
+                # For now, let's be strict. If any part needed for full calculation is missing, we might skip the row or mark it.
                 continue # Skip this feature's cost if its frontier is missing for estimation
             
             val_f_other_in_target_plan = target_plan_series.get(f_other)
