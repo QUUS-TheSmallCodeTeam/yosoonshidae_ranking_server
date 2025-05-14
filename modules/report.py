@@ -328,85 +328,87 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             df_for_frontier = df[df[cost_metric_for_visualization].notna()].copy()
         
         # Step 1: Get all unique feature values and their minimum costs (using cost_metric_for_visualization)
-        candidate_points_details = []
+        # candidate_points_details will now store the full Pandas Series for each candidate plan.
+        candidate_points_details_series = [] 
         if not df_for_frontier.empty:
             min_cost_indices = df_for_frontier.loc[df_for_frontier.groupby(feature)[cost_metric_for_visualization].idxmin()].index
             min_cost_candidates_df = df_for_frontier.loc[min_cost_indices]
             
+            # Sort these candidates by feature value, then by cost_metric_for_visualization
             min_cost_candidates_df = min_cost_candidates_df.sort_values(by=[feature, cost_metric_for_visualization])
 
-            for _, row in min_cost_candidates_df.iterrows():
-                candidate_points_details.append({
-                    'value': row[feature],
-                    'cost': row[cost_metric_for_visualization], # Using original_fee here
-                    'plan_name': row['plan_name'] if 'plan_name' in row else "Unknown"
-                })
+            for _, plan_series_row in min_cost_candidates_df.iterrows():
+                candidate_points_details_series.append(plan_series_row) # Append the full Series
         
-        # Step 2: Build the true monotonic frontier (list of dicts: {'value', 'cost', 'plan_name'})
-        actual_frontier_dictionaries = [] # This will store the full candidate dicts for points on the frontier
+        # Step 2: Build the true monotonic frontier (list of Pandas Series for plans on the frontier)
+        actual_frontier_plans_series_list = [] 
         
-        # candidate_points_details is already sorted by value, then cost if Step 1's sort_values was effective.
-        # Let's ensure consistent sorting here just in case, as the logic depends on it.
-        # sorted_candidate_details_for_stack = sorted(candidate_points_details, key=lambda c: (c['value'], c['cost']))
-        # Assuming candidate_points_details from Step 1 (after min_cost_candidates_df.sort_values) is sufficient.
-
-        for candidate_dict in candidate_points_details: # candidate_dict is {'value': v, 'cost': c, 'plan_name': pn}
-            # Using candidate_dict['cost'] which is original_fee
-            while actual_frontier_dictionaries and candidate_dict['cost'] < actual_frontier_dictionaries[-1]['cost']:
-                actual_frontier_dictionaries.pop()
+        for candidate_plan_series in candidate_points_details_series:
+            while actual_frontier_plans_series_list and \
+                  candidate_plan_series[cost_metric_for_visualization] < actual_frontier_plans_series_list[-1][cost_metric_for_visualization]:
+                actual_frontier_plans_series_list.pop()
             
-            if not actual_frontier_dictionaries:
-                actual_frontier_dictionaries.append(candidate_dict)
+            if not actual_frontier_plans_series_list:
+                actual_frontier_plans_series_list.append(candidate_plan_series)
             else:
-                last_frontier_dict = actual_frontier_dictionaries[-1]
-                if (candidate_dict['value'] > last_frontier_dict['value'] and
-                    candidate_dict['cost'] > last_frontier_dict['cost'] and
-                    (candidate_dict['cost'] - last_frontier_dict['cost']) >= 1.0): # cost is original_fee
-                    actual_frontier_dictionaries.append(candidate_dict)
-                # Handle plateaus: if value increases but cost is same, keep the one with lower value (already handled by sorted_candidate_details and "<" logic)
+                last_frontier_plan_series = actual_frontier_plans_series_list[-1]
+                if (candidate_plan_series[feature] > last_frontier_plan_series[feature] and
+                    candidate_plan_series[cost_metric_for_visualization] > last_frontier_plan_series[cost_metric_for_visualization] and
+                    (candidate_plan_series[cost_metric_for_visualization] - last_frontier_plan_series[cost_metric_for_visualization]) >= 1.0):
+                    actual_frontier_plans_series_list.append(candidate_plan_series)
         
-        # Populate visual_frontiers_for_residual_table with (value, original_fee) tuples from these dictionaries
-        actual_frontier_value_cost_tuples = [(p['value'], p['cost']) for p in actual_frontier_dictionaries]
-        visual_frontiers_for_residual_table = {}
-        visual_frontiers_for_residual_table[feature] = actual_frontier_value_cost_tuples # Store (value, original_fee) tuples
+        # Populate visual_frontiers_for_residual_table with (value, original_fee) tuples from these Series
+        current_feature_visual_frontier_tuples = [(p[feature], p[cost_metric_for_visualization]) for p in actual_frontier_plans_series_list]
+        visual_frontiers_for_residual_table[feature] = current_feature_visual_frontier_tuples
+        
+        # Store the list of frontier plan Series in all_chart_data for later use in residual analysis
+        if feature not in feature_frontier_data: feature_frontier_data[feature] = {}
+        feature_frontier_data[feature]['actual_frontier_plans_series'] = actual_frontier_plans_series_list
+
 
         # Step 3: Classify all points from df_for_frontier based on the visual frontier
-        frontier_feature_values = []
-        frontier_visual_costs = [] # Renamed to reflect it's original_fee
-        frontier_plan_names = []
+        # Extract necessary data for JS charts from actual_frontier_plans_series_list and candidate_points_details_series
+        frontier_feature_values = [p[feature] for p in actual_frontier_plans_series_list]
+        frontier_visual_costs = [p[cost_metric_for_visualization] for p in actual_frontier_plans_series_list]
+        frontier_plan_names = [p['plan_name'] if 'plan_name' in p else "Unknown" for p in actual_frontier_plans_series_list]
         
         excluded_feature_values = []
-        excluded_visual_costs = [] # Renamed
+        excluded_visual_costs = [] 
         excluded_plan_names = []
         
-        other_feature_values = []
-        other_visual_costs = [] # Renamed
+        other_feature_values = [] # Not plotted, but calculated for completeness/logging
+        other_visual_costs = []
         other_plan_names = []
 
-        true_frontier_set_tuples = set((p['value'], p['cost'], p['plan_name']) for p in actual_frontier_dictionaries)
-        
-        candidate_tuples_for_exclusion_check = set((p['value'], p['cost'], p['plan_name']) for p in candidate_points_details)
+        # Create a set of (value, cost, plan_name) for quick lookup of true frontier points
+        true_frontier_signature_set = set(
+            (p[feature], p[cost_metric_for_visualization], p['plan_name'] if 'plan_name' in p else "Unknown") 
+            for p in actual_frontier_plans_series_list
+        )
 
-        for candidate in candidate_points_details:
-            if (candidate['value'], candidate['cost'], candidate['plan_name']) in true_frontier_set_tuples:
-                frontier_feature_values.append(float(candidate['value']))
-                frontier_visual_costs.append(float(candidate['cost'])) # Storing original_fee
-                frontier_plan_names.append(candidate['plan_name'])
-            else:
-                excluded_feature_values.append(float(candidate['value']))
-                excluded_visual_costs.append(float(candidate['cost'])) # Storing original_fee
-                excluded_plan_names.append(candidate['plan_name'])
+        # Identify excluded points from the initial candidates (min cost for each value)
+        for candidate_plan_series in candidate_points_details_series:
+            sig = (candidate_plan_series[feature], candidate_plan_series[cost_metric_for_visualization], candidate_plan_series['plan_name'] if 'plan_name' in candidate_plan_series else "Unknown")
+            if sig not in true_frontier_signature_set:
+                excluded_feature_values.append(float(candidate_plan_series[feature]))
+                excluded_visual_costs.append(float(candidate_plan_series[cost_metric_for_visualization]))
+                excluded_plan_names.append(candidate_plan_series['plan_name'] if 'plan_name' in candidate_plan_series else "Unknown")
         
+        # Identify 'other' points (not on frontier, not excluded - i.e., not a min cost for their value)
+        # This requires iterating through df_for_frontier again.
         if not df_for_frontier.empty:
-            all_candidate_min_value_cost_pairs = set((p['value'], p['cost']) for p in candidate_points_details)
-            for _, row in df_for_frontier.iterrows():
-                f_val = row[feature]
-                c_cost = row[cost_metric_for_visualization] # Using original_fee for comparison
-                p_name = row['plan_name'] if 'plan_name' in row else "Unknown"
+            # Create a set of (value, cost) for all candidates to quickly identify non-candidate points
+            all_candidate_min_value_cost_pairs = set(
+                (p_series[feature], p_series[cost_metric_for_visualization]) for p_series in candidate_points_details_series
+            )
+            for _, row_series in df_for_frontier.iterrows():
+                f_val = row_series[feature]
+                c_cost = row_series[cost_metric_for_visualization]
+                # Check if this point (value, cost) was among the min-cost candidates for its value
                 if (f_val, c_cost) not in all_candidate_min_value_cost_pairs:
                     other_feature_values.append(float(f_val))
-                    other_visual_costs.append(float(c_cost)) # Storing original_fee
-                    other_plan_names.append(p_name)
+                    other_visual_costs.append(float(c_cost))
+                    other_plan_names.append(row_series['plan_name'] if 'plan_name' in row_series else "Unknown")
         
         all_values_for_js = []
         all_visual_costs_for_js = [] # Renamed
@@ -494,129 +496,132 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     
     # --- Start: New section for Residual Analysis Data Preparation ---
     residual_analysis_table_data = []
-    # Use the original df for finding plans with absolute minimums of each core feature
-    # Ensure 'original_fee' is present, as it's crucial for this analysis
-    if 'original_fee' not in df.columns:
-        logger.error("'original_fee' column missing from DataFrame, cannot perform residual analysis.")
-    else:
-        for feature_analyzed in core_continuous_features: 
-            if feature_analyzed not in df.columns:
-                logger.warning(f"Feature '{feature_analyzed}' for residual analysis not in DataFrame, skipping.")
-                continue
+    logger.info("Starting Residual Original Fee Analysis (from Visual Frontier Minimums).")
 
-            min_feature_val = df[feature_analyzed].min()
-            candidate_plans_min_feature_val = df[df[feature_analyzed] == min_feature_val]
+    for feature_analyzed in core_continuous_features:
+        if feature_analyzed not in df.columns: # Check against the main df
+            logger.warning(f"Feature '{feature_analyzed}' for residual analysis not in DataFrame, skipping.")
+            continue
+        if feature_analyzed not in FEATURE_DISPLAY_NAMES_PY:
+            logger.warning(f"Display name for '{feature_analyzed}' not found. Skipping in residual table.")
+            continue
+        if feature_analyzed not in feature_frontier_data or \
+           'actual_frontier_plans_series' not in feature_frontier_data[feature_analyzed] or \
+           not feature_frontier_data[feature_analyzed]['actual_frontier_plans_series']:
+            logger.warning(f"Visual frontier plan series for '{feature_analyzed}' not found or empty. Skipping in residual table.")
+            continue
+        if feature_analyzed not in visual_frontiers_for_residual_table or \
+           not visual_frontiers_for_residual_table[feature_analyzed]:
+            logger.warning(f"Visual frontier (value,cost) tuples for '{feature_analyzed}' not found or empty. Skipping for other cost estimations.")
+            # We might still proceed if the target plan can be found, but estimating other costs will fail.
+            # For now, let's be strict. If any part needed for full calculation is missing, we might skip the row or mark it.
 
-            if candidate_plans_min_feature_val.empty:
-                logger.info(f"No plans found with minimum value for '{feature_analyzed}', skipping for residual analysis.")
-                continue
+        # 1. Get the list of plans on the visual frontier for the current feature_analyzed
+        current_feature_frontier_plans = feature_frontier_data[feature_analyzed]['actual_frontier_plans_series']
+
+        # 2. Find plans in this list with the minimum value for feature_analyzed
+        min_val_for_feature_on_frontier = min(p[feature_analyzed] for p in current_feature_frontier_plans)
+        
+        candidate_target_plans = [
+            p for p in current_feature_frontier_plans if p[feature_analyzed] == min_val_for_feature_on_frontier
+        ]
+
+        if not candidate_target_plans:
+            logger.info(f"No plans found on visual frontier for '{feature_analyzed}' with min value {min_val_for_feature_on_frontier}. Skipping.")
+            continue
+
+        # 3. Tie-breaking:
+        #    a) Lowest 'original_fee' (which is 'cost_metric_for_visualization' for these frontier plans)
+        candidate_target_plans.sort(key=lambda p: p[cost_metric_for_visualization])
+        
+        min_original_fee_for_candidates = candidate_target_plans[0][cost_metric_for_visualization]
+        
+        # Filter by this min_original_fee for the next tie-breaking step
+        plans_tied_on_fee = [
+            p for p in candidate_target_plans if p[cost_metric_for_visualization] == min_original_fee_for_candidates
+        ]
+
+        target_plan_series = None
+        if len(plans_tied_on_fee) == 1:
+            target_plan_series = plans_tied_on_fee[0]
+        else:
+            # b) Highest "richness score" for *other* core features
+            other_core_features_for_richness = [f for f in core_continuous_features if f != feature_analyzed]
+            best_target_plan_series_richness = None
+            highest_richness_score = -1
+
+            for plan_series_item in plans_tied_on_fee:
+                current_richness = get_richness_score(plan_series_item, other_core_features_for_richness, core_continuous_features, UNLIMITED_FLAGS)
+                if current_richness > highest_richness_score:
+                    highest_richness_score = current_richness
+                    best_target_plan_series_richness = plan_series_item
             
-            # First tie-break: lowest 'original_fee'
-            min_original_fee = candidate_plans_min_feature_val['original_fee'].min()
-            candidate_plans_min_fee = candidate_plans_min_feature_val[candidate_plans_min_feature_val['original_fee'] == min_original_fee]
+            target_plan_series = best_target_plan_series_richness if best_target_plan_series_richness is not None else plans_tied_on_fee[0] # Fallback
 
-            target_plan_row_series = None
-            if len(candidate_plans_min_fee) == 1:
-                target_plan_row_series = candidate_plans_min_fee.iloc[0]
-            elif len(candidate_plans_min_fee) > 1:
-                # Second tie-break: "richness score" based on other features
-                best_plan_idx = -1
-                max_richness_score = -1
+        if target_plan_series is None:
+             logger.warning(f"Could not select a target plan from visual frontier for {feature_analyzed}. Skipping.")
+             continue
+        
+        # 4. Prepare data for the table row
+        target_plan_name_display = target_plan_series['plan_name'] if 'plan_name' in target_plan_series else "Unknown"
+        plan_specs_string = format_plan_specs_display_string(target_plan_series, core_continuous_features, FEATURE_DISPLAY_NAMES_PY, FEATURE_UNITS, UNLIMITED_FLAGS)
 
-                for idx, plan_tuple in enumerate(candidate_plans_min_fee.iterrows()):
-                    # iterrows() yields (index, Series), so plan_row is the Series
-                    plan_index, plan_row = plan_tuple 
-                    current_richness_score = get_richness_score(plan_row, [f for f in core_continuous_features if f != feature_analyzed], core_continuous_features, UNLIMITED_FLAGS)
+        # Cost of the analyzed feature is its cost on its own frontier (which is the point we selected)
+        cost_of_analyzed_feature_on_frontier = target_plan_series[cost_metric_for_visualization]
+        
+        # Estimate combined cost of other core features
+        combined_est_cost_others = 0
+        all_other_costs_valid_for_sum = True
+        other_core_features_list = [f for f in core_continuous_features if f != feature_analyzed]
 
-                    if current_richness_score > max_richness_score:
-                        max_richness_score = current_richness_score
-                        best_plan_idx = plan_index # Store the DataFrame index of the best plan
-                
-                if best_plan_idx != -1:
-                    target_plan_row_series = candidate_plans_min_fee.loc[best_plan_idx]
-                else: # Should not happen if candidate_plans_min_fee is not empty
-                    target_plan_row_series = candidate_plans_min_fee.iloc[0] # Fallback to first if all scores are same/issue
-            else: # candidate_plans_min_fee is empty (shouldn't happen if candidate_plans_min_feature_val wasn't)
-                logger.warning(f"Unexpected: No candidates after original_fee tie-breaking for '{feature_analyzed}'. Skipping.")
-                continue
+        for f_other in other_core_features_list:
+            if f_other not in visual_frontiers_for_residual_table or not visual_frontiers_for_residual_table[f_other]:
+                logger.warning(f"Visual frontier (value,cost) tuples for other feature '{f_other}' not found or empty. Cannot estimate its cost for plan '{target_plan_name_display}'.")
+                all_other_costs_valid_for_sum = False # Mark that we can't get a complete sum
+                # For now, let's allow partial sum if some are estimable, but the total won't be "complete"
+                # To be stricter, we could 'break' here and set combined_est_cost_others to None.
+                # However, the request implies showing the math, so we sum what we can.
+                continue # Skip this feature's cost if its frontier is missing for estimation
             
-            if target_plan_row_series is None:
-                 logger.warning(f"Could not determine target plan for '{feature_analyzed}' after tie-breaking. Skipping.")
-                 continue
-
-            target_plan_name = target_plan_row_series['plan_name']
-            plan_total_original_fee = target_plan_row_series['original_fee']
-            actual_value_of_feature_analyzed_in_target_plan = target_plan_row_series[feature_analyzed]
-
-            # Now, estimate the cost of this `actual_value_of_feature_analyzed_in_target_plan`
-            # on the VISUAL FRONTIER of `feature_analyzed` (which is stored in feature_frontier_data)
-            cost_of_feature_on_its_visual_frontier = 0.0
-            if feature_analyzed in feature_frontier_data and feature_frontier_data[feature_analyzed].get('frontier_values'):
-                # Reconstruct a temporary Series for estimation, similar to estimate_frontier_value
-                # This visual frontier is based on original_fee and has (value, original_fee_cost) pairs
-                vis_frontier_values = feature_frontier_data[feature_analyzed]['frontier_values']
-                vis_frontier_costs = feature_frontier_data[feature_analyzed]['frontier_contributions'] # These are original_fees for visual
-                
-                if vis_frontier_values: # Ensure there are points to build a series
-                    # Create a temporary series from the visual frontier points
-                    temp_visual_frontier_series = pd.Series(data=vis_frontier_costs, index=vis_frontier_values).sort_index()
-                    
-                    # Simplified estimation logic (like estimate_frontier_value but on this temp series)
-                    if actual_value_of_feature_analyzed_in_target_plan in temp_visual_frontier_series.index:
-                        cost_of_feature_on_its_visual_frontier = temp_visual_frontier_series[actual_value_of_feature_analyzed_in_target_plan]
-                    else:
-                        idx = np.searchsorted(temp_visual_frontier_series.index, actual_value_of_feature_analyzed_in_target_plan)
-                        if idx == 0:
-                            cost_of_feature_on_its_visual_frontier = temp_visual_frontier_series.iloc[0]
-                        elif idx == len(temp_visual_frontier_series.index):
-                            cost_of_feature_on_its_visual_frontier = temp_visual_frontier_series.iloc[-1]
-                        else:
-                            # Linear interpolation for visual frontier (original_fee based)
-                            x1_vis, y1_vis = temp_visual_frontier_series.index[idx-1], temp_visual_frontier_series.iloc[idx-1]
-                            x2_vis, y2_vis = temp_visual_frontier_series.index[idx], temp_visual_frontier_series.iloc[idx]
-                            if x2_vis == x1_vis:
-                                cost_of_feature_on_its_visual_frontier = y1_vis
-                            else:
-                                cost_of_feature_on_its_visual_frontier = y1_vis + (actual_value_of_feature_analyzed_in_target_plan - x1_vis) * (y2_vis - y1_vis) / (x2_vis - x1_vis)
-                else:
-                    logger.warning(f"Visual frontier for '{feature_analyzed}' has no points. Cannot estimate feature cost for residual analysis.")
+            val_f_other_in_target_plan = target_plan_series.get(f_other)
+            frontier_tuples_f_other = visual_frontiers_for_residual_table[f_other]
+            
+            cost_component_f_other = None
+            if pd.notna(val_f_other_in_target_plan):
+                 cost_component_f_other = estimate_value_on_visual_frontier(val_f_other_in_target_plan, frontier_tuples_f_other)
+            
+            if cost_component_f_other is not None:
+                combined_est_cost_others += cost_component_f_other
             else:
-                logger.warning(f"No visual frontier data available for '{feature_analyzed}'. Cannot estimate feature cost for residual analysis.")
+                logger.info(f"Could not estimate cost component for '{f_other}' (value: {val_f_other_in_target_plan}) in plan '{target_plan_name_display}'. This component will be excluded from 'Combined Est. Cost of Other Core Features'.")
+                all_other_costs_valid_for_sum = False # Mark as incomplete sum
+        
+        plan_total_original_fee = target_plan_series['original_fee'] # Should be same as cost_metric_for_visualization if that is 'original_fee'
 
-            residual_original_fee = plan_total_original_fee - cost_of_feature_on_its_visual_frontier
-            
-            other_specs_list = []
-            for core_feat in core_continuous_features:
-                if core_feat == feature_analyzed:
-                    continue
-                feat_display_name = FEATURE_DISPLAY_NAMES_PY.get(core_feat, core_feat)
-                value = target_plan_row_series.get(core_feat, "N/A")
-                unlimited_flag_for_core_feat = UNLIMITED_FLAGS.get(core_feat)
-                if unlimited_flag_for_core_feat and target_plan_row_series.get(unlimited_flag_for_core_feat) == 1:
-                    value = "Unlimited"
-                elif isinstance(value, (int, float)) and core_feat == 'speed_when_exhausted' and target_plan_row_series.get('has_unlimited_speed') == 1:
-                    value = "Unlimited"
-                elif isinstance(value, (int, float)) and core_feat == 'speed_when_exhausted' and value > 0:
-                    value = f"{value} Mbps"
-                elif isinstance(value, (int, float)) and (core_feat.endswith('_gb') or core_feat.endswith('_data_clean')):
-                    value = f"{value} GB"
-                elif isinstance(value, (int, float)) and (core_feat.endswith('_min') or (core_feat.endswith('_clean') and 'voice' in core_feat)):
-                    value = f"{value} min"
-                elif isinstance(value, (int, float)) and (core_feat.endswith('_clean') and 'message' in core_feat):
-                    value = f"{value} cnt"
-                other_specs_list.append(f"{feat_display_name}: {value}")
-            
-            other_specs_str = "; ".join(other_specs_list) if other_specs_list else "N/A"
-            
-            residual_analysis_table_data.append({
-                'analyzed_feature': FEATURE_DISPLAY_NAMES_PY.get(feature_analyzed, feature_analyzed),
-                'plan_name': target_plan_name,
-                'other_specs': other_specs_str,
-                'residual_fee': residual_original_fee,
-                'original_total_fee_of_plan': plan_total_original_fee,
-                'feature_cost_at_min_frontier': cost_of_feature_on_its_visual_frontier # This is the estimated cost from visual frontier
-            })
+        # Format the breakdown string
+        # If any part of "other costs" failed, we might indicate it or show N/A for combined
+        combined_others_display = f"{combined_est_cost_others:,.0f}" if combined_est_cost_others is not None else "N/A (estimation incomplete)"
+        if not all_other_costs_valid_for_sum and combined_est_cost_others == 0 : # If all failed or were zero.
+             combined_others_display = "N/A (estimation failed for all other features)"
+        elif not all_other_costs_valid_for_sum and combined_est_cost_others > 0:
+             combined_others_display = f"{combined_est_cost_others:,.0f} (estimation incomplete for some other features)"
 
+
+        fee_breakdown_str = (
+            f"{cost_of_analyzed_feature_on_frontier:,.0f} (Analyzed Feature)"
+            f" + {combined_others_display} (Other Features)"
+            f" = {plan_total_original_fee:,.0f} KRW (Plan Total)"
+        )
+        
+        residual_analysis_table_data.append({
+            'analyzed_feature_display': FEATURE_DISPLAY_NAMES_PY[feature_analyzed],
+            'target_plan_name': target_plan_name_display,
+            'plan_specs_string': plan_specs_string,
+            'fee_breakdown_string': fee_breakdown_str
+        })
+        logger.info(f"Added row for '{feature_analyzed}' to residual table. Plan: {target_plan_name_display}. Breakdown: {fee_breakdown_str}")
+
+    logger.info(f"Generated {len(residual_analysis_table_data)} rows for the residual analysis table (from visual frontier minimums).")
     # --- End: New section for Residual Analysis Data Preparation ---
     
     # Serialize feature frontier data to JSON
@@ -1318,36 +1323,38 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     # --- Start: New HTML section for Residual Analysis Table ---
     if residual_analysis_table_data:
         html += """
-        <h2>Residual Original Fee Analysis (at Minimum Visual Frontier Values)</h2>
+        <h2>Residual Original Fee Analysis (Based on Minimum Value Points from Each Feature's Visual Frontier)</h2>
         <div class="container">
             <div class="note">
-                <p>This table examines plans that represent the starting point (minimum feature value) on each feature's visual frontier (plotted using original fees). 
-                For such a plan, we subtract the original fee component of the analyzed feature (as per its frontier point) from the plan's total original fee. 
-                The remaining amount is the "Residual Original Fee", shown alongside the plan's other core specifications. 
-                This helps understand the costs associated with the rest of the plan's bundle at that specific frontier entry point.</p>
+                <p>This table examines a specific plan selected from each feature's <strong>visual frontier</strong> (which is plotted using original fees). 
+                The selected plan is the one on that frontier which has the <em>minimum value for the analyzed feature</em> (e.g., for 'Basic Data' analysis, it's the frontier plan with the least Basic Data). 
+                Tie-breaking favors lower original fee, then richer other specs.
+                The 'Original Fee Breakdown' shows: 
+                [Cost of Analyzed Feature at its Frontier Point] + [Estimated Combined Original Fee of Other Core Features in that Plan] = [Plan's Total Original Fee].
+                This illustrates how the plan's total original fee is composed when anchored at that feature's starting frontier point.</p>
             </div>
             <table>
+                <thead>
                 <tr>
                     <th>Analyzed Feature</th>
-                    <th>Plan at Min. Visual Frontier Value</th>
-                    <th>Plan's Total Original Fee (KRW)</th>
-                    <th>Analyzed Feature's Cost at Min. Frontier (KRW)</th>
-                    <th>Other Core Specs in Plan</th>
-                    <th>= Residual Original Fee (KRW)</th>
+                    <th>Target Plan (from its visual frontier, at min value for analyzed feature)</th>
+                    <th>Plan Specifications</th>
+                    <th>Original Fee Breakdown (KRW)</th>
                 </tr>
+                </thead>
+                <tbody>
         """
         for row_data in residual_analysis_table_data:
             html += f"""
                 <tr>
-                    <td>{row_data['analyzed_feature']}</td>
-                    <td>{row_data['plan_name']}</td>
-                    <td>{int(row_data['original_total_fee_of_plan']):,}</td>
-                    <td>{int(row_data['feature_cost_at_min_frontier']):,}</td>
-                    <td>{row_data['other_specs']}</td>
-                    <td class="good-value">{int(row_data['residual_fee']):,}</td>
+                    <td>{row_data['analyzed_feature_display']}</td>
+                    <td>{row_data['target_plan_name']}</td>
+                    <td>{row_data['plan_specs_string']}</td>
+                    <td>{row_data['fee_breakdown_string']}</td>
                 </tr>
             """
         html += """
+            </tbody>
             </table>
         </div>
         """
@@ -1401,3 +1408,33 @@ def save_report(html_content, timestamp, directory=None, prefix="ranking", descr
     except Exception as e:
         logger.error(f"Error saving report: {e}")
         return None
+
+def format_plan_specs_display_string(plan_row_series, core_continuous_features, feature_display_names_map, feature_units_map, unlimited_flags_map):
+    """Formats a plan's core specs into a semicolon-separated string."""
+    parts = []
+    if not isinstance(plan_row_series, pd.Series):
+        logger.warning("format_plan_specs_display_string: plan_row_series is not a Series.")
+        return "Invalid plan data"
+
+    for f_col in core_continuous_features:
+        display_name = feature_display_names_map.get(f_col, f_col)
+        value_str = "N/A"
+        
+        if f_col in plan_row_series:
+            value = plan_row_series[f_col]
+            unit = feature_units_map.get(f_col, "")
+            
+            is_unlimited = False
+            unlimited_flag_col = unlimited_flags_map.get(f_col)
+            if unlimited_flag_col and unlimited_flag_col in plan_row_series and plan_row_series[unlimited_flag_col]:
+                is_unlimited = True
+
+            if is_unlimited:
+                value_str = f"Unlimited {unit}".strip()
+            elif pd.notna(value) and isinstance(value, (int,float)):
+                value_str = f"{value:.1f} {unit}".strip() if isinstance(value, float) else f"{value} {unit}".strip()
+            # else value_str remains "N/A" or could be refined for other types
+        
+        parts.append(f"{display_name}: {value_str}")
+            
+    return "; ".join(parts)
