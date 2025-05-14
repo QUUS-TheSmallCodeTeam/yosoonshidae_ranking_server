@@ -21,6 +21,17 @@ UNLIMITED_FLAGS = {
     'speed_when_exhausted': 'has_unlimited_speed'
 }
 
+# Feature units for formatting (assuming these are defined or can be added)
+FEATURE_UNITS = {
+    'basic_data_clean': 'GB/month',
+    'daily_data_clean': 'GB/day',
+    'voice_clean': 'min',
+    'message_clean': 'SMS',
+    'additional_call': 'KRW/call', # Or appropriate unit
+    'speed_when_exhausted': 'Mbps',
+    'tethering_gb': 'GB'
+}
+
 # Custom JSON encoder to handle NumPy types
 class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -47,6 +58,158 @@ FEATURE_DISPLAY_NAMES_PY = {
     'speed_when_exhausted': 'Throttled Speed',
     'tethering_gb': 'Tethering'
 }
+
+def get_richness_score(plan_row, features_to_score, all_core_features, unlimited_flags_map):
+    """Calculate a richness score for a plan based on a subset of its features."""
+    score = 0
+    # Ensure plan_row is a Series or dict, not a DataFrame
+    if isinstance(plan_row, pd.DataFrame):
+        if len(plan_row) == 1:
+            plan_row = plan_row.iloc[0]
+        else:
+            # Or handle error: raise ValueError("plan_row must be a single row (Series) or dict")
+            return 0 # Or some default error score
+
+    for feature_col in features_to_score:
+        if feature_col not in plan_row: # Check if feature exists in the plan data
+            continue
+            
+        value = plan_row[feature_col]
+        is_unlimited = False
+        unlimited_flag_col = unlimited_flags_map.get(feature_col)
+        if unlimited_flag_col and unlimited_flag_col in plan_row and plan_row[unlimited_flag_col]:
+            is_unlimited = True
+        
+        if is_unlimited:
+            score += 100
+        elif pd.notna(value) and isinstance(value, (int, float)) and value > 0:
+            score += 10
+        elif pd.notna(value) and isinstance(value, (int, float)) and value <= 0:
+            score += 1
+        # else: NA or non-numeric values get 0 score for this feature
+    return score
+
+def estimate_value_on_visual_frontier(value_to_estimate, frontier_points_tuples):
+    """
+    Estimates the cost (y-value, typically original_fee) for a given feature value (x-value)
+    based on a list of (value, cost) tuples representing the visual frontier.
+    Uses linear interpolation, extrapolation, or exact match.
+    `frontier_points_tuples` must be sorted by feature value (x).
+    """
+    if not frontier_points_tuples:
+        return None  # Cannot estimate if frontier is empty
+
+    if pd.isna(value_to_estimate):
+        return None # Cannot estimate for NaN input
+
+    # Convert to numeric, if not already, for comparison
+    try:
+        x_target = float(value_to_estimate)
+    except (ValueError, TypeError):
+        return None # Cannot estimate for non-numeric input if conversion fails
+
+    # Ensure frontier_points_tuples are sorted by x-value (feature value)
+    # Assuming they are already sorted as per function docstring, but a check/sort could be added if necessary.
+    # sorted_points = sorted(frontier_points_tuples, key=lambda p: p[0])
+    # For simplicity, assuming frontier_points_tuples is pre-sorted.
+    sorted_points = frontier_points_tuples
+
+
+    # Exact match
+    for x, y in sorted_points:
+        if x == x_target:
+            return y
+
+    # Extrapolation: target is less than the smallest frontier value
+    if x_target < sorted_points[0][0]:
+        # Option 1: Return cost of the first point (step function)
+        # return sorted_points[0][1]
+        # Option 2: Linear extrapolation from first two points (if available)
+        if len(sorted_points) >= 2:
+            x1, y1 = sorted_points[0]
+            x2, y2 = sorted_points[1]
+            if x2 - x1 != 0: # Avoid division by zero
+                 return y1 + (x_target - x1) * (y2 - y1) / (x2 - x1)
+            return y1 # Fallback to first point's cost
+        return sorted_points[0][1] # Fallback if only one point
+
+    # Extrapolation: target is greater than the largest frontier value
+    if x_target > sorted_points[-1][0]:
+        # Option 1: Return cost of the last point (step function)
+        # return sorted_points[-1][1]
+        # Option 2: Linear extrapolation from last two points (if available)
+        if len(sorted_points) >= 2:
+            x1, y1 = sorted_points[-2]
+            x2, y2 = sorted_points[-1]
+            if x2 - x1 != 0: # Avoid division by zero
+                return y1 + (x_target - x1) * (y2 - y1) / (x2 - x1)
+            return y2 # Fallback to last point's cost
+        return sorted_points[-1][1] # Fallback if only one point
+
+    # Interpolation
+    for i in range(len(sorted_points) - 1):
+        x1, y1 = sorted_points[i]
+        x2, y2 = sorted_points[i+1]
+        if x1 <= x_target < x2: # x_target is between x1 and x2
+            if x2 - x1 == 0: # Should not happen in a well-formed frontier
+                return y1 
+            return y1 + (x_target - x1) * (y2 - y1) / (x2 - x1)
+    
+    # Should not be reached if logic is correct and sorted_points is not empty
+    # but as a fallback, maybe return cost of nearest point or None
+    logger.warning(f"Estimate_value_on_visual_frontier: Value {x_target} fell through interpolation logic. Points: {sorted_points}")
+    return None
+
+
+def format_other_core_specs_string(plan_row, feature_analyzed, core_continuous_features, feature_units_map, unlimited_flags_map):
+    """Formats the 'Other Core Specs' string for the residual analysis table."""
+    parts = []
+    # Ensure plan_row is a Series or dict
+    if isinstance(plan_row, pd.DataFrame):
+        if len(plan_row) == 1:
+            plan_row = plan_row.iloc[0]
+        else:
+            return "Error: Invalid plan_row"
+
+    for f_col in core_continuous_features:
+        if f_col == feature_analyzed:
+            continue
+        
+        if f_col not in plan_row: # Check if feature exists in the plan data
+            parts.append(f"N/A {feature_units_map.get(f_col, '')}".strip())
+            continue
+
+        value = plan_row[f_col]
+        unit = feature_units_map.get(f_col, "")
+        
+        is_unlimited = False
+        unlimited_flag_col = unlimited_flags_map.get(f_col)
+        if unlimited_flag_col and unlimited_flag_col in plan_row and plan_row[unlimited_flag_col]:
+            is_unlimited = True
+
+        if is_unlimited:
+            # For unlimited, check if the base feature column (e.g., basic_data_clean) has a numeric value.
+            # If it does (e.g., some plans might list a high number for "unlimited" in the numeric col), use it.
+            # Otherwise, just say "Unlimited".
+            if pd.notna(value) and isinstance(value, (int, float)) and value > 0: # and value might be a very high number for "unlimited"
+                 parts.append(f"Unlimited ({value} {unit})".strip())
+            else:
+                 parts.append(f"Unlimited {unit}".strip())
+        elif pd.notna(value) and isinstance(value, (int,float)):
+            parts.append(f"{value:.1f} {unit}".strip() if isinstance(value, float) else f"{value} {unit}".strip())
+        else: # Handles None, NaN, or non-numeric strings not caught by unlimited
+            parts.append(f"N/A {unit}".strip())
+            
+    specs_str = " + ".join(filter(None, parts)) # filter(None,...) in case any part becomes empty
+    
+    total_original_fee_val = plan_row.get('original_fee', 0)
+    if pd.notna(total_original_fee_val):
+        total_original_fee_str = f"{total_original_fee_val:,.0f} KRW"
+    else:
+        total_original_fee_str = "N/A KRW"
+        
+    return f"{specs_str} = {total_original_fee_str}"
+
 
 def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile Plan Rankings"):
     """Generate an HTML report of the rankings.
@@ -180,19 +343,30 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 })
         
         # Step 2: Build the true monotonic frontier (strictly increasing cost, based on cost_metric_for_visualization)
-        actual_frontier_stack = []
-        for candidate in candidate_points_details:
-            while actual_frontier_stack and candidate['cost'] < actual_frontier_stack[-1]['cost']:
-                actual_frontier_stack.pop()
+        actual_frontier_stack_tuples = [] # Stores (value, cost) tuples
+        # candidate_points_details contains dicts: {'value': ..., 'cost': ..., 'plan_name': ...}
+        # Sort candidates by value, then by cost (cost already used for idxmin)
+        sorted_candidate_details = sorted(candidate_points_details, key=lambda c: (c['value'], c['cost']))
+
+        for candidate in sorted_candidate_details:
+            # Using candidate['cost'] which is original_fee
+            while actual_frontier_stack_tuples and candidate['cost'] < actual_frontier_stack_tuples[-1][1]: # Compare with cost (index 1)
+                actual_frontier_stack_tuples.pop()
             
-            if not actual_frontier_stack:
-                actual_frontier_stack.append(candidate)
+            if not actual_frontier_stack_tuples:
+                actual_frontier_stack_tuples.append((candidate['value'], candidate['cost']))
             else:
-                last_frontier_point = actual_frontier_stack[-1]
-                if (candidate['value'] > last_frontier_point['value'] and
-                    candidate['cost'] > last_frontier_point['cost'] and
-                    (candidate['cost'] - last_frontier_point['cost']) >= 1.0):
-                    actual_frontier_stack.append(candidate)
+                last_frontier_val, last_frontier_cost = actual_frontier_stack_tuples[-1]
+                if (candidate['value'] > last_frontier_val and
+                    candidate['cost'] > last_frontier_cost and
+                    (candidate['cost'] - last_frontier_cost) >= 1.0): # cost is original_fee
+                    actual_frontier_stack_tuples.append((candidate['value'], candidate['cost']))
+                # Handle plateaus: if value increases but cost is same, keep the one with lower value (already handled by sorted_candidate_details and "<" logic)
+                # If candidate value is same as last, but cost is higher, it's not on frontier.
+                # If candidate value is same and cost is same, it's a duplicate candidate for same value point, idxmin should have picked one.
+        
+        visual_frontiers_for_residual_table = {}
+        visual_frontiers_for_residual_table[feature] = actual_frontier_stack_tuples # Store (value, original_fee) tuples
 
         # Step 3: Classify all points from df_for_frontier based on the visual frontier
         frontier_feature_values = []
@@ -207,7 +381,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         other_visual_costs = [] # Renamed
         other_plan_names = []
 
-        true_frontier_set_tuples = set((p['value'], p['cost'], p['plan_name']) for p in actual_frontier_stack)
+        true_frontier_set_tuples = set((p['value'], p['cost'], p['plan_name']) for p in actual_frontier_stack_tuples)
         
         candidate_tuples_for_exclusion_check = set((p['value'], p['cost'], p['plan_name']) for p in candidate_points_details)
 
@@ -247,7 +421,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         
         for i in range(len(excluded_feature_values)):
             all_values_for_js.append(excluded_feature_values[i])
-            all_visual_costs_for_js.append(excluded_visual_costs[i]) # Using original_fee based list
+            all_visual_costs_for_js.append(excluded_visual_costs[i])
             all_plan_names_for_js.append(excluded_plan_names[i])
             all_is_frontier_for_js.append(False)
             all_is_excluded_for_js.append(True)
@@ -350,26 +524,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 for idx, plan_tuple in enumerate(candidate_plans_min_fee.iterrows()):
                     # iterrows() yields (index, Series), so plan_row is the Series
                     plan_index, plan_row = plan_tuple 
-                    current_richness_score = 0
-                    for other_feat in core_continuous_features:
-                        if other_feat == feature_analyzed:
-                            continue
-                        
-                        value = plan_row.get(other_feat)
-                        is_unlimited = False
-                        unlimited_flag_for_other_feat = UNLIMITED_FLAGS.get(other_feat)
-                        if unlimited_flag_for_other_feat and plan_row.get(unlimited_flag_for_other_feat) == 1:
-                            is_unlimited = True
-                        elif other_feat == 'speed_when_exhausted' and plan_row.get('has_unlimited_speed') == 1:
-                            is_unlimited = True
-                        
-                        if is_unlimited:
-                            current_richness_score += 100 # High score for unlimited
-                        elif pd.notna(value) and isinstance(value, (int, float)) and value > 0:
-                            current_richness_score += 10  # Moderate score for active numeric value
-                        elif pd.notna(value): # E.g. 0 is a valid value, gets a small score
-                            current_richness_score += 1   # Small score for present but zero/non-positive value
-                        # NA values contribute 0 to richness
+                    current_richness_score = get_richness_score(plan_row, [f for f in core_continuous_features if f != feature_analyzed], core_continuous_features, UNLIMITED_FLAGS)
 
                     if current_richness_score > max_richness_score:
                         max_richness_score = current_richness_score
