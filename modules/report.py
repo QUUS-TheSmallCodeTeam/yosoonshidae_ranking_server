@@ -511,22 +511,29 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     logger.info("Starting Residual Original Fee Analysis (from Visual Frontier Minimums).")
 
     for feature_analyzed in core_continuous_features:
-        if feature_analyzed not in df.columns: # Check against the main df
-            logger.warning(f"Feature '{feature_analyzed}' for residual analysis not in DataFrame, skipping.")
+        # Diagnostic logging for the condition
+        logger.info(f"RES-ANALYSIS: Checking feature_analyzed = '{feature_analyzed}'")
+        is_feature_in_all_chart_data = feature_analyzed in all_chart_data
+        logger.info(f"RES-ANALYSIS: '{feature_analyzed}' in all_chart_data? {is_feature_in_all_chart_data}")
+        if is_feature_in_all_chart_data:
+            has_key_actual_frontier_series = 'actual_frontier_plans_series' in all_chart_data[feature_analyzed]
+            logger.info(f"RES-ANALYSIS: 'actual_frontier_plans_series' in all_chart_data['{feature_analyzed}']? {has_key_actual_frontier_series}")
+            if has_key_actual_frontier_series:
+                series_list_length = len(all_chart_data[feature_analyzed]['actual_frontier_plans_series'])
+                logger.info(f"RES-ANALYSIS: Length of all_chart_data['{feature_analyzed}']['actual_frontier_plans_series']: {series_list_length}")
+            else:
+                logger.info(f"RES-ANALYSIS: Key 'actual_frontier_plans_series' is MISSING for '{feature_analyzed}'.")
+        else:
+            logger.info(f"RES-ANALYSIS: Feature '{feature_analyzed}' is MISSING from all_chart_data keys.")
+
+        if feature_analyzed not in all_chart_data or \
+           'actual_frontier_plans_series' not in all_chart_data[feature_analyzed] or \
+           not all_chart_data[feature_analyzed]['actual_frontier_plans_series']:
+            logger.warning(f"Visual frontier plan series for '{feature_analyzed}' not found or empty (Final Check). Skipping in residual table.")
             continue
         if feature_analyzed not in FEATURE_DISPLAY_NAMES_PY:
             logger.warning(f"Display name for '{feature_analyzed}' not found. Skipping in residual table.")
             continue
-        if feature_analyzed not in feature_frontier_data or \
-           'actual_frontier_plans_series' not in feature_frontier_data[feature_analyzed] or \
-           not feature_frontier_data[feature_analyzed]['actual_frontier_plans_series']:
-            logger.warning(f"Visual frontier plan series for '{feature_analyzed}' not found or empty. Skipping in residual table.")
-            continue
-        if feature_analyzed not in visual_frontiers_for_residual_table or \
-           not visual_frontiers_for_residual_table[feature_analyzed]:
-            logger.warning(f"Visual frontier (value,cost) tuples for '{feature_analyzed}' not found or empty. Skipping for other cost estimations.")
-            # We might still proceed if the target plan can be found, but estimating other costs will fail.
-            # For now, let's be strict. If any part needed for full calculation is missing, we might skip the row or mark it.
 
         # 1. Get the list of plans on the visual frontier for the current feature_analyzed
         current_feature_frontier_plans = feature_frontier_data[feature_analyzed]['actual_frontier_plans_series']
