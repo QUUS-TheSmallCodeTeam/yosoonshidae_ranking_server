@@ -498,6 +498,14 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         else:
             logger.warning(f"No frontier, excluded, or unlimited points found for {feature} using '{cost_metric_for_visualization}', skipping chart data preparation")
     
+    # Log the state of all_chart_data after the loop
+    logger.info("Finished populating all_chart_data for charts. Checking contents before residual analysis.")
+    for f_key, f_data in all_chart_data.items():
+        if 'actual_frontier_plans_series' in f_data:
+            logger.info(f"  Feature '{f_key}' in all_chart_data has {len(f_data['actual_frontier_plans_series'])} series in 'actual_frontier_plans_series'.")
+        else:
+            logger.warning(f"  Feature '{f_key}' in all_chart_data is MISSING 'actual_frontier_plans_series' key.")
+
     # --- Start: New section for Residual Analysis Data Preparation ---
     residual_analysis_table_data = []
     logger.info("Starting Residual Original Fee Analysis (from Visual Frontier Minimums).")
