@@ -139,76 +139,59 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         
         # If unlimited flag exists, extract unlimited value data
         if unlimited_flag and unlimited_flag in df.columns:
-            unlimited_plans = df[df[unlimited_flag] == 1]
-            if not unlimited_plans.empty:
+            unlimited_plans_df = df[df[unlimited_flag] == 1] # Renamed to avoid conflict
+            if not unlimited_plans_df.empty:
                 has_unlimited_data = True
-                # Find the minimum fee among unlimited plans (like in cost_spec.py)
-                min_fee_idx = unlimited_plans['fee'].idxmin()
-                unlimited_min_fee = unlimited_plans.loc[min_fee_idx, 'fee']
-                unlimited_min_plan = unlimited_plans.loc[min_fee_idx, 'plan_name'] if 'plan_name' in unlimited_plans.columns else "Unknown"
-                
+                min_fee_idx = unlimited_plans_df['fee'].idxmin()
+                unlimited_min_fee = unlimited_plans_df.loc[min_fee_idx, 'fee']
+                unlimited_min_plan = unlimited_plans_df.loc[min_fee_idx, 'plan_name'] if 'plan_name' in unlimited_plans_df.columns else "Unknown"
                 logger.info(f"Found unlimited {feature} with minimum fee {unlimited_min_fee} from plan '{unlimited_min_plan}'")
-                
-                # Filter out unlimited plans for regular frontier calculation
                 df_for_frontier = df[df[unlimited_flag] == 0].copy()
             else:
                 df_for_frontier = df.copy()
         else:
             df_for_frontier = df.copy()
         
-        # Collect all unique feature values and their contributions
-        feature_values = []
-        contribution_values = []
-        is_frontier_points = []
-        is_excluded_points = []
-        plan_names = []
-        
-        # Group plans by feature value and get minimum contribution
-        # This simulates how the frontier is calculated
-        grouped = df_for_frontier.groupby(feature)[contribution_col].min().reset_index()
-        
-        # Sort by feature value (ascending)
-        grouped = grouped.sort_values(feature)
-        
-        # Apply proper monotonicity check - strictly increasing
-        min_cost_so_far = float('-inf')  # Start with negative infinity to ensure first point is frontier
-        last_frontier_cost = float('-inf')
-        
-        # For each unique feature value, identify if it's a frontier point
-        for _, row in grouped.iterrows():
-            feature_value = row[feature]
-            contribution = row[contribution_col]
+        # Step 1: Get all unique feature values and their minimum contributions (candidate points)
+        # from the non-unlimited data.
+        candidate_points_details = []
+        if not df_for_frontier.empty:
+            # Group by feature, then for each group, find the row with the minimum contribution_col
+            # This handles ties by taking the first one found by min()
+            min_cost_indices = df_for_frontier.loc[df_for_frontier.groupby(feature)[contribution_col].idxmin()].index
+            min_cost_candidates_df = df_for_frontier.loc[min_cost_indices]
             
-            # This is the minimum for this feature value (initial candidate for frontier)
-            is_min_for_value = True
-            
-            # Check if this point should be on the frontier (strictly increasing)
-            is_frontier = contribution > last_frontier_cost
-            is_excluded = not is_frontier and is_min_for_value
-            
-            if is_frontier:
-                last_frontier_cost = contribution
-            
-            # Add data point
-            feature_values.append(feature_value)
-            contribution_values.append(contribution)
-            is_frontier_points.append(is_frontier)
-            is_excluded_points.append(is_excluded)
-            
-            # Find a plan with this feature value and contribution for display
-            matching_plans = df_for_frontier[(df_for_frontier[feature] == feature_value) & 
-                               (df_for_frontier[contribution_col] == contribution)]
-            plan_name = matching_plans.iloc[0]['plan_name'] if not matching_plans.empty else "Unknown"
-            plan_names.append(plan_name)
+            # Sort these candidates by feature value
+            min_cost_candidates_df = min_cost_candidates_df.sort_values(by=[feature, contribution_col])
+
+            for _, row in min_cost_candidates_df.iterrows():
+                candidate_points_details.append({
+                    'value': row[feature],
+                    'cost': row[contribution_col],
+                    'plan_name': row['plan_name'] if 'plan_name' in row else "Unknown"
+                })
         
-        # Keep all points, but separate frontier, excluded, and regular points for visualization
-        all_feature_values = []
-        all_contribution_values = []
-        all_plan_names = []
-        all_is_frontier = []
-        all_is_excluded = []
-        all_is_unlimited = []
-        
+        # Step 2: Build the true monotonic frontier (strictly increasing cost)
+        actual_frontier_stack = []
+        for candidate in candidate_points_details:
+            # Prune: Remove points from stack if current candidate is better or makes them non-monotonic
+            # A point is removed if current candidate offers same/more feature for same/less cost,
+            # or simply if current candidate's cost is not strictly greater than stack top's cost.
+            while actual_frontier_stack and candidate['cost'] <= actual_frontier_stack[-1]['cost']:
+                actual_frontier_stack.pop()
+            
+            # Add current candidate if stack is empty or it's strictly more expensive than stack top
+            if not actual_frontier_stack or candidate['cost'] > actual_frontier_stack[-1]['cost']:
+                 # Also ensure feature value is increasing (it should be due to sort, but as a safeguard)
+                if not actual_frontier_stack or candidate['value'] > actual_frontier_stack[-1]['value']:
+                    actual_frontier_stack.append(candidate)
+                elif actual_frontier_stack and candidate['value'] == actual_frontier_stack[-1]['value'] and candidate['cost'] < actual_frontier_stack[-1]['cost']:
+                    # Same feature value, but cheaper cost - replace last point
+                    actual_frontier_stack.pop()
+                    actual_frontier_stack.append(candidate)
+
+
+        # Step 3: Classify all points from df_for_frontier
         frontier_feature_values = []
         frontier_contribution_values = []
         frontier_plan_names = []
@@ -220,39 +203,70 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         other_feature_values = []
         other_contribution_values = []
         other_plan_names = []
+
+        true_frontier_set_tuples = set((p['value'], p['cost'], p['plan_name']) for p in actual_frontier_stack)
         
-        # Add the unlimited value if it exists
-        if has_unlimited_data and unlimited_min_fee is not None:
-            all_feature_values.append(float('inf'))  # Use infinity for unlimited
-            all_contribution_values.append(float(unlimited_min_fee))
-            all_plan_names.append(unlimited_min_plan)
-            all_is_frontier.append(True)  # Unlimited is always on frontier
-            all_is_excluded.append(False)
-            all_is_unlimited.append(True)
-        
-        for i in range(len(feature_values)):
-            # Add to full dataset
-            all_feature_values.append(float(feature_values[i]))
-            all_contribution_values.append(float(contribution_values[i]))
-            all_plan_names.append(plan_names[i])
-            all_is_frontier.append(bool(is_frontier_points[i]))
-            all_is_excluded.append(bool(is_excluded_points[i]))
-            all_is_unlimited.append(False)  # Regular points aren't unlimited
-            
-            # Add to appropriate dataset
-            if bool(is_frontier_points[i]):
-                frontier_feature_values.append(float(feature_values[i]))
-                frontier_contribution_values.append(float(contribution_values[i]))
-                frontier_plan_names.append(plan_names[i])
-            elif bool(is_excluded_points[i]):
-                excluded_feature_values.append(float(feature_values[i]))
-                excluded_contribution_values.append(float(contribution_values[i]))
-                excluded_plan_names.append(plan_names[i])
+        # Candidate points (minimum for their value) that are not on the true frontier are "excluded"
+        candidate_tuples_for_exclusion_check = set((p['value'], p['cost'], p['plan_name']) for p in candidate_points_details)
+
+        for candidate in candidate_points_details:
+            if (candidate['value'], candidate['cost'], candidate['plan_name']) in true_frontier_set_tuples:
+                frontier_feature_values.append(float(candidate['value']))
+                frontier_contribution_values.append(float(candidate['cost']))
+                frontier_plan_names.append(candidate['plan_name'])
             else:
-                other_feature_values.append(float(feature_values[i]))
-                other_contribution_values.append(float(contribution_values[i]))
-                other_plan_names.append(plan_names[i])
+                excluded_feature_values.append(float(candidate['value']))
+                excluded_contribution_values.append(float(candidate['cost']))
+                excluded_plan_names.append(candidate['plan_name'])
         
+        # "Other" points are those in df_for_frontier that were not even minimums for their feature value
+        if not df_for_frontier.empty:
+            all_candidate_min_value_cost_pairs = set((p['value'], p['cost']) for p in candidate_points_details)
+            for _, row in df_for_frontier.iterrows():
+                f_val = row[feature]
+                c_cost = row[contribution_col]
+                p_name = row['plan_name'] if 'plan_name' in row else "Unknown"
+                # If this point (value, cost) was not among the minimums for its value, it's "other"
+                if (f_val, c_cost) not in all_candidate_min_value_cost_pairs:
+                    other_feature_values.append(float(f_val))
+                    other_contribution_values.append(float(c_cost))
+                    other_plan_names.append(p_name)
+        
+        # Prepare `all_...` lists for JS (contains only non-unlimited points here, JS adds unlimited separately)
+        # This part is primarily for logging and ensuring the JS gets distinct lists for each category.
+        # The JS constructs its datasets from these specific lists.
+        
+        all_values_for_js = []
+        all_contributions_for_js = []
+        all_plan_names_for_js = []
+        all_is_frontier_for_js = []
+        all_is_excluded_for_js = []
+        # all_is_unlimited is handled by 'has_unlimited' flag and separate unlimited data in JS
+
+        # Add frontier points
+        for i in range(len(frontier_feature_values)):
+            all_values_for_js.append(frontier_feature_values[i])
+            all_contributions_for_js.append(frontier_contribution_values[i])
+            all_plan_names_for_js.append(frontier_plan_names[i])
+            all_is_frontier_for_js.append(True)
+            all_is_excluded_for_js.append(False)
+        
+        # Add excluded points
+        for i in range(len(excluded_feature_values)):
+            all_values_for_js.append(excluded_feature_values[i])
+            all_contributions_for_js.append(excluded_contribution_values[i])
+            all_plan_names_for_js.append(excluded_plan_names[i])
+            all_is_frontier_for_js.append(False)
+            all_is_excluded_for_js.append(True)
+
+        # Add other points
+        for i in range(len(other_feature_values)):
+            all_values_for_js.append(other_feature_values[i])
+            all_contributions_for_js.append(other_contribution_values[i])
+            all_plan_names_for_js.append(other_plan_names[i])
+            all_is_frontier_for_js.append(False)
+            all_is_excluded_for_js.append(False)
+            
         # Count points for logging
         frontier_points_count = len(frontier_feature_values)
         excluded_points_count = len(excluded_feature_values)
@@ -261,15 +275,17 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         
         logger.info(f"Identified {frontier_points_count} frontier points, {excluded_points_count} excluded points, {other_points_count} other points, and {unlimited_count} unlimited point for {feature}")
         
-        # Add to feature frontier data (only if we have any points)
-        if len(all_feature_values) > 0:
+        # Add to feature frontier data (only if we have any points or an unlimited point)
+        if frontier_points_count > 0 or excluded_points_count > 0 or other_points_count > 0 or has_unlimited_data:
             feature_frontier_data[feature] = {
-                'all_values': all_feature_values,
-                'all_contributions': all_contribution_values,
-                'all_is_frontier': all_is_frontier,
-                'all_is_excluded': all_is_excluded,
-                'all_is_unlimited': all_is_unlimited,
-                'all_plan_names': all_plan_names,
+                # These 'all_' lists are less critical now as JS uses specific ones, but can be kept for consistency or debugging
+                'all_values': all_values_for_js, 
+                'all_contributions': all_contributions_for_js,
+                'all_is_frontier': all_is_frontier_for_js,
+                'all_is_excluded': all_is_excluded_for_js,
+                'all_is_unlimited': [data['has_unlimited'] and val == float('inf') for val in all_values_for_js], # Reconstruct for all_values if needed
+                'all_plan_names': all_plan_names_for_js,
+                
                 'frontier_values': frontier_feature_values,
                 'frontier_contributions': frontier_contribution_values,
                 'frontier_plan_names': frontier_plan_names,
@@ -283,10 +299,10 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 'unlimited_value': unlimited_min_fee if has_unlimited_data else None,
                 'unlimited_plan': unlimited_min_plan if has_unlimited_data else None
             }
-            logger.info(f"Added {len(all_feature_values)} points for {feature} to chart data")
+            logger.info(f"Added data for {feature} to chart data. Frontier: {frontier_points_count}, Excluded: {excluded_points_count}, Other: {other_points_count}, Unlimited: {unlimited_count}")
         else:
-            logger.warning(f"No points found for {feature}, skipping chart")
-    
+            logger.warning(f"No points found for {feature} (including unlimited), skipping chart data preparation")
+
     # Serialize feature frontier data to JSON
     try:
         feature_frontier_json = json.dumps(feature_frontier_data, cls=NumpyEncoder)

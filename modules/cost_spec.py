@@ -39,141 +39,115 @@ UNLIMITED_FLAGS = {
 # Use all features for frontier calculation, not just core ones
 CORE_FEATURES = FEATURE_SETS['basic']
 
-def create_monotonic_frontier(x: pd.Series, y: pd.Series) -> pd.Series:
+def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame, 
+                                   feature_col: str, 
+                                   cost_col: str) -> pd.Series:
     """
-    Create a monotonic frontier where y values never decrease as x increases.
-    
+    Create a robust, strictly increasing monotonic frontier for a given feature.
+    This ensures the frontier "crawls the bottom" of optimal points.
+
     Args:
-        x: Series of x values (feature values, sorted)
-        y: Series of y values (fees)
-        
+        df_feature_specific: DataFrame filtered for non-unlimited values of the specific feature.
+        feature_col: The name of the feature column (e.g., 'basic_data_clean').
+        cost_col: The name of the column representing the cost for that feature (e.g., 'fee' or 'contribution_feature').
+                  For calculate_feature_frontiers, this will typically be the overall plan 'fee'.
+
     Returns:
-        Series of frontier y values indexed by x
+        A pandas Series where the index is the feature value and the values are the frontier costs.
     """
-    if len(x) == 0 or len(y) == 0:
-        return pd.Series()
+    if df_feature_specific.empty:
+        return pd.Series(dtype=float)
+
+    # Step 1: Identify candidate points (minimum cost for each unique feature value)
+    # Sort by feature_col, then by cost_col to handle ties consistently (though idxmin handles it)
+    candidate_points_df = df_feature_specific.loc[df_feature_specific.groupby(feature_col)[cost_col].idxmin()]
+    candidate_points_df = candidate_points_df.sort_values(by=[feature_col, cost_col])
     
-    # Ensure x and y are sorted by x
-    sorted_idx = np.argsort(x)
-    x_sorted = x.iloc[sorted_idx]
-    y_sorted = y.iloc[sorted_idx]
-    
-    # Create a dictionary to store frontier points
-    frontier_points = {}
-    
-    # Start with the lowest x value
-    current_min_y = y_sorted.iloc[0]
-    frontier_points[x_sorted.iloc[0]] = current_min_y
-    
-    # Iterate through remaining points
-    for i in range(1, len(x_sorted)):
-        x_val = x_sorted.iloc[i]
-        y_val = y_sorted.iloc[i]
+    candidate_details = []
+    for _, row in candidate_points_df.iterrows():
+        candidate_details.append({
+            'value': row[feature_col],
+            'cost': row[cost_col]
+            # We don't need plan_name here for cost_spec.py's frontier generation
+        })
+
+    # Step 2: Build the true monotonic frontier (strictly increasing cost) using a stack
+    actual_frontier_stack = []
+    for candidate in candidate_details:
+        # Prune: Remove points from stack if current candidate makes them non-optimal or non-monotonic
+        while actual_frontier_stack and candidate['cost'] <= actual_frontier_stack[-1]['cost']:
+            actual_frontier_stack.pop()
         
-        # If we find a cheaper price for a higher feature value, update our frontier
-        if y_val < current_min_y:
-            # This violates monotonicity - keep the previous minimum
-            frontier_points[x_val] = current_min_y
-        else:
-            # Price is higher than current minimum, respects monotonicity
-            frontier_points[x_val] = y_val
-            current_min_y = y_val
-    
-    # Convert to pandas Series
-    return pd.Series(frontier_points)
+        # Add current candidate if stack is empty or it's strictly more expensive and has a higher feature value
+        if not actual_frontier_stack or \
+           (candidate['cost'] > actual_frontier_stack[-1]['cost'] and candidate['value'] > actual_frontier_stack[-1]['value']): 
+            actual_frontier_stack.append(candidate)
+        elif actual_frontier_stack and candidate['value'] == actual_frontier_stack[-1]['value'] and candidate['cost'] < actual_frontier_stack[-1]['cost']:
+            # Edge case: Same feature value, but this new candidate is cheaper (should ideally not happen if idxmin is perfect for this, but good safeguard)
+            actual_frontier_stack.pop()
+            actual_frontier_stack.append(candidate)
+            
+    if not actual_frontier_stack:
+        return pd.Series(dtype=float)
+
+    # Convert stack to pandas Series
+    frontier_s = pd.Series({p['value']: p['cost'] for p in actual_frontier_stack})
+    frontier_s = frontier_s.sort_index() # Ensure it's sorted by feature value
+    return frontier_s
 
 def calculate_feature_frontiers(df: pd.DataFrame, features: List[str], 
                               unlimited_flags: Dict[str, str], 
                               fee_column: str = 'fee') -> Dict[str, pd.Series]:
     """
-    Compute cost frontiers for each feature with monotonicity constraints.
-    
-    Args:
-        df: DataFrame with plan data
-        features: List of feature columns to consider
-        unlimited_flags: Mapping of feature columns to their unlimited flag columns
-        fee_column: Column containing the fee to use
-        
-    Returns:
-        Dictionary mapping features to their cost frontiers
+    Compute cost frontiers for each feature using the robust monotonicity logic.
+    The `fee_column` here is the overall plan fee, used to establish the initial feature cost frontiers.
     """
     frontiers = {}
     
-    # Process each feature and create appropriate frontiers
     for feature in features:
-        # Skip if feature not in dataframe
         if feature not in df.columns:
-            logger.warning(f"Feature {feature} not found in dataframe, skipping")
+            logger.warning(f"Feature {feature} not found in dataframe for frontier calculation, skipping")
             continue
 
-        # Skip unlimited flag columns - they'll be handled with their corresponding features
-        if feature in unlimited_flags.values():
+        if feature in unlimited_flags.values(): # Skip flag columns themselves
             continue
 
-        # Check if this feature has an unlimited flag
         unlimited_flag = unlimited_flags.get(feature)
-        
-        # Check if this is a continuous feature (typically those with unlimited flags)
-        is_continuous = unlimited_flag in unlimited_flags.values() if unlimited_flag else False
-        
+        df_for_current_feature_frontier = df # Start with the whole df
+
         if unlimited_flag and unlimited_flag in df.columns:
-            # For features with unlimited options, handle non-unlimited values first
-            not_unlimited = df[df[unlimited_flag] == 0].copy()
-            
-            if not not_unlimited.empty:
-                # Sort by feature value and find minimum fee at each value
-                feature_min_fees = not_unlimited.groupby(feature)[fee_column].min()
-                
-                if is_continuous:
-                    # For continuous features, create monotonic frontier
-                    feature_values = feature_min_fees.index
-                    feature_fees = feature_min_fees.values
-                    
-                    # Create Series for easier manipulation
-                    x = pd.Series(feature_values)
-                    y = pd.Series(feature_fees)
-                    
-                    # Generate monotonic frontier
-                    frontier = create_monotonic_frontier(x, y)
-                    frontiers[feature] = frontier
-                    
-                    logger.info(f"Created monotonic frontier for {feature} with {len(frontier)} points")
+            # Handle non-unlimited part first
+            df_non_unlimited = df[df[unlimited_flag] == 0].copy()
+            if not df_non_unlimited.empty:
+                # For features with an unlimited option, the frontier is built from non-unlimited values using their plan fees.
+                # The cost_col for create_robust_monotonic_frontier is fee_column (overall plan fee)
+                robust_frontier = create_robust_monotonic_frontier(df_non_unlimited, feature, fee_column)
+                if not robust_frontier.empty:
+                    frontiers[feature] = robust_frontier
+                    logger.info(f"Created ROBUST monotonic frontier for {feature} with {len(robust_frontier)} points")
                 else:
-                    # For categorical features, use minimum fees directly
-                    frontiers[feature] = feature_min_fees
-                    logger.info(f"Created feature costs for {feature} with {len(feature_min_fees)} values")
-            
-            # Handle unlimited feature values separately
-            unlimited_plans = df[df[unlimited_flag] == 1]
-            if not unlimited_plans.empty:
-                # For unlimited features, use the minimum fee among unlimited plans
-                min_fee_unlimited = unlimited_plans[fee_column].min()
-                # Add as a special case with a dedicated key
-                frontiers[unlimited_flag] = pd.Series([min_fee_unlimited])
-                
-                logger.info(f"Added unlimited case for {feature} with fee {min_fee_unlimited}")
-        else:
-            # For features without unlimited options, use the minimum fee for each value
-            feature_min_fees = df.groupby(feature)[fee_column].min()
-            
-            # Determine if this is likely a continuous feature (more than 5 unique values)
-            if len(feature_min_fees) > 5:
-                # Treat as continuous, create monotonic frontier
-                feature_values = feature_min_fees.index
-                feature_fees = feature_min_fees.values
-                
-                x = pd.Series(feature_values)
-                y = pd.Series(feature_fees)
-                
-                frontier = create_monotonic_frontier(x, y)
-                frontiers[feature] = frontier
-                
-                logger.info(f"Created monotonic frontier for {feature} with {len(frontier)} points")
+                    logger.warning(f"Robust frontier for {feature} is empty.")
             else:
-                # Treat as categorical/binary
-                frontiers[feature] = feature_min_fees
-                logger.info(f"Created feature costs for {feature} with {len(feature_min_fees)} values")
-    
+                logger.info(f"No non-unlimited plans for {feature} to build its main frontier.")
+            
+            # Handle unlimited part: minimum fee of plans with the flag set
+            unlimited_plans_df = df[df[unlimited_flag] == 1]
+            if not unlimited_plans_df.empty:
+                min_fee_unlimited = unlimited_plans_df[fee_column].min()
+                frontiers[unlimited_flag] = pd.Series([min_fee_unlimited]) # Store under the flag's name
+                logger.info(f"Added unlimited case for {feature} (as {unlimited_flag}) with fee {min_fee_unlimited}")
+            else:
+                logger.info(f"No unlimited plans found for {feature} (flag: {unlimited_flag})")
+
+        else: # Feature does not have an unlimited flag
+            # Frontier is built from all values of this feature using their plan fees.
+            robust_frontier = create_robust_monotonic_frontier(df, feature, fee_column)
+            if not robust_frontier.empty:
+                frontiers[feature] = robust_frontier
+                logger.info(f"Created ROBUST monotonic frontier for {feature} (no unlimited option) with {len(robust_frontier)} points")
+            else:
+                logger.warning(f"Robust frontier for {feature} (no unlimited option) is empty.")
+                
     return frontiers
 
 def estimate_frontier_value(feature_value: float, frontier: pd.Series) -> float:
