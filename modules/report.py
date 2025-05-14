@@ -10,6 +10,20 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import json
+import numpy as np
+
+# Custom JSON encoder to handle NumPy types
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        return super(NumpyEncoder, self).default(obj)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -164,10 +178,10 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             all_feature_values.append(float(feature_values[i]))
             all_contribution_values.append(float(contribution_values[i]))
             all_plan_names.append(plan_names[i])
-            all_is_frontier.append(is_frontier_points[i])
+            all_is_frontier.append(bool(is_frontier_points[i]))  # Convert to native Python boolean
             
             # Add to frontier or non-frontier dataset
-            if is_frontier_points[i]:
+            if bool(is_frontier_points[i]):  # Convert to Python boolean
                 frontier_feature_values.append(float(feature_values[i]))
                 frontier_contribution_values.append(float(contribution_values[i]))
                 frontier_plan_names.append(plan_names[i])
@@ -202,7 +216,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     
     # Serialize feature frontier data to JSON
     try:
-        feature_frontier_json = json.dumps(feature_frontier_data)
+        feature_frontier_json = json.dumps(feature_frontier_data, cls=NumpyEncoder)
         logger.info(f"Successfully serialized frontier data: {len(feature_frontier_data)} features included")
     except Exception as e:
         logger.error(f"Error serializing feature frontier data: {e}")
