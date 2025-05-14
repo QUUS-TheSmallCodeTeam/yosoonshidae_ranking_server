@@ -103,15 +103,15 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
     frontier_s = frontier_s.sort_index() # Ensure it's sorted by feature value
     return frontier_s
 
-def calculate_feature_frontiers(df: pd.DataFrame, features: List[str], 
-                              unlimited_flags: Dict[str, str], 
+def calculate_feature_frontiers(df: pd.DataFrame, features: List[str],
+                              unlimited_flags: Dict[str, str],
                               fee_column: str = 'fee') -> Dict[str, pd.Series]:
     """
     Compute cost frontiers for each feature using the robust monotonicity logic.
     The `fee_column` here is the overall plan fee, used to establish the initial feature cost frontiers.
     """
     frontiers = {}
-    
+
     # Define the cost column to be used for creating feature frontiers.
     # This should be 'original_fee' as per the new requirement for B calculation.
     cost_col_for_frontier_creation = 'original_fee'
@@ -129,8 +129,9 @@ def calculate_feature_frontiers(df: pd.DataFrame, features: List[str],
             continue
 
         unlimited_flag = unlimited_flags.get(feature)
-        
+
         if unlimited_flag and unlimited_flag in df.columns:
+            # Process non-unlimited plans for this feature
             df_non_unlimited = df[(df[unlimited_flag] == 0) & df[cost_col_for_frontier_creation].notna()].copy()
             if not df_non_unlimited.empty:
                 robust_frontier = create_robust_monotonic_frontier(df_non_unlimited, feature, cost_col_for_frontier_creation)
@@ -139,29 +140,31 @@ def calculate_feature_frontiers(df: pd.DataFrame, features: List[str],
                     logger.info(f"Created ROBUST monotonic frontier for {feature} with {len(robust_frontier)} points using '{cost_col_for_frontier_creation}'")
                 else:
                     logger.warning(f"Robust frontier for {feature} (using '{cost_col_for_frontier_creation}') is empty.")
-            else:
+            else: # This else corresponds to `if not df_non_unlimited.empty:`
                 logger.info(f"No non-unlimited plans with valid '{cost_col_for_frontier_creation}' for {feature} to build its main frontier.")
-            
+
+            # Process unlimited plans for this feature
             unlimited_plans_df = df[(df[unlimited_flag] == 1) & df[cost_col_for_frontier_creation].notna()]
             if not unlimited_plans_df.empty:
                 min_cost_unlimited = unlimited_plans_df[cost_col_for_frontier_creation].min()
                 frontiers[unlimited_flag] = pd.Series([min_cost_unlimited])
                 logger.info(f"Added unlimited case for {feature} (as {unlimited_flag}) with '{cost_col_for_frontier_creation}' {min_cost_unlimited}")
-            else:
+            else: # This else corresponds to `if not unlimited_plans_df.empty:` for unlimited_plans_df
                 logger.info(f"No unlimited plans with valid '{cost_col_for_frontier_creation}' found for {feature} (flag: {unlimited_flag})")
 
-        else:  # Feature does not have an unlimited flag
+        else:  # This else corresponds to `if unlimited_flag and unlimited_flag in df.columns:`
+            # Feature does not have an unlimited flag
             df_feature_specific = df[df[cost_col_for_frontier_creation].notna()].copy()
             if not df_feature_specific.empty:
                 robust_frontier = create_robust_monotonic_frontier(df_feature_specific, feature, cost_col_for_frontier_creation)
                 if not robust_frontier.empty:
                     frontiers[feature] = robust_frontier
                     logger.info(f"Created ROBUST monotonic frontier for {feature} (no unlimited option, using '{cost_col_for_frontier_creation}') with {len(robust_frontier)} points")
-                else:  # This else corresponds to `if not robust_frontier.empty:`
+                else:  # This else corresponds to `if not robust_frontier.empty:` for robust_frontier
                     logger.warning(f"Robust frontier for {feature} (no unlimited option, using '{cost_col_for_frontier_creation}') is empty.")
             else:  # This else corresponds to `if not df_feature_specific.empty:`
                 logger.warning(f"No plans with valid '{cost_col_for_frontier_creation}' for {feature} (no unlimited option) to build frontier.")
-    
+
     return frontiers
 
 def estimate_frontier_value(feature_value: float, frontier: pd.Series) -> float:

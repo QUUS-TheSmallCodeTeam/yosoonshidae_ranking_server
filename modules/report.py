@@ -318,64 +318,150 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     
     # --- Start: New section for Residual Analysis Data Preparation ---
     residual_analysis_table_data = []
-    if feature_frontier_data: # Only proceed if there's chart data
-        for feature_analyzed, data_for_feature_chart in feature_frontier_data.items():
-            if data_for_feature_chart.get('frontier_values') and data_for_feature_chart['frontier_values']:
-                # Get the plan at the minimum point of this feature's visual frontier
-                min_frontier_plan_name = data_for_feature_chart['frontier_plan_names'][0]
-                min_frontier_feature_value_cost = data_for_feature_chart['frontier_contributions'][0] # This is original_fee based
+    # Use the original df for finding plans with absolute minimums of each core feature
+    # Ensure 'original_fee' is present, as it's crucial for this analysis
+    if 'original_fee' not in df.columns:
+        logger.error("'original_fee' column missing from DataFrame, cannot perform residual analysis.")
+    else:
+        for feature_analyzed in core_continuous_features: 
+            if feature_analyzed not in df.columns:
+                logger.warning(f"Feature '{feature_analyzed}' for residual analysis not in DataFrame, skipping.")
+                continue
 
-                # Find this plan in the original dataframe
-                plan_row_series = df[df['plan_name'] == min_frontier_plan_name]
+            min_feature_val = df[feature_analyzed].min()
+            candidate_plans_min_feature_val = df[df[feature_analyzed] == min_feature_val]
 
-                if not plan_row_series.empty:
-                    plan_row = plan_row_series.iloc[0]
-                    plan_total_original_fee = plan_row.get('original_fee', 0)
-                    
-                    residual_original_fee = plan_total_original_fee - min_frontier_feature_value_cost
-                    
-                    other_specs_list = []
-                    for core_feat in core_continuous_features: # core_continuous_features defined earlier
-                        if core_feat == feature_analyzed: # Skip the feature being analyzed for this row
+            if candidate_plans_min_feature_val.empty:
+                logger.info(f"No plans found with minimum value for '{feature_analyzed}', skipping for residual analysis.")
+                continue
+            
+            # First tie-break: lowest 'original_fee'
+            min_original_fee = candidate_plans_min_feature_val['original_fee'].min()
+            candidate_plans_min_fee = candidate_plans_min_feature_val[candidate_plans_min_feature_val['original_fee'] == min_original_fee]
+
+            target_plan_row_series = None
+            if len(candidate_plans_min_fee) == 1:
+                target_plan_row_series = candidate_plans_min_fee.iloc[0]
+            elif len(candidate_plans_min_fee) > 1:
+                # Second tie-break: "richness score" based on other features
+                best_plan_idx = -1
+                max_richness_score = -1
+
+                for idx, plan_tuple in enumerate(candidate_plans_min_fee.iterrows()):
+                    # iterrows() yields (index, Series), so plan_row is the Series
+                    plan_index, plan_row = plan_tuple 
+                    current_richness_score = 0
+                    for other_feat in core_continuous_features:
+                        if other_feat == feature_analyzed:
                             continue
-
-                        feat_display_name = FEATURE_DISPLAY_NAMES_PY.get(core_feat, core_feat)
-                        value = plan_row.get(core_feat, "N/A")
                         
-                        # Check for unlimited flags for display
-                        unlimited_flag_for_core_feat = UNLIMITED_FLAGS.get(core_feat)
-                        if unlimited_flag_for_core_feat and plan_row.get(unlimited_flag_for_core_feat) == 1:
-                            value = "Unlimited"
-                        elif isinstance(value, (int, float)) and core_feat == 'speed_when_exhausted' and plan_row.get('has_unlimited_speed') == 1:
-                             value = "Unlimited" # Special handling for speed if has_unlimited_speed flag
-                        elif isinstance(value, (int, float)) and core_feat == 'speed_when_exhausted' and value > 0 :
-                            value = f"{value} Mbps"
-                        elif isinstance(value, (int, float)) and (core_feat.endswith('_gb') or core_feat.endswith('_data_clean')):
-                             value = f"{value} GB"
-                        elif isinstance(value, (int, float)) and (core_feat.endswith('_min') or core_feat.endswith('_clean') and 'voice' in core_feat):
-                             value = f"{value} min"
-                        elif isinstance(value, (int, float)) and (core_feat.endswith('_clean') and 'message' in core_feat):
-                             value = f"{value} cnt"
+                        value = plan_row.get(other_feat)
+                        is_unlimited = False
+                        unlimited_flag_for_other_feat = UNLIMITED_FLAGS.get(other_feat)
+                        if unlimited_flag_for_other_feat and plan_row.get(unlimited_flag_for_other_feat) == 1:
+                            is_unlimited = True
+                        elif other_feat == 'speed_when_exhausted' and plan_row.get('has_unlimited_speed') == 1:
+                            is_unlimited = True
+                        
+                        if is_unlimited:
+                            current_richness_score += 100 # High score for unlimited
+                        elif pd.notna(value) and isinstance(value, (int, float)) and value > 0:
+                            current_richness_score += 10  # Moderate score for active numeric value
+                        elif pd.notna(value): # E.g. 0 is a valid value, gets a small score
+                            current_richness_score += 1   # Small score for present but zero/non-positive value
+                        # NA values contribute 0 to richness
 
+                    if current_richness_score > max_richness_score:
+                        max_richness_score = current_richness_score
+                        best_plan_idx = plan_index # Store the DataFrame index of the best plan
+                
+                if best_plan_idx != -1:
+                    target_plan_row_series = candidate_plans_min_fee.loc[best_plan_idx]
+                else: # Should not happen if candidate_plans_min_fee is not empty
+                    target_plan_row_series = candidate_plans_min_fee.iloc[0] # Fallback to first if all scores are same/issue
+            else: # candidate_plans_min_fee is empty (shouldn't happen if candidate_plans_min_feature_val wasn't)
+                logger.warning(f"Unexpected: No candidates after original_fee tie-breaking for '{feature_analyzed}'. Skipping.")
+                continue
+            
+            if target_plan_row_series is None:
+                 logger.warning(f"Could not determine target plan for '{feature_analyzed}' after tie-breaking. Skipping.")
+                 continue
 
-                        other_specs_list.append(f"{feat_display_name}: {value}")
+            target_plan_name = target_plan_row_series['plan_name']
+            plan_total_original_fee = target_plan_row_series['original_fee']
+            actual_value_of_feature_analyzed_in_target_plan = target_plan_row_series[feature_analyzed]
+
+            # Now, estimate the cost of this `actual_value_of_feature_analyzed_in_target_plan`
+            # on the VISUAL FRONTIER of `feature_analyzed` (which is stored in feature_frontier_data)
+            cost_of_feature_on_its_visual_frontier = 0.0
+            if feature_analyzed in feature_frontier_data and feature_frontier_data[feature_analyzed].get('frontier_values'):
+                # Reconstruct a temporary Series for estimation, similar to estimate_frontier_value
+                # This visual frontier is based on original_fee and has (value, original_fee_cost) pairs
+                vis_frontier_values = feature_frontier_data[feature_analyzed]['frontier_values']
+                vis_frontier_costs = feature_frontier_data[feature_analyzed]['frontier_contributions'] # These are original_fees for visual
+                
+                if vis_frontier_values: # Ensure there are points to build a series
+                    # Create a temporary series from the visual frontier points
+                    temp_visual_frontier_series = pd.Series(data=vis_frontier_costs, index=vis_frontier_values).sort_index()
                     
-                    other_specs_str = "; ".join(other_specs_list) if other_specs_list else "N/A"
-                    
-                    residual_analysis_table_data.append({
-                        'analyzed_feature': FEATURE_DISPLAY_NAMES_PY.get(feature_analyzed, feature_analyzed),
-                        'plan_name': min_frontier_plan_name,
-                        'other_specs': other_specs_str,
-                        'residual_fee': residual_original_fee,
-                        'original_total_fee_of_plan': plan_total_original_fee,
-                        'feature_cost_at_min_frontier': min_frontier_feature_value_cost
-                    })
+                    # Simplified estimation logic (like estimate_frontier_value but on this temp series)
+                    if actual_value_of_feature_analyzed_in_target_plan in temp_visual_frontier_series.index:
+                        cost_of_feature_on_its_visual_frontier = temp_visual_frontier_series[actual_value_of_feature_analyzed_in_target_plan]
+                    else:
+                        idx = np.searchsorted(temp_visual_frontier_series.index, actual_value_of_feature_analyzed_in_target_plan)
+                        if idx == 0:
+                            cost_of_feature_on_its_visual_frontier = temp_visual_frontier_series.iloc[0]
+                        elif idx == len(temp_visual_frontier_series.index):
+                            cost_of_feature_on_its_visual_frontier = temp_visual_frontier_series.iloc[-1]
+                        else:
+                            # Linear interpolation for visual frontier (original_fee based)
+                            x1_vis, y1_vis = temp_visual_frontier_series.index[idx-1], temp_visual_frontier_series.iloc[idx-1]
+                            x2_vis, y2_vis = temp_visual_frontier_series.index[idx], temp_visual_frontier_series.iloc[idx]
+                            if x2_vis == x1_vis:
+                                cost_of_feature_on_its_visual_frontier = y1_vis
+                            else:
+                                cost_of_feature_on_its_visual_frontier = y1_vis + (actual_value_of_feature_analyzed_in_target_plan - x1_vis) * (y2_vis - y1_vis) / (x2_vis - x1_vis)
                 else:
-                    logger.warning(f"Plan '{min_frontier_plan_name}' not found in main DataFrame for residual analysis of feature '{feature_analyzed}'.")
+                    logger.warning(f"Visual frontier for '{feature_analyzed}' has no points. Cannot estimate feature cost for residual analysis.")
             else:
-                logger.info(f"No visual frontier points for feature '{feature_analyzed}', skipping for residual analysis table.")
-    # --- End: New section for Residual Analysis Data Preparation ---
+                logger.warning(f"No visual frontier data available for '{feature_analyzed}'. Cannot estimate feature cost for residual analysis.")
 
+            residual_original_fee = plan_total_original_fee - cost_of_feature_on_its_visual_frontier
+            
+            other_specs_list = []
+            for core_feat in core_continuous_features:
+                if core_feat == feature_analyzed:
+                    continue
+                feat_display_name = FEATURE_DISPLAY_NAMES_PY.get(core_feat, core_feat)
+                value = target_plan_row_series.get(core_feat, "N/A")
+                unlimited_flag_for_core_feat = UNLIMITED_FLAGS.get(core_feat)
+                if unlimited_flag_for_core_feat and target_plan_row_series.get(unlimited_flag_for_core_feat) == 1:
+                    value = "Unlimited"
+                elif isinstance(value, (int, float)) and core_feat == 'speed_when_exhausted' and target_plan_row_series.get('has_unlimited_speed') == 1:
+                    value = "Unlimited"
+                elif isinstance(value, (int, float)) and core_feat == 'speed_when_exhausted' and value > 0:
+                    value = f"{value} Mbps"
+                elif isinstance(value, (int, float)) and (core_feat.endswith('_gb') or core_feat.endswith('_data_clean')):
+                    value = f"{value} GB"
+                elif isinstance(value, (int, float)) and (core_feat.endswith('_min') or (core_feat.endswith('_clean') and 'voice' in core_feat)):
+                    value = f"{value} min"
+                elif isinstance(value, (int, float)) and (core_feat.endswith('_clean') and 'message' in core_feat):
+                    value = f"{value} cnt"
+                other_specs_list.append(f"{feat_display_name}: {value}")
+            
+            other_specs_str = "; ".join(other_specs_list) if other_specs_list else "N/A"
+            
+            residual_analysis_table_data.append({
+                'analyzed_feature': FEATURE_DISPLAY_NAMES_PY.get(feature_analyzed, feature_analyzed),
+                'plan_name': target_plan_name,
+                'other_specs': other_specs_str,
+                'residual_fee': residual_original_fee,
+                'original_total_fee_of_plan': plan_total_original_fee,
+                'feature_cost_at_min_frontier': cost_of_feature_on_its_visual_frontier # This is the estimated cost from visual frontier
+            })
+
+    # --- End: New section for Residual Analysis Data Preparation ---
+    
     # Serialize feature frontier data to JSON
     try:
         feature_frontier_json = json.dumps(feature_frontier_data, cls=NumpyEncoder)
