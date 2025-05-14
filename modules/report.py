@@ -292,6 +292,10 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     ]
     
     # Prepare data points for feature-specific charts
+    # Initialize all_chart_data here to store comprehensive chart data including full plan series for frontiers
+    all_chart_data = {}
+    visual_frontiers_for_residual_table = {} # Stores (value, cost) tuples for estimate_value_on_visual_frontier
+
     for feature in core_continuous_features:
         if feature not in df.columns:
             logger.warning(f"Feature {feature} not found in dataframe, skipping visualization")
@@ -362,8 +366,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         visual_frontiers_for_residual_table[feature] = current_feature_visual_frontier_tuples
         
         # Store the list of frontier plan Series in all_chart_data for later use in residual analysis
-        if feature not in feature_frontier_data: feature_frontier_data[feature] = {}
-        feature_frontier_data[feature]['actual_frontier_plans_series'] = actual_frontier_plans_series_list
+        if feature not in all_chart_data: all_chart_data[feature] = {}
+        all_chart_data[feature]['actual_frontier_plans_series'] = actual_frontier_plans_series_list
 
 
         # Step 3: Classify all points from df_for_frontier based on the visual frontier
