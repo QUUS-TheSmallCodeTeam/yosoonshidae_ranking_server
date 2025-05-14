@@ -271,23 +271,27 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             /* Feature charts grid */
             .chart-grid {{
                 display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
-                gap: 20px;
-                margin-top: 20px;
+                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                gap: 10px;
+                margin-top: 15px;
             }}
             
             .chart-container {{
                 border: 1px solid #ddd;
-                border-radius: 8px;
-                padding: 15px;
+                border-radius: 6px;
+                padding: 10px;
                 background-color: white;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                height: 250px;
+                min-width: 280px;
+                max-width: 400px;
+                margin: 0 auto;
             }}
             
             .chart-title {{
-                font-size: 16px;
+                font-size: 14px;
                 font-weight: bold;
-                margin-bottom: 10px;
+                margin-bottom: 5px;
                 text-align: center;
             }}
             
@@ -606,7 +610,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 const chartTitle = document.createElement('div');
                 chartTitle.className = 'chart-title';
                 chartTitle.textContent = (featureDisplayNames[feature] || feature) + 
-                    ` (${data.frontier_values.length} frontier points out of ${data.all_values.length} total)`;
+                    ` (${data.frontier_values.length}/${data.all_values.length})`;
                 chartContainer.appendChild(chartTitle);
                 
                 // Create canvas for chart
@@ -669,11 +673,11 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         data: frontierPoints,
                         backgroundColor: 'rgba(255, 99, 132, 1)',
                         borderColor: 'rgba(255, 99, 132, 1)',
-                        pointRadius: 7,
-                        pointHoverRadius: 11,
+                        pointRadius: 5,
+                        pointHoverRadius: 8,
                         showLine: true,
                         tension: 0.1,
-                        borderWidth: 3,
+                        borderWidth: 2,
                         fill: false
                     };
                     
@@ -700,8 +704,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         data: nonFrontierPoints,
                         backgroundColor: 'rgba(54, 162, 235, 0.5)',
                         borderColor: 'rgba(54, 162, 235, 0.5)',
-                        pointRadius: 4,
-                        pointHoverRadius: 8,
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
                         showLine: false
                     };
                     
@@ -720,10 +724,16 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         },
                         options: {
                             responsive: true,
-                            maintainAspectRatio: false,
-                            aspectRatio: 1.5,
+                            maintainAspectRatio: true,
+                            aspectRatio: 1.8,
                             plugins: {
                                 tooltip: {
+                                    titleFont: {
+                                        size: 12
+                                    },
+                                    bodyFont: {
+                                        size: 11
+                                    },
                                     callbacks: {
                                         label: function(context) {
                                             const point = context.raw;
@@ -741,6 +751,11 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                                 legend: {
                                     position: 'top',
                                     labels: {
+                                        font: {
+                                            size: 11
+                                        },
+                                        boxWidth: 12,
+                                        padding: 8,
                                         filter: function(legendItem, chartData) {
                                             // Don't show frontier area in legend
                                             return legendItem.text !== 'Frontier Line';
@@ -755,19 +770,45 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                                 x: {
                                     title: {
                                         display: true,
-                                        text: featureDisplayNames[feature] || feature
+                                        text: featureDisplayNames[feature] || feature,
+                                        font: {
+                                            size: 11
+                                        },
+                                        padding: {
+                                            top: 0,
+                                            bottom: 0
+                                        }
+                                    },
+                                    ticks: {
+                                        font: {
+                                            size: 10
+                                        }
                                     }
                                 },
                                 y: {
                                     title: {
                                         display: true,
-                                        text: 'Baseline Cost (KRW)'
+                                        text: 'Baseline Cost (KRW)',
+                                        font: {
+                                            size: 11
+                                        }
                                     },
                                     ticks: {
                                         callback: function(value) {
                                             return value.toLocaleString();
+                                        },
+                                        font: {
+                                            size: 10
                                         }
                                     }
+                                }
+                            },
+                            layout: {
+                                padding: {
+                                    left: 0,
+                                    right: 0,
+                                    top: 0,
+                                    bottom: 0
                                 }
                             }
                         }
