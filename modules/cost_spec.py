@@ -175,23 +175,41 @@ def estimate_frontier_value(feature_value: float, frontier: pd.Series) -> float:
     Returns:
         The estimated frontier value
     """
+    if frontier.empty:
+        logger.warning(f"Attempting to estimate value from an empty frontier for feature value {feature_value}. Returning 0.0.")
+        return 0.0
+
     if feature_value in frontier.index:
         # Exact match
         return frontier[feature_value]
     
-    # Find the closest value in the frontier
+    # np.searchsorted finds the insertion point to maintain order.
+    # The feature values in frontier.index are sorted.
     idx = np.searchsorted(frontier.index, feature_value)
     
     if idx == 0:
-        # Feature value is lower than any in frontier, use lowest
+        # Feature value is lower than any in frontier, use the cost of the smallest feature value.
+        # This is extrapolation using the first point.
         return frontier.iloc[0]
-    elif idx == len(frontier):
-        # Feature value is higher than any in frontier, use highest
+    elif idx == len(frontier.index): # Corrected to len(frontier.index) as idx can be equal to length
+        # Feature value is higher than any in frontier, use the cost of the largest feature value.
+        # This is extrapolation using the last point.
         return frontier.iloc[-1]
     else:
-        # Feature value is between two frontier points
-        # For monotonicity, we use the lower bound frontier value
-        return frontier.iloc[idx-1]
+        # Feature value is between two frontier points. Perform linear interpolation.
+        x1 = frontier.index[idx-1]
+        y1 = frontier.iloc[idx-1]
+        x2 = frontier.index[idx]
+        y2 = frontier.iloc[idx]
+
+        # Prevent division by zero if feature values are identical (should not happen with strictly monotonic frontier)
+        if x2 == x1:
+            logger.warning(f"Frontier points for interpolation have same feature value ({x1}). Returning cost of first point ({y1}).")
+            return y1 
+        
+        # Linear interpolation formula: y = y1 + (x - x1) * (y2 - y1) / (x2 - x1)
+        interpolated_cost = y1 + (feature_value - x1) * (y2 - y1) / (x2 - x1)
+        return interpolated_cost
 
 def calculate_plan_baseline_cost(row: pd.Series, frontiers: Dict[str, pd.Series],
                                unlimited_flags: Dict[str, str]) -> float:
