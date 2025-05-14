@@ -145,32 +145,60 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             plan_name = matching_plans.iloc[0]['plan_name'] if not matching_plans.empty else "Unknown"
             plan_names.append(plan_name)
         
-        # Filter to keep only frontier points
+        # Keep all points, but separate frontier and non-frontier points for visualization
+        all_feature_values = []
+        all_contribution_values = []
+        all_plan_names = []
+        all_is_frontier = []
+        
         frontier_feature_values = []
         frontier_contribution_values = []
         frontier_plan_names = []
         
-        frontier_points_count = 0
+        non_frontier_feature_values = []
+        non_frontier_contribution_values = []
+        non_frontier_plan_names = []
+        
         for i in range(len(feature_values)):
+            # Add to full dataset
+            all_feature_values.append(float(feature_values[i]))
+            all_contribution_values.append(float(contribution_values[i]))
+            all_plan_names.append(plan_names[i])
+            all_is_frontier.append(is_frontier_points[i])
+            
+            # Add to frontier or non-frontier dataset
             if is_frontier_points[i]:
-                frontier_points_count += 1
-                frontier_feature_values.append(float(feature_values[i]))  # Ensure numeric values
-                frontier_contribution_values.append(float(contribution_values[i]))  # Ensure numeric values
+                frontier_feature_values.append(float(feature_values[i]))
+                frontier_contribution_values.append(float(contribution_values[i]))
                 frontier_plan_names.append(plan_names[i])
+            else:
+                non_frontier_feature_values.append(float(feature_values[i]))
+                non_frontier_contribution_values.append(float(contribution_values[i]))
+                non_frontier_plan_names.append(plan_names[i])
         
-        logger.info(f"Identified {frontier_points_count} frontier points for {feature}")
+        # Count points for logging
+        frontier_points_count = len(frontier_feature_values)
+        non_frontier_points_count = len(non_frontier_feature_values)
         
-        # Add to feature frontier data (only if we have frontier points)
-        if frontier_points_count > 0:
+        logger.info(f"Identified {frontier_points_count} frontier points and {non_frontier_points_count} non-frontier points for {feature}")
+        
+        # Add to feature frontier data (only if we have any points)
+        if len(all_feature_values) > 0:
             feature_frontier_data[feature] = {
-                'values': frontier_feature_values,
-                'contributions': frontier_contribution_values,
-                'is_frontier': [True] * len(frontier_feature_values),
-                'plan_names': frontier_plan_names
+                'all_values': all_feature_values,
+                'all_contributions': all_contribution_values,
+                'all_is_frontier': all_is_frontier,
+                'all_plan_names': all_plan_names,
+                'frontier_values': frontier_feature_values,
+                'frontier_contributions': frontier_contribution_values,
+                'frontier_plan_names': frontier_plan_names,
+                'non_frontier_values': non_frontier_feature_values,
+                'non_frontier_contributions': non_frontier_contribution_values,
+                'non_frontier_plan_names': non_frontier_plan_names
             }
-            logger.info(f"Added {len(frontier_feature_values)} frontier points for {feature} to chart data")
+            logger.info(f"Added {len(all_feature_values)} points for {feature} to chart data")
         else:
-            logger.warning(f"No frontier points found for {feature}, skipping chart")
+            logger.warning(f"No points found for {feature}, skipping chart")
     
     # Serialize feature frontier data to JSON
     try:
@@ -548,10 +576,10 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             
             // Create a chart for each feature
             for (const [feature, data] of Object.entries(featureFrontierData)) {
-                console.log(`Processing feature: ${feature} with ${data.values.length} data points`);
+                console.log(`Processing feature: ${feature} with ${data.all_values.length} total data points`);
                 
                 // Validate data
-                if (!data.values || !data.contributions || data.values.length === 0) {
+                if (!data.all_values || !data.all_contributions || data.all_values.length === 0) {
                     console.warn(`Invalid data for feature ${feature}, skipping`);
                     continue;
                 }
@@ -563,7 +591,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 // Create chart title
                 const chartTitle = document.createElement('div');
                 chartTitle.className = 'chart-title';
-                chartTitle.textContent = featureDisplayNames[feature] || feature;
+                chartTitle.textContent = (featureDisplayNames[feature] || feature) + 
+                    ` (${data.frontier_values.length} frontier points out of ${data.all_values.length} total)`;
                 chartContainer.appendChild(chartTitle);
                 
                 // Create canvas for chart
@@ -574,51 +603,106 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 // Add to main container
                 container.appendChild(chartContainer);
                 
-                // Prepare chart data points
+                // Prepare chart data points for frontier points
                 try {
-                    const chartPoints = [];
+                    const frontierPoints = [];
+                    const nonFrontierPoints = [];
                     
-                    // Create data points with proper validation
-                    for (let i = 0; i < data.values.length; i++) {
-                        const x = data.values[i];
-                        const y = data.contributions[i];
-                        const planName = data.plan_names[i] || 'Unknown';
+                    // Create data points for frontier points
+                    for (let i = 0; i < data.frontier_values.length; i++) {
+                        const x = data.frontier_values[i];
+                        const y = data.frontier_contributions[i];
+                        const planName = data.frontier_plan_names[i] || 'Unknown';
                         
                         // Ensure x and y are numbers
                         if (typeof x === 'number' && typeof y === 'number' && !isNaN(x) && !isNaN(y)) {
-                            chartPoints.push({
+                            frontierPoints.push({
                                 x: x,
                                 y: y,
-                                plan_name: planName
+                                plan_name: planName,
+                                is_frontier: true
                             });
-                        } else {
-                            console.warn(`Invalid data point for ${feature}: x=${x}, y=${y}`);
                         }
                     }
                     
-                    console.log(`Created ${chartPoints.length} valid data points for ${feature}`);
+                    // Create data points for non-frontier points
+                    for (let i = 0; i < data.non_frontier_values.length; i++) {
+                        const x = data.non_frontier_values[i];
+                        const y = data.non_frontier_contributions[i];
+                        const planName = data.non_frontier_plan_names[i] || 'Unknown';
+                        
+                        // Ensure x and y are numbers
+                        if (typeof x === 'number' && typeof y === 'number' && !isNaN(x) && !isNaN(y)) {
+                            nonFrontierPoints.push({
+                                x: x,
+                                y: y,
+                                plan_name: planName,
+                                is_frontier: false
+                            });
+                        }
+                    }
                     
-                    if (chartPoints.length === 0) {
+                    console.log(`Created ${frontierPoints.length} frontier points and ${nonFrontierPoints.length} non-frontier points for ${feature}`);
+                    
+                    if (frontierPoints.length === 0 && nonFrontierPoints.length === 0) {
                         console.warn(`No valid data points for ${feature}, skipping chart`);
                         continue;
                     }
                     
-                    // Create Chart.js chart
+                    // Create Chart.js datasets
                     const frontierDataset = {
                         label: 'Frontier Points',
-                        data: chartPoints,
+                        data: frontierPoints,
                         backgroundColor: 'rgba(255, 99, 132, 1)',
                         borderColor: 'rgba(255, 99, 132, 1)',
-                        pointRadius: 6,
-                        pointHoverRadius: 10,
+                        pointRadius: 7,
+                        pointHoverRadius: 11,
                         showLine: true,
-                        tension: 0.1
+                        tension: 0.1,
+                        borderWidth: 3,
+                        fill: false
                     };
+                    
+                    // Add a dataset for the frontier line area
+                    const frontierAreaDataset = {
+                        label: 'Frontier Line',
+                        data: frontierPoints,
+                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                        borderColor: 'rgba(255, 99, 132, 0)',
+                        pointRadius: 0,
+                        showLine: true,
+                        tension: 0.1,
+                        fill: 'origin',
+                        hidden: false,
+                        // Hide from legend
+                        hidden: false,
+                        showLine: true,
+                        display: true,
+                        spanGaps: true
+                    };
+                    
+                    const nonFrontierDataset = {
+                        label: 'Other Points',
+                        data: nonFrontierPoints,
+                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                        borderColor: 'rgba(54, 162, 235, 0.5)',
+                        pointRadius: 4,
+                        pointHoverRadius: 8,
+                        showLine: false
+                    };
+                    
+                    // Determine which datasets to include
+                    const datasets = [];
+                    if (nonFrontierPoints.length > 0) datasets.push(nonFrontierDataset);
+                    if (frontierPoints.length > 0) {
+                        if (frontierPoints.length > 1) datasets.push(frontierAreaDataset);
+                        datasets.push(frontierDataset);
+                    }
                     
                     new Chart(canvas, {
                         type: 'scatter',
                         data: {
-                            datasets: [frontierDataset]
+                            datasets: datasets
                         },
                         options: {
                             responsive: true,
@@ -629,16 +713,25 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                                     callbacks: {
                                         label: function(context) {
                                             const point = context.raw;
+                                            // Don't show tooltip for area dataset
+                                            if (context.dataset.label === 'Frontier Line') return null;
                                             return [
                                                 "Plan: " + point.plan_name,
                                                 "Value: " + point.x,
-                                                "Cost: " + point.y.toLocaleString() + " KRW"
+                                                "Cost: " + point.y.toLocaleString() + " KRW",
+                                                "Frontier Point: " + (point.is_frontier ? "Yes" : "No")
                                             ];
                                         }
                                     }
                                 },
                                 legend: {
                                     position: 'top',
+                                    labels: {
+                                        filter: function(legendItem, chartData) {
+                                            // Don't show frontier area in legend
+                                            return legendItem.text !== 'Frontier Line';
+                                        }
+                                    }
                                 },
                                 title: {
                                     display: false
