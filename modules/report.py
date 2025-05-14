@@ -283,7 +283,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 'all_contributions': all_contributions_for_js,
                 'all_is_frontier': all_is_frontier_for_js,
                 'all_is_excluded': all_is_excluded_for_js,
-                'all_is_unlimited': [data['has_unlimited'] and val == float('inf') for val in all_values_for_js], # Reconstruct for all_values if needed
+                # Use the 'has_unlimited_data' boolean captured for the current feature scope
+                'all_is_unlimited': [has_unlimited_data and val == float('inf') for val in all_values_for_js],
                 'all_plan_names': all_plan_names_for_js,
                 
                 'frontier_values': frontier_feature_values,
