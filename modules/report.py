@@ -12,6 +12,15 @@ import pandas as pd
 import json
 import numpy as np
 
+# Define unlimited flag mappings (copied from cost_spec.py)
+UNLIMITED_FLAGS = {
+    'basic_data_clean': 'basic_data_unlimited',
+    'daily_data_clean': 'daily_data_unlimited',
+    'voice_clean': 'voice_unlimited',
+    'message_clean': 'message_unlimited',
+    'speed_when_exhausted': 'has_unlimited_speed'
+}
+
 # Custom JSON encoder to handle NumPy types
 class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -122,6 +131,31 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             
         logger.info(f"Preparing frontier chart data for feature: {feature}")
         
+        # Check if this feature has an unlimited flag
+        unlimited_flag = UNLIMITED_FLAGS.get(feature)
+        has_unlimited_data = False
+        unlimited_min_fee = None
+        unlimited_min_plan = None
+        
+        # If unlimited flag exists, extract unlimited value data
+        if unlimited_flag and unlimited_flag in df.columns:
+            unlimited_plans = df[df[unlimited_flag] == 1]
+            if not unlimited_plans.empty:
+                has_unlimited_data = True
+                # Find the minimum fee among unlimited plans (like in cost_spec.py)
+                min_fee_idx = unlimited_plans['fee'].idxmin()
+                unlimited_min_fee = unlimited_plans.loc[min_fee_idx, 'fee']
+                unlimited_min_plan = unlimited_plans.loc[min_fee_idx, 'plan_name'] if 'plan_name' in unlimited_plans.columns else "Unknown"
+                
+                logger.info(f"Found unlimited {feature} with minimum fee {unlimited_min_fee} from plan '{unlimited_min_plan}'")
+                
+                # Filter out unlimited plans for regular frontier calculation
+                df_for_frontier = df[df[unlimited_flag] == 0].copy()
+            else:
+                df_for_frontier = df.copy()
+        else:
+            df_for_frontier = df.copy()
+        
         # Collect all unique feature values and their contributions
         feature_values = []
         contribution_values = []
@@ -131,7 +165,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         
         # Group plans by feature value and get minimum contribution
         # This simulates how the frontier is calculated
-        grouped = df.groupby(feature)[contribution_col].min().reset_index()
+        grouped = df_for_frontier.groupby(feature)[contribution_col].min().reset_index()
         
         # Sort by feature value (ascending)
         grouped = grouped.sort_values(feature)
@@ -162,8 +196,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             is_excluded_points.append(is_excluded)
             
             # Find a plan with this feature value and contribution for display
-            matching_plans = df[(df[feature] == feature_value) & 
-                               (df[contribution_col] == contribution)]
+            matching_plans = df_for_frontier[(df_for_frontier[feature] == feature_value) & 
+                               (df_for_frontier[contribution_col] == contribution)]
             plan_name = matching_plans.iloc[0]['plan_name'] if not matching_plans.empty else "Unknown"
             plan_names.append(plan_name)
         
@@ -173,6 +207,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         all_plan_names = []
         all_is_frontier = []
         all_is_excluded = []
+        all_is_unlimited = []
         
         frontier_feature_values = []
         frontier_contribution_values = []
@@ -186,6 +221,15 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         other_contribution_values = []
         other_plan_names = []
         
+        # Add the unlimited value if it exists
+        if has_unlimited_data and unlimited_min_fee is not None:
+            all_feature_values.append(float('inf'))  # Use infinity for unlimited
+            all_contribution_values.append(float(unlimited_min_fee))
+            all_plan_names.append(unlimited_min_plan)
+            all_is_frontier.append(True)  # Unlimited is always on frontier
+            all_is_excluded.append(False)
+            all_is_unlimited.append(True)
+        
         for i in range(len(feature_values)):
             # Add to full dataset
             all_feature_values.append(float(feature_values[i]))
@@ -193,6 +237,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             all_plan_names.append(plan_names[i])
             all_is_frontier.append(bool(is_frontier_points[i]))
             all_is_excluded.append(bool(is_excluded_points[i]))
+            all_is_unlimited.append(False)  # Regular points aren't unlimited
             
             # Add to appropriate dataset
             if bool(is_frontier_points[i]):
@@ -212,8 +257,9 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         frontier_points_count = len(frontier_feature_values)
         excluded_points_count = len(excluded_feature_values)
         other_points_count = len(other_feature_values)
+        unlimited_count = 1 if has_unlimited_data else 0
         
-        logger.info(f"Identified {frontier_points_count} frontier points, {excluded_points_count} excluded points, and {other_points_count} other points for {feature}")
+        logger.info(f"Identified {frontier_points_count} frontier points, {excluded_points_count} excluded points, {other_points_count} other points, and {unlimited_count} unlimited point for {feature}")
         
         # Add to feature frontier data (only if we have any points)
         if len(all_feature_values) > 0:
@@ -222,6 +268,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 'all_contributions': all_contribution_values,
                 'all_is_frontier': all_is_frontier,
                 'all_is_excluded': all_is_excluded,
+                'all_is_unlimited': all_is_unlimited,
                 'all_plan_names': all_plan_names,
                 'frontier_values': frontier_feature_values,
                 'frontier_contributions': frontier_contribution_values,
@@ -231,7 +278,10 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 'excluded_plan_names': excluded_plan_names,
                 'other_values': other_feature_values,
                 'other_contributions': other_contribution_values,
-                'other_plan_names': other_plan_names
+                'other_plan_names': other_plan_names,
+                'has_unlimited': has_unlimited_data,
+                'unlimited_value': unlimited_min_fee if has_unlimited_data else None,
+                'unlimited_plan': unlimited_min_plan if has_unlimited_data else None
             }
             logger.info(f"Added {len(all_feature_values)} points for {feature} to chart data")
         else:
@@ -321,6 +371,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             .hidden {{ display: none; }}
         </style>
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0/dist/chartjs-plugin-annotation.min.js"></script>
     </head>
     <body>
         <h1>{report_title}</h1>
@@ -632,8 +683,9 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 // Create chart title
                 const chartTitle = document.createElement('div');
                 chartTitle.className = 'chart-title';
+                const hasUnlimited = data.has_unlimited ? ' U:1' : '';
                 chartTitle.textContent = (featureDisplayNames[feature] || feature) + 
-                    ` (F:${data.frontier_values.length} E:${data.excluded_values.length} O:${data.other_values.length})`;
+                    ` (F:${data.frontier_values.length} E:${data.excluded_values.length} O:${data.other_values.length}${hasUnlimited})`;
                 chartContainer.appendChild(chartTitle);
                 
                 // Create canvas for chart
@@ -649,6 +701,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                     const frontierPoints = [];
                     const excludedPoints = [];
                     const otherPoints = [];
+                    const unlimitedPoints = [];
                     
                     // Create data points for frontier points
                     for (let i = 0; i < data.frontier_values.length; i++) {
@@ -663,7 +716,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                                 y: y,
                                 plan_name: planName,
                                 is_frontier: true,
-                                is_excluded: false
+                                is_excluded: false,
+                                is_unlimited: false
                             });
                         }
                     }
@@ -681,7 +735,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                                 y: y,
                                 plan_name: planName,
                                 is_frontier: false,
-                                is_excluded: true
+                                is_excluded: true,
+                                is_unlimited: false
                             });
                         }
                     }
@@ -699,14 +754,40 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                                 y: y,
                                 plan_name: planName,
                                 is_frontier: false,
-                                is_excluded: false
+                                is_excluded: false,
+                                is_unlimited: false
                             });
                         }
                     }
                     
-                    console.log(`Created ${frontierPoints.length} frontier points, ${excludedPoints.length} excluded points, and ${otherPoints.length} other points for ${feature}`);
+                    // Add unlimited point if available
+                    if (data.has_unlimited && data.unlimited_value !== null) {
+                        const unlimitedValue = data.unlimited_value;
+                        const unlimitedPlan = data.unlimited_plan || 'Unknown';
+                        
+                        // Create a special mark for unlimited (using the right edge of the chart)
+                        unlimitedPoints.push({
+                            // Position at the maximum of actual data points plus 20% or at a default position
+                            x: data.frontier_values.length > 0 ? Math.max(...data.frontier_values) * 1.2 : 10,
+                            y: unlimitedValue,
+                            plan_name: unlimitedPlan,
+                            is_frontier: true,
+                            is_excluded: false,
+                            is_unlimited: true,
+                            originalValue: "Unlimited"
+                        });
+                    }
                     
-                    if (frontierPoints.length === 0 && excludedPoints.length === 0 && otherPoints.length === 0) {
+                    const pointCounts = {
+                        frontier: frontierPoints.length,
+                        excluded: excludedPoints.length,
+                        other: otherPoints.length,
+                        unlimited: unlimitedPoints.length
+                    };
+                    
+                    console.log(`Created ${frontierPoints.length} frontier points, ${excludedPoints.length} excluded points, ${otherPoints.length} other points, and ${unlimitedPoints.length} unlimited point for ${feature}`);
+                    
+                    if (frontierPoints.length === 0 && excludedPoints.length === 0 && otherPoints.length === 0 && unlimitedPoints.length === 0) {
                         console.warn(`No valid data points for ${feature}, skipping chart`);
                         continue;
                     }
@@ -763,123 +844,158 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         showLine: false
                     };
                     
+                    const unlimitedDataset = {
+                        label: 'Unlimited',
+                        data: unlimitedPoints,
+                        backgroundColor: 'rgba(128, 0, 128, 1)',  // Purple for unlimited
+                        borderColor: 'rgba(128, 0, 128, 1)',
+                        pointRadius: 6,
+                        pointHoverRadius: 9,
+                        pointStyle: 'star',
+                        showLine: false
+                    };
+                    
                     // Determine which datasets to include
                     const datasets = [];
                     if (otherPoints.length > 0) datasets.push(otherDataset);
                     if (excludedPoints.length > 0) datasets.push(excludedDataset);
+                    if (unlimitedPoints.length > 0) datasets.push(unlimitedDataset);
                     if (frontierPoints.length > 0) {
                         if (frontierPoints.length > 1) datasets.push(frontierAreaDataset);
                         datasets.push(frontierDataset);
                     }
+                    
+                    // Create Chart.js chart options with possible unlimited annotation
+                    const chartOptions = {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        aspectRatio: 1.8,
+                        plugins: {
+                            tooltip: {
+                                titleFont: {
+                                    size: 12
+                                },
+                                bodyFont: {
+                                    size: 11
+                                },
+                                callbacks: {
+                                    label: function(context) {
+                                        const point = context.raw;
+                                        // Don't show tooltip for area dataset
+                                        if (context.dataset.label === 'Frontier Line') return null;
+                                        
+                                        // Base info
+                                        const tooltipLines = [
+                                            "Plan: " + point.plan_name,
+                                            "Value: " + (point.is_unlimited ? "Unlimited" : point.x),
+                                            "Cost: " + point.y.toLocaleString() + " KRW"
+                                        ];
+                                        
+                                        // Add point type explanation
+                                        if (point.is_frontier) {
+                                            tooltipLines.push("Type: Frontier point - used in baseline cost");
+                                        } else if (point.is_excluded) {
+                                            tooltipLines.push("Type: Excluded - minimum cost for value but not monotonic");
+                                        } else if (point.is_unlimited) {
+                                            tooltipLines.push("Type: Unlimited value");
+                                        } else {
+                                            tooltipLines.push("Type: Other - not minimum cost for value");
+                                        }
+                                        
+                                        return tooltipLines;
+                                    }
+                                }
+                            },
+                            legend: {
+                                position: 'top',
+                                labels: {
+                                    font: {
+                                        size: 11
+                                    },
+                                    boxWidth: 12,
+                                    padding: 8,
+                                    filter: function(legendItem, chartData) {
+                                        // Don't show frontier area in legend
+                                        return legendItem.text !== 'Frontier Line';
+                                    }
+                                }
+                            },
+                                                            title: {
+                                    display: false
+                                }
+                        },
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: featureDisplayNames[feature] || feature,
+                                    font: {
+                                        size: 11
+                                    },
+                                    padding: {
+                                        top: 0,
+                                        bottom: 0
+                                    }
+                                },
+                                ticks: {
+                                    font: {
+                                        size: 10
+                                    }
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Baseline Cost (KRW)',
+                                    font: {
+                                        size: 11
+                                    }
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return value.toLocaleString();
+                                    },
+                                    font: {
+                                        size: 10
+                                    }
+                                }
+                            }
+                        },
+                        layout: {
+                            padding: {
+                                left: 0,
+                                right: 0,
+                                top: 0,
+                                bottom: 0
+                            }
+                        }
+                    };
                     
                     new Chart(canvas, {
                         type: 'scatter',
                         data: {
                             datasets: datasets
                         },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: true,
-                            aspectRatio: 1.8,
-                            plugins: {
-                                tooltip: {
-                                    titleFont: {
-                                        size: 12
-                                    },
-                                    bodyFont: {
-                                        size: 11
-                                    },
-                                    callbacks: {
-                                        label: function(context) {
-                                            const point = context.raw;
-                                            // Don't show tooltip for area dataset
-                                            if (context.dataset.label === 'Frontier Line') return null;
-                                            
-                                            // Base info
-                                            const tooltipLines = [
-                                                "Plan: " + point.plan_name,
-                                                "Value: " + point.x,
-                                                "Cost: " + point.y.toLocaleString() + " KRW"
-                                            ];
-                                            
-                                            // Add point type explanation
-                                            if (point.is_frontier) {
-                                                tooltipLines.push("Type: Frontier point - used in baseline cost");
-                                            } else if (point.is_excluded) {
-                                                tooltipLines.push("Type: Excluded - minimum cost for value but not monotonic");
-                                            } else {
-                                                tooltipLines.push("Type: Other - not minimum cost for value");
-                                            }
-                                            
-                                            return tooltipLines;
-                                        }
-                                    }
-                                },
-                                legend: {
-                                    position: 'top',
-                                    labels: {
-                                        font: {
-                                            size: 11
-                                        },
-                                        boxWidth: 12,
-                                        padding: 8,
-                                        filter: function(legendItem, chartData) {
-                                            // Don't show frontier area in legend
-                                            return legendItem.text !== 'Frontier Line';
-                                        }
-                                    }
-                                },
-                                title: {
-                                    display: false
-                                }
-                            },
-                            scales: {
-                                x: {
-                                    title: {
-                                        display: true,
-                                        text: featureDisplayNames[feature] || feature,
-                                        font: {
-                                            size: 11
-                                        },
-                                        padding: {
-                                            top: 0,
-                                            bottom: 0
-                                        }
-                                    },
-                                    ticks: {
-                                        font: {
-                                            size: 10
-                                        }
-                                    }
-                                },
-                                y: {
-                                    title: {
-                                        display: true,
-                                        text: 'Baseline Cost (KRW)',
-                                        font: {
-                                            size: 11
-                                        }
-                                    },
-                                    ticks: {
-                                        callback: function(value) {
-                                            return value.toLocaleString();
-                                        },
-                                        font: {
-                                            size: 10
-                                        }
-                                    }
-                                }
-                            },
-                            layout: {
-                                padding: {
-                                    left: 0,
-                                    right: 0,
-                                    top: 0,
-                                    bottom: 0
-                                }
-                            }
-                        }
+                        options: chartOptions
                     });
+                    
+                    // Add text label for unlimited value if present
+                    if (data.has_unlimited && data.unlimited_value !== null) {
+                        const unlimitedLabel = document.createElement('div');
+                        unlimitedLabel.style.position = 'absolute';
+                        unlimitedLabel.style.right = '10px';
+                        unlimitedLabel.style.top = '50%';
+                        unlimitedLabel.style.transform = 'translateY(-50%)';
+                        unlimitedLabel.style.backgroundColor = 'rgba(128, 0, 128, 0.1)';
+                        unlimitedLabel.style.borderLeft = '3px solid rgba(128, 0, 128, 0.8)';
+                        unlimitedLabel.style.padding = '4px 8px';
+                        unlimitedLabel.style.fontSize = '11px';
+                        unlimitedLabel.style.color = '#333';
+                        unlimitedLabel.style.borderRadius = '0 4px 4px 0';
+                        unlimitedLabel.innerHTML = `<strong>Unlimited:</strong> ${data.unlimited_value.toLocaleString()} KRW<br>Plan: ${data.unlimited_plan}`;
+                        chartContainer.style.position = 'relative';
+                        chartContainer.appendChild(unlimitedLabel);
+                    }
                     
                     console.log("Chart for " + feature + " created successfully");
                 } catch (err) {
