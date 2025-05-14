@@ -342,31 +342,33 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                     'plan_name': row['plan_name'] if 'plan_name' in row else "Unknown"
                 })
         
-        # Step 2: Build the true monotonic frontier (strictly increasing cost, based on cost_metric_for_visualization)
-        actual_frontier_stack_tuples = [] # Stores (value, cost) tuples
-        # candidate_points_details contains dicts: {'value': ..., 'cost': ..., 'plan_name': ...}
-        # Sort candidates by value, then by cost (cost already used for idxmin)
-        sorted_candidate_details = sorted(candidate_points_details, key=lambda c: (c['value'], c['cost']))
-
-        for candidate in sorted_candidate_details:
-            # Using candidate['cost'] which is original_fee
-            while actual_frontier_stack_tuples and candidate['cost'] < actual_frontier_stack_tuples[-1][1]: # Compare with cost (index 1)
-                actual_frontier_stack_tuples.pop()
-            
-            if not actual_frontier_stack_tuples:
-                actual_frontier_stack_tuples.append((candidate['value'], candidate['cost']))
-            else:
-                last_frontier_val, last_frontier_cost = actual_frontier_stack_tuples[-1]
-                if (candidate['value'] > last_frontier_val and
-                    candidate['cost'] > last_frontier_cost and
-                    (candidate['cost'] - last_frontier_cost) >= 1.0): # cost is original_fee
-                    actual_frontier_stack_tuples.append((candidate['value'], candidate['cost']))
-                # Handle plateaus: if value increases but cost is same, keep the one with lower value (already handled by sorted_candidate_details and "<" logic)
-                # If candidate value is same as last, but cost is higher, it's not on frontier.
-                # If candidate value is same and cost is same, it's a duplicate candidate for same value point, idxmin should have picked one.
+        # Step 2: Build the true monotonic frontier (list of dicts: {'value', 'cost', 'plan_name'})
+        actual_frontier_dictionaries = [] # This will store the full candidate dicts for points on the frontier
         
+        # candidate_points_details is already sorted by value, then cost if Step 1's sort_values was effective.
+        # Let's ensure consistent sorting here just in case, as the logic depends on it.
+        # sorted_candidate_details_for_stack = sorted(candidate_points_details, key=lambda c: (c['value'], c['cost']))
+        # Assuming candidate_points_details from Step 1 (after min_cost_candidates_df.sort_values) is sufficient.
+
+        for candidate_dict in candidate_points_details: # candidate_dict is {'value': v, 'cost': c, 'plan_name': pn}
+            # Using candidate_dict['cost'] which is original_fee
+            while actual_frontier_dictionaries and candidate_dict['cost'] < actual_frontier_dictionaries[-1]['cost']:
+                actual_frontier_dictionaries.pop()
+            
+            if not actual_frontier_dictionaries:
+                actual_frontier_dictionaries.append(candidate_dict)
+            else:
+                last_frontier_dict = actual_frontier_dictionaries[-1]
+                if (candidate_dict['value'] > last_frontier_dict['value'] and
+                    candidate_dict['cost'] > last_frontier_dict['cost'] and
+                    (candidate_dict['cost'] - last_frontier_dict['cost']) >= 1.0): # cost is original_fee
+                    actual_frontier_dictionaries.append(candidate_dict)
+                # Handle plateaus: if value increases but cost is same, keep the one with lower value (already handled by sorted_candidate_details and "<" logic)
+        
+        # Populate visual_frontiers_for_residual_table with (value, original_fee) tuples from these dictionaries
+        actual_frontier_value_cost_tuples = [(p['value'], p['cost']) for p in actual_frontier_dictionaries]
         visual_frontiers_for_residual_table = {}
-        visual_frontiers_for_residual_table[feature] = actual_frontier_stack_tuples # Store (value, original_fee) tuples
+        visual_frontiers_for_residual_table[feature] = actual_frontier_value_cost_tuples # Store (value, original_fee) tuples
 
         # Step 3: Classify all points from df_for_frontier based on the visual frontier
         frontier_feature_values = []
@@ -381,7 +383,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         other_visual_costs = [] # Renamed
         other_plan_names = []
 
-        true_frontier_set_tuples = set((p['value'], p['cost'], p['plan_name']) for p in actual_frontier_stack_tuples)
+        true_frontier_set_tuples = set((p['value'], p['cost'], p['plan_name']) for p in actual_frontier_dictionaries)
         
         candidate_tuples_for_exclusion_check = set((p['value'], p['cost'], p['plan_name']) for p in candidate_points_details)
 
@@ -414,7 +416,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
 
         for i in range(len(frontier_feature_values)):
             all_values_for_js.append(frontier_feature_values[i])
-            all_visual_costs_for_js.append(frontier_visual_costs[i]) # Using original_fee based list
+            all_visual_costs_for_js.append(frontier_visual_costs[i])
             all_plan_names_for_js.append(frontier_plan_names[i])
             all_is_frontier_for_js.append(True)
             all_is_excluded_for_js.append(False)
