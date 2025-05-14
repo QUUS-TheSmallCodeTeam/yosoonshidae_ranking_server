@@ -97,13 +97,17 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     # Prepare data points for feature-specific charts
     for feature in core_continuous_features:
         if feature not in df.columns:
+            logger.warning(f"Feature {feature} not found in dataframe, skipping visualization")
             continue
             
         # Get the corresponding contribution column
         contribution_col = f"contribution_{feature}"
         if contribution_col not in df.columns:
+            logger.warning(f"Contribution column {contribution_col} not found in dataframe, skipping visualization")
             continue
             
+        logger.info(f"Preparing frontier chart data for feature: {feature}")
+        
         # Collect all unique feature values and their contributions
         feature_values = []
         contribution_values = []
@@ -146,26 +150,39 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         frontier_contribution_values = []
         frontier_plan_names = []
         
+        frontier_points_count = 0
         for i in range(len(feature_values)):
             if is_frontier_points[i]:
-                frontier_feature_values.append(feature_values[i])
-                frontier_contribution_values.append(contribution_values[i])
+                frontier_points_count += 1
+                frontier_feature_values.append(float(feature_values[i]))  # Ensure numeric values
+                frontier_contribution_values.append(float(contribution_values[i]))  # Ensure numeric values
                 frontier_plan_names.append(plan_names[i])
         
-        # Add to feature frontier data
-        feature_frontier_data[feature] = {
-            'values': frontier_feature_values,
-            'contributions': frontier_contribution_values,
-            'is_frontier': [True] * len(frontier_feature_values),
-            'plan_names': frontier_plan_names
-        }
+        logger.info(f"Identified {frontier_points_count} frontier points for {feature}")
+        
+        # Add to feature frontier data (only if we have frontier points)
+        if frontier_points_count > 0:
+            feature_frontier_data[feature] = {
+                'values': frontier_feature_values,
+                'contributions': frontier_contribution_values,
+                'is_frontier': [True] * len(frontier_feature_values),
+                'plan_names': frontier_plan_names
+            }
+            logger.info(f"Added {len(frontier_feature_values)} frontier points for {feature} to chart data")
+        else:
+            logger.warning(f"No frontier points found for {feature}, skipping chart")
     
     # Serialize feature frontier data to JSON
     try:
         feature_frontier_json = json.dumps(feature_frontier_data)
+        logger.info(f"Successfully serialized frontier data: {len(feature_frontier_data)} features included")
     except Exception as e:
         logger.error(f"Error serializing feature frontier data: {e}")
         feature_frontier_json = "{}"
+    
+    # Check if we have any frontier data to display
+    if not feature_frontier_data:
+        logger.warning("No feature frontier data available for charts, charts will not be displayed")
     
     # Create HTML
     html = f"""
@@ -502,6 +519,14 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         // Create feature frontier charts
         document.addEventListener('DOMContentLoaded', function() {
             console.log('Initializing feature frontier charts...');
+            console.log('Feature frontier data:', featureFrontierData);
+            
+            // Check if we have data
+            if (!featureFrontierData || Object.keys(featureFrontierData).length === 0) {
+                console.warn('No frontier data available, charts will not be displayed');
+                document.getElementById('feature-charts-container').innerHTML = '<p>No frontier data available for visualization.</p>';
+                return;
+            }
             
             // Feature display names
             const featureDisplayNames = {
@@ -523,6 +548,14 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             
             // Create a chart for each feature
             for (const [feature, data] of Object.entries(featureFrontierData)) {
+                console.log(`Processing feature: ${feature} with ${data.values.length} data points`);
+                
+                // Validate data
+                if (!data.values || !data.contributions || data.values.length === 0) {
+                    console.warn(`Invalid data for feature ${feature}, skipping`);
+                    continue;
+                }
+                
                 // Create chart container
                 const chartContainer = document.createElement('div');
                 chartContainer.className = 'chart-container';
@@ -542,14 +575,35 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 container.appendChild(chartContainer);
                 
                 // Prepare chart data points
-                const chartPoints = data.values.map((value, i) => ({
-                    x: value,
-                    y: data.contributions[i],
-                    plan_name: data.plan_names[i]
-                }));
-                
-                // Create Chart.js chart
                 try {
+                    const chartPoints = [];
+                    
+                    // Create data points with proper validation
+                    for (let i = 0; i < data.values.length; i++) {
+                        const x = data.values[i];
+                        const y = data.contributions[i];
+                        const planName = data.plan_names[i] || 'Unknown';
+                        
+                        // Ensure x and y are numbers
+                        if (typeof x === 'number' && typeof y === 'number' && !isNaN(x) && !isNaN(y)) {
+                            chartPoints.push({
+                                x: x,
+                                y: y,
+                                plan_name: planName
+                            });
+                        } else {
+                            console.warn(`Invalid data point for ${feature}: x=${x}, y=${y}`);
+                        }
+                    }
+                    
+                    console.log(`Created ${chartPoints.length} valid data points for ${feature}`);
+                    
+                    if (chartPoints.length === 0) {
+                        console.warn(`No valid data points for ${feature}, skipping chart`);
+                        continue;
+                    }
+                    
+                    // Create Chart.js chart
                     const frontierDataset = {
                         label: 'Frontier Points',
                         data: chartPoints,

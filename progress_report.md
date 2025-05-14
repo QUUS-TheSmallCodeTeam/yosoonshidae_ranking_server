@@ -89,11 +89,16 @@ We have successfully implemented the new Cost-Spec (CS) Ratio method to replace 
   - [x] Modify JavaScript chart generation code for better browser compatibility
   - [x] Fix f-string template issues in the JavaScript code
   - [x] Ensure proper data format for Chart.js
+  - [x] Add feature contribution calculation to cost_spec.py
+  - [x] Add detailed logging for frontier data preparation
+  - [x] Improve data validation and error handling in chart rendering
+  - [x] Fix data type issues by ensuring numeric values
 - **Verification**:
   - [x] Charts now render properly showing frontier points only
   - [x] Verify all charts display the correct feature values and costs
   - [x] Test compatibility across different browsers
   - [x] Ensure tooltips show correct plan information on hover
+  - [x] Validate feature contribution values match baseline cost calculation
 
 ## Completion Tracking
 - **Total Tasks**: 28
@@ -199,7 +204,7 @@ The `/process` endpoint now returns the following structure, compatible with the
 | 7. Ensure Client Compatibility | Completed | Completed | Maintained compatibility with Supabase edge function |
 | 8. Integration Testing | Completed | Completed | Tested complete implementation |
 | 9. Update Configuration | Completed | Completed | Updated configuration to reflect the new CS method |
-| 10. Fix Feature Frontier Charts | Completed | Completed | Fixed chart rendering issues and optimized for frontier points display |
+| 10. Fix Feature Frontier Charts | Completed | Completed | Fixed chart rendering issues with improved data handling and validation |
 
 ## Issues and Blockers
 

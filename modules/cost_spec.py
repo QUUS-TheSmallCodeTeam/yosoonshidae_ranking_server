@@ -277,7 +277,52 @@ def calculate_cs_ratio(df: pd.DataFrame, feature_set: str = 'basic',
     # Calculate feature frontiers
     frontiers = calculate_feature_frontiers(df, features, UNLIMITED_FLAGS, fee_column)
     
-    # Calculate baseline cost for each plan
+    # Add individual feature contribution columns
+    for feature in [f for f in features if f not in UNLIMITED_FLAGS.values()]:
+        # Skip features not in frontiers
+        if feature not in frontiers and not UNLIMITED_FLAGS.get(feature) in frontiers:
+            logger.warning(f"Feature {feature} not found in frontiers, skipping contribution calculation")
+            continue
+            
+        # Calculate contribution for each row
+        contribution_column = f"contribution_{feature}"
+        
+        # Define a function to calculate contribution for this feature
+        def calculate_feature_contribution(row):
+            # Skip if feature not available
+            if feature not in row:
+                return 0.0
+                
+            # Check if this feature has an unlimited flag
+            unlimited_flag = UNLIMITED_FLAGS.get(feature)
+            
+            if unlimited_flag and unlimited_flag in row and row[unlimited_flag] == 1:
+                # This feature is unlimited for this plan
+                # Use the minimum fee among unlimited plans for this feature
+                if unlimited_flag in frontiers:
+                    return frontiers[unlimited_flag].iloc[0]
+                return 0.0
+            else:
+                # This feature is not unlimited or doesn't have an unlimited option
+                feature_value = row[feature]
+                
+                # Get the frontier-based cost for this feature value
+                if feature in frontiers:
+                    # Check if the index is numeric
+                    if pd.api.types.is_numeric_dtype(frontiers[feature].index):
+                        # Numeric index - use estimation
+                        return estimate_frontier_value(feature_value, frontiers[feature])
+                    else:
+                        # Categorical index - direct lookup
+                        if feature_value in frontiers[feature].index:
+                            return frontiers[feature][feature_value]
+                return 0.0
+        
+        # Apply the function to calculate contributions
+        df_result[contribution_column] = df_result.apply(calculate_feature_contribution, axis=1)
+        logger.info(f"Added contribution column for {feature}: min={df_result[contribution_column].min()}, max={df_result[contribution_column].max()}")
+    
+    # Calculate baseline cost for each plan (sum of all contributions)
     df_result['B'] = df_result.apply(
         lambda row: calculate_plan_baseline_cost(row, frontiers, UNLIMITED_FLAGS), 
         axis=1
