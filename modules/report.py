@@ -192,94 +192,67 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         excluded_visual_costs = [] # Renamed
         excluded_plan_names = []
         
-        other_feature_values = []
-        other_visual_costs = [] # Renamed
-        other_plan_names = []
-
         true_frontier_set_tuples = set((p['value'], p['cost'], p['plan_name']) for p in actual_frontier_stack)
         
-        candidate_tuples_for_exclusion_check = set((p['value'], p['cost'], p['plan_name']) for p in candidate_points_details)
-
         for candidate in candidate_points_details:
             if (candidate['value'], candidate['cost'], candidate['plan_name']) in true_frontier_set_tuples:
                 frontier_feature_values.append(float(candidate['value']))
-                frontier_visual_costs.append(float(candidate['cost'])) # Storing original_fee
+                frontier_visual_costs.append(float(candidate['cost'])) 
                 frontier_plan_names.append(candidate['plan_name'])
             else:
+                # These are candidates (min cost for their value) but not on the final stack
                 excluded_feature_values.append(float(candidate['value']))
-                excluded_visual_costs.append(float(candidate['cost'])) # Storing original_fee
+                excluded_visual_costs.append(float(candidate['cost'])) 
                 excluded_plan_names.append(candidate['plan_name'])
         
-        if not df_for_frontier.empty:
-            all_candidate_min_value_cost_pairs = set((p['value'], p['cost']) for p in candidate_points_details)
-            for _, row in df_for_frontier.iterrows():
-                f_val = row[feature]
-                c_cost = row[cost_metric_for_visualization] # Using original_fee for comparison
-                p_name = row['plan_name'] if 'plan_name' in row else "Unknown"
-                if (f_val, c_cost) not in all_candidate_min_value_cost_pairs:
-                    other_feature_values.append(float(f_val))
-                    other_visual_costs.append(float(c_cost)) # Storing original_fee
-                    other_plan_names.append(p_name)
-        
         all_values_for_js = []
-        all_visual_costs_for_js = [] # Renamed
+        all_visual_costs_for_js = [] 
         all_plan_names_for_js = []
         all_is_frontier_for_js = []
         all_is_excluded_for_js = []
 
         for i in range(len(frontier_feature_values)):
             all_values_for_js.append(frontier_feature_values[i])
-            all_visual_costs_for_js.append(frontier_visual_costs[i]) # Using original_fee based list
+            all_visual_costs_for_js.append(frontier_visual_costs[i]) 
             all_plan_names_for_js.append(frontier_plan_names[i])
             all_is_frontier_for_js.append(True)
             all_is_excluded_for_js.append(False)
         
         for i in range(len(excluded_feature_values)):
             all_values_for_js.append(excluded_feature_values[i])
-            all_visual_costs_for_js.append(excluded_visual_costs[i]) # Using original_fee based list
+            all_visual_costs_for_js.append(excluded_visual_costs[i]) 
             all_plan_names_for_js.append(excluded_plan_names[i])
             all_is_frontier_for_js.append(False)
             all_is_excluded_for_js.append(True)
-
-        for i in range(len(other_feature_values)):
-            all_values_for_js.append(other_feature_values[i])
-            all_visual_costs_for_js.append(other_visual_costs[i]) # Using original_fee based list
-            all_plan_names_for_js.append(other_plan_names[i])
-            all_is_frontier_for_js.append(False)
-            all_is_excluded_for_js.append(False)
             
         frontier_points_count = len(frontier_feature_values)
         excluded_points_count = len(excluded_feature_values)
-        other_points_count = len(other_feature_values)
         unlimited_count = 1 if has_unlimited_data else 0
         
-        logger.info(f"Identified {frontier_points_count} visual frontier points, {excluded_points_count} excluded, {other_points_count} other, {unlimited_count} unlimited for {feature} using '{cost_metric_for_visualization}'")
+        logger.info(f"Identified {frontier_points_count} visual frontier points, {excluded_points_count} excluded, {unlimited_count} unlimited for {feature} using '{cost_metric_for_visualization}'")
         
-        if frontier_points_count > 0 or excluded_points_count > 0 or other_points_count > 0 or has_unlimited_data:
+        if frontier_points_count > 0 or excluded_points_count > 0 or has_unlimited_data:
             feature_frontier_data[feature] = {
                 'all_values': all_values_for_js, 
-                'all_contributions': all_visual_costs_for_js, # Changed key name to all_costs_for_visualization or similar might be clearer, but JS expects all_contributions
+                'all_contributions': all_visual_costs_for_js, 
                 'all_is_frontier': all_is_frontier_for_js,
                 'all_is_excluded': all_is_excluded_for_js,
-                'all_is_unlimited': [has_unlimited_data and val == float('inf') for val in all_values_for_js], # This might need review if inf is not used for original_fee unlimited
+                'all_is_unlimited': [has_unlimited_data and val == float('inf') for val in all_values_for_js],
                 'all_plan_names': all_plan_names_for_js,
                 
                 'frontier_values': frontier_feature_values,
-                'frontier_contributions': frontier_visual_costs, # JS expects this key name
+                'frontier_contributions': frontier_visual_costs, 
                 'frontier_plan_names': frontier_plan_names,
                 'excluded_values': excluded_feature_values,
-                'excluded_contributions': excluded_visual_costs, # JS expects this key name
+                'excluded_contributions': excluded_visual_costs, 
                 'excluded_plan_names': excluded_plan_names,
-                'other_values': other_feature_values,
-                'other_contributions': other_visual_costs, # JS expects this key name
-                'other_plan_names': other_plan_names,
                 'has_unlimited': has_unlimited_data,
-                'unlimited_value': unlimited_min_visual_cost if has_unlimited_data else None, # This is original_fee based
+                'unlimited_value': unlimited_min_visual_cost if has_unlimited_data else None, 
                 'unlimited_plan': unlimited_min_plan if has_unlimited_data else None
             }
-            logger.info(f"Added data for {feature} to chart data. Visual Frontier: {frontier_points_count}, Excluded: {excluded_points_count}, Other: {other_points_count}, Unlimited: {unlimited_count}")
+            logger.info(f"Added data for {feature} to chart data. Visual Frontier: {frontier_points_count}, Excluded: {excluded_points_count}, Unlimited: {unlimited_count}")
         else:
-            logger.warning(f"No points found for {feature} (including unlimited) using '{cost_metric_for_visualization}', skipping chart data preparation")
+            logger.warning(f"No points found for {feature} (excluding 'other', including unlimited) using '{cost_metric_for_visualization}', skipping chart data preparation")
     
     # Serialize feature frontier data to JSON
     try:
@@ -679,7 +652,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 chartTitle.className = 'chart-title';
                 const hasUnlimited = data.has_unlimited ? ' U:1' : '';
                 chartTitle.textContent = (featureDisplayNames[feature] || feature) + 
-                    ` (F:${data.frontier_values.length} E:${data.excluded_values.length} O:${data.other_values.length}${hasUnlimited})`;
+                    ` (F:${data.frontier_values.length} E:${data.excluded_values.length}${hasUnlimited})`;
                 chartContainer.appendChild(chartTitle);
                 
                 // Create canvas for chart
@@ -694,8 +667,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 try {
                 const frontierPoints = [];
                     const excludedPoints = [];
-                    const otherPoints = [];
-                    const unlimitedPoints = [];
                     
                     // Create data points for frontier points
                     for (let i = 0; i < data.frontier_values.length; i++) {
@@ -735,25 +706,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         }
                     }
                     
-                    // Create data points for other points
-                    for (let i = 0; i < data.other_values.length; i++) {
-                        const x = data.other_values[i];
-                        const y = data.other_contributions[i];
-                        const planName = data.other_plan_names[i] || 'Unknown';
-                        
-                        // Ensure x and y are numbers
-                        if (typeof x === 'number' && typeof y === 'number' && !isNaN(x) && !isNaN(y)) {
-                            otherPoints.push({
-                                x: x,
-                                y: y,
-                                plan_name: planName,
-                                is_frontier: false,
-                                is_excluded: false,
-                                is_unlimited: false
-                            });
-                        }
-                    }
-                    
                     // Add unlimited point if available
                     if (data.has_unlimited && data.unlimited_value !== null) {
                         const unlimitedValue = data.unlimited_value;
@@ -762,10 +714,10 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         // Create a special mark for unlimited (using the right edge of the chart)
                         unlimitedPoints.push({
                             // Position at the maximum of actual data points plus 20% or at a default position
-                            x: data.frontier_values.length > 0 ? Math.max(...data.frontier_values) * 1.2 : 10,
+                            x: data.frontier_values.length > 0 ? Math.max(...data.frontier_values) * 1.2 : 10, // Ensure frontier_values is not empty
                             y: unlimitedValue,
                             plan_name: unlimitedPlan,
-                            is_frontier: true,
+                            is_frontier: true, // Unlimited is considered part of the effective frontier
                             is_excluded: false,
                             is_unlimited: true,
                             originalValue: "Unlimited"
@@ -775,13 +727,12 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                     const pointCounts = {
                         frontier: frontierPoints.length,
                         excluded: excludedPoints.length,
-                        other: otherPoints.length,
                         unlimited: unlimitedPoints.length
                     };
                     
-                    console.log(`Created ${frontierPoints.length} frontier points, ${excludedPoints.length} excluded points, ${otherPoints.length} other points, and ${unlimitedPoints.length} unlimited point for ${feature}`);
+                    console.log(`Created ${frontierPoints.length} frontier points, ${excludedPoints.length} excluded points, and ${unlimitedPoints.length} unlimited point for ${feature}`);
                     
-                    if (frontierPoints.length === 0 && excludedPoints.length === 0 && otherPoints.length === 0 && unlimitedPoints.length === 0) {
+                    if (frontierPoints.length === 0 && excludedPoints.length === 0 && unlimitedPoints.length === 0) {
                         console.warn(`No valid data points for ${feature}, skipping chart`);
                         continue;
                     }
@@ -828,16 +779,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         showLine: false
                     };
                     
-                    const otherDataset = {
-                        label: 'Other Points',
-                        data: otherPoints,
-                        backgroundColor: 'rgba(100, 100, 100, 0.5)',  // Gray for others
-                        borderColor: 'rgba(100, 100, 100, 0.5)',
-                        pointRadius: 3,
-                        pointHoverRadius: 6,
-                        showLine: false
-                    };
-                    
                     const unlimitedDataset = {
                         label: 'Unlimited',
                         data: unlimitedPoints,
@@ -851,7 +792,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                     
                     // Determine which datasets to include
                     const datasets = [];
-                    if (otherPoints.length > 0) datasets.push(otherDataset);
                     if (excludedPoints.length > 0) datasets.push(excludedDataset);
                     if (unlimitedPoints.length > 0) datasets.push(unlimitedDataset);
                     if (frontierPoints.length > 0) {
