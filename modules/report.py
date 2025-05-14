@@ -1325,7 +1325,9 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     html += script_html
     
     # --- Start: New HTML section for Residual Analysis Table ---
+    logger.info(f"Preparing to add Residual Analysis Table. Number of rows in residual_analysis_table_data: {len(residual_analysis_table_data)}")
     if residual_analysis_table_data:
+        logger.info(f"First row of residual_analysis_table_data (sample): {residual_analysis_table_data[0] if residual_analysis_table_data else 'Empty'}")
         html += """
         <h2>Residual Original Fee Analysis (Based on Minimum Value Points from Each Feature's Visual Frontier)</h2>
         <div class="container">
