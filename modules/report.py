@@ -37,6 +37,17 @@ class NumpyEncoder(json.JSONEncoder):
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Python equivalent of featureDisplayNames for use in HTML generation
+FEATURE_DISPLAY_NAMES_PY = {
+    'basic_data_clean': 'Basic Data',
+    'daily_data_clean': 'Daily Data',
+    'voice_clean': 'Voice',
+    'message_clean': 'SMS',
+    'additional_call': 'Additional Call',
+    'speed_when_exhausted': 'Throttled Speed',
+    'tethering_gb': 'Tethering'
+}
+
 def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile Plan Rankings"):
     """Generate an HTML report of the rankings.
     
@@ -305,6 +316,66 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         else:
             logger.warning(f"No frontier, excluded, or unlimited points found for {feature} using '{cost_metric_for_visualization}', skipping chart data preparation")
     
+    # --- Start: New section for Residual Analysis Data Preparation ---
+    residual_analysis_table_data = []
+    if feature_frontier_data: # Only proceed if there's chart data
+        for feature_analyzed, data_for_feature_chart in feature_frontier_data.items():
+            if data_for_feature_chart.get('frontier_values') and data_for_feature_chart['frontier_values']:
+                # Get the plan at the minimum point of this feature's visual frontier
+                min_frontier_plan_name = data_for_feature_chart['frontier_plan_names'][0]
+                min_frontier_feature_value_cost = data_for_feature_chart['frontier_contributions'][0] # This is original_fee based
+
+                # Find this plan in the original dataframe
+                plan_row_series = df[df['plan_name'] == min_frontier_plan_name]
+
+                if not plan_row_series.empty:
+                    plan_row = plan_row_series.iloc[0]
+                    plan_total_original_fee = plan_row.get('original_fee', 0)
+                    
+                    residual_original_fee = plan_total_original_fee - min_frontier_feature_value_cost
+                    
+                    other_specs_list = []
+                    for core_feat in core_continuous_features: # core_continuous_features defined earlier
+                        if core_feat == feature_analyzed: # Skip the feature being analyzed for this row
+                            continue
+
+                        feat_display_name = FEATURE_DISPLAY_NAMES_PY.get(core_feat, core_feat)
+                        value = plan_row.get(core_feat, "N/A")
+                        
+                        # Check for unlimited flags for display
+                        unlimited_flag_for_core_feat = UNLIMITED_FLAGS.get(core_feat)
+                        if unlimited_flag_for_core_feat and plan_row.get(unlimited_flag_for_core_feat) == 1:
+                            value = "Unlimited"
+                        elif isinstance(value, (int, float)) and core_feat == 'speed_when_exhausted' and plan_row.get('has_unlimited_speed') == 1:
+                             value = "Unlimited" # Special handling for speed if has_unlimited_speed flag
+                        elif isinstance(value, (int, float)) and core_feat == 'speed_when_exhausted' and value > 0 :
+                            value = f"{value} Mbps"
+                        elif isinstance(value, (int, float)) and (core_feat.endswith('_gb') or core_feat.endswith('_data_clean')):
+                             value = f"{value} GB"
+                        elif isinstance(value, (int, float)) and (core_feat.endswith('_min') or core_feat.endswith('_clean') and 'voice' in core_feat):
+                             value = f"{value} min"
+                        elif isinstance(value, (int, float)) and (core_feat.endswith('_clean') and 'message' in core_feat):
+                             value = f"{value} cnt"
+
+
+                        other_specs_list.append(f"{feat_display_name}: {value}")
+                    
+                    other_specs_str = "; ".join(other_specs_list) if other_specs_list else "N/A"
+                    
+                    residual_analysis_table_data.append({
+                        'analyzed_feature': FEATURE_DISPLAY_NAMES_PY.get(feature_analyzed, feature_analyzed),
+                        'plan_name': min_frontier_plan_name,
+                        'other_specs': other_specs_str,
+                        'residual_fee': residual_original_fee,
+                        'original_total_fee_of_plan': plan_total_original_fee,
+                        'feature_cost_at_min_frontier': min_frontier_feature_value_cost
+                    })
+                else:
+                    logger.warning(f"Plan '{min_frontier_plan_name}' not found in main DataFrame for residual analysis of feature '{feature_analyzed}'.")
+            else:
+                logger.info(f"No visual frontier points for feature '{feature_analyzed}', skipping for residual analysis table.")
+    # --- End: New section for Residual Analysis Data Preparation ---
+
     # Serialize feature frontier data to JSON
     try:
         feature_frontier_json = json.dumps(feature_frontier_data, cls=NumpyEncoder)
@@ -1000,6 +1071,44 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     # Replace the placeholder with actual JSON data
     script_html = script_template.replace('FRONTIER_DATA_JSON', feature_frontier_json)
     html += script_html
+    
+    # --- Start: New HTML section for Residual Analysis Table ---
+    if residual_analysis_table_data:
+        html += """
+        <h2>Residual Original Fee Analysis (at Minimum Visual Frontier Values)</h2>
+        <div class="container">
+            <div class="note">
+                <p>This table examines plans that represent the starting point (minimum feature value) on each feature's visual frontier (plotted using original fees). 
+                For such a plan, we subtract the original fee component of the analyzed feature (as per its frontier point) from the plan's total original fee. 
+                The remaining amount is the "Residual Original Fee", shown alongside the plan's other core specifications. 
+                This helps understand the costs associated with the rest of the plan's bundle at that specific frontier entry point.</p>
+            </div>
+            <table>
+                <tr>
+                    <th>Analyzed Feature</th>
+                    <th>Plan at Min. Visual Frontier Value</th>
+                    <th>Plan's Total Original Fee (KRW)</th>
+                    <th>Analyzed Feature's Cost at Min. Frontier (KRW)</th>
+                    <th>Other Core Specs in Plan</th>
+                    <th>= Residual Original Fee (KRW)</th>
+                </tr>
+        """
+        for row_data in residual_analysis_table_data:
+            html += f"""
+                <tr>
+                    <td>{row_data['analyzed_feature']}</td>
+                    <td>{row_data['plan_name']}</td>
+                    <td>{int(row_data['original_total_fee_of_plan']):,}</td>
+                    <td>{int(row_data['feature_cost_at_min_frontier']):,}</td>
+                    <td>{row_data['other_specs']}</td>
+                    <td class="good-value">{int(row_data['residual_fee']):,}</td>
+                </tr>
+            """
+        html += """
+            </table>
+        </div>
+        """
+    # --- End: New HTML section for Residual Analysis Table ---
     
     # Close HTML
     html += """
