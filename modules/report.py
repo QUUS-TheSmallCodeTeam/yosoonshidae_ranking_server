@@ -126,32 +126,40 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         feature_values = []
         contribution_values = []
         is_frontier_points = []
+        is_excluded_points = []
         plan_names = []
         
         # Group plans by feature value and get minimum contribution
         # This simulates how the frontier is calculated
         grouped = df.groupby(feature)[contribution_col].min().reset_index()
         
-        # Track the minimum cost seen so far to identify frontier points
-        min_cost_so_far = float('inf')
-        
         # Sort by feature value (ascending)
         grouped = grouped.sort_values(feature)
+        
+        # Apply proper monotonicity check - strictly increasing
+        min_cost_so_far = float('-inf')  # Start with negative infinity to ensure first point is frontier
+        last_frontier_cost = float('-inf')
         
         # For each unique feature value, identify if it's a frontier point
         for _, row in grouped.iterrows():
             feature_value = row[feature]
             contribution = row[contribution_col]
             
-            # If this contribution is lower than previous minimum, it's a frontier point
-            is_frontier = contribution <= min_cost_so_far
+            # This is the minimum for this feature value (initial candidate for frontier)
+            is_min_for_value = True
+            
+            # Check if this point should be on the frontier (strictly increasing)
+            is_frontier = contribution > last_frontier_cost
+            is_excluded = not is_frontier and is_min_for_value
+            
             if is_frontier:
-                min_cost_so_far = contribution
-                
+                last_frontier_cost = contribution
+            
             # Add data point
             feature_values.append(feature_value)
             contribution_values.append(contribution)
             is_frontier_points.append(is_frontier)
+            is_excluded_points.append(is_excluded)
             
             # Find a plan with this feature value and contribution for display
             matching_plans = df[(df[feature] == feature_value) & 
@@ -159,42 +167,53 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             plan_name = matching_plans.iloc[0]['plan_name'] if not matching_plans.empty else "Unknown"
             plan_names.append(plan_name)
         
-        # Keep all points, but separate frontier and non-frontier points for visualization
+        # Keep all points, but separate frontier, excluded, and regular points for visualization
         all_feature_values = []
         all_contribution_values = []
         all_plan_names = []
         all_is_frontier = []
+        all_is_excluded = []
         
         frontier_feature_values = []
         frontier_contribution_values = []
         frontier_plan_names = []
         
-        non_frontier_feature_values = []
-        non_frontier_contribution_values = []
-        non_frontier_plan_names = []
+        excluded_feature_values = []
+        excluded_contribution_values = []
+        excluded_plan_names = []
+        
+        other_feature_values = []
+        other_contribution_values = []
+        other_plan_names = []
         
         for i in range(len(feature_values)):
             # Add to full dataset
             all_feature_values.append(float(feature_values[i]))
             all_contribution_values.append(float(contribution_values[i]))
             all_plan_names.append(plan_names[i])
-            all_is_frontier.append(bool(is_frontier_points[i]))  # Convert to native Python boolean
+            all_is_frontier.append(bool(is_frontier_points[i]))
+            all_is_excluded.append(bool(is_excluded_points[i]))
             
-            # Add to frontier or non-frontier dataset
-            if bool(is_frontier_points[i]):  # Convert to Python boolean
+            # Add to appropriate dataset
+            if bool(is_frontier_points[i]):
                 frontier_feature_values.append(float(feature_values[i]))
                 frontier_contribution_values.append(float(contribution_values[i]))
                 frontier_plan_names.append(plan_names[i])
+            elif bool(is_excluded_points[i]):
+                excluded_feature_values.append(float(feature_values[i]))
+                excluded_contribution_values.append(float(contribution_values[i]))
+                excluded_plan_names.append(plan_names[i])
             else:
-                non_frontier_feature_values.append(float(feature_values[i]))
-                non_frontier_contribution_values.append(float(contribution_values[i]))
-                non_frontier_plan_names.append(plan_names[i])
+                other_feature_values.append(float(feature_values[i]))
+                other_contribution_values.append(float(contribution_values[i]))
+                other_plan_names.append(plan_names[i])
         
         # Count points for logging
         frontier_points_count = len(frontier_feature_values)
-        non_frontier_points_count = len(non_frontier_feature_values)
+        excluded_points_count = len(excluded_feature_values)
+        other_points_count = len(other_feature_values)
         
-        logger.info(f"Identified {frontier_points_count} frontier points and {non_frontier_points_count} non-frontier points for {feature}")
+        logger.info(f"Identified {frontier_points_count} frontier points, {excluded_points_count} excluded points, and {other_points_count} other points for {feature}")
         
         # Add to feature frontier data (only if we have any points)
         if len(all_feature_values) > 0:
@@ -202,13 +221,17 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 'all_values': all_feature_values,
                 'all_contributions': all_contribution_values,
                 'all_is_frontier': all_is_frontier,
+                'all_is_excluded': all_is_excluded,
                 'all_plan_names': all_plan_names,
                 'frontier_values': frontier_feature_values,
                 'frontier_contributions': frontier_contribution_values,
                 'frontier_plan_names': frontier_plan_names,
-                'non_frontier_values': non_frontier_feature_values,
-                'non_frontier_contributions': non_frontier_contribution_values,
-                'non_frontier_plan_names': non_frontier_plan_names
+                'excluded_values': excluded_feature_values,
+                'excluded_contributions': excluded_contribution_values,
+                'excluded_plan_names': excluded_plan_names,
+                'other_values': other_feature_values,
+                'other_contributions': other_contribution_values,
+                'other_plan_names': other_plan_names
             }
             logger.info(f"Added {len(all_feature_values)} points for {feature} to chart data")
         else:
@@ -610,7 +633,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 const chartTitle = document.createElement('div');
                 chartTitle.className = 'chart-title';
                 chartTitle.textContent = (featureDisplayNames[feature] || feature) + 
-                    ` (${data.frontier_values.length}/${data.all_values.length})`;
+                    ` (F:${data.frontier_values.length} E:${data.excluded_values.length} O:${data.other_values.length})`;
                 chartContainer.appendChild(chartTitle);
                 
                 // Create canvas for chart
@@ -624,7 +647,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 // Prepare chart data points for frontier points
                 try {
                     const frontierPoints = [];
-                    const nonFrontierPoints = [];
+                    const excludedPoints = [];
+                    const otherPoints = [];
                     
                     // Create data points for frontier points
                     for (let i = 0; i < data.frontier_values.length; i++) {
@@ -638,31 +662,51 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                                 x: x,
                                 y: y,
                                 plan_name: planName,
-                                is_frontier: true
+                                is_frontier: true,
+                                is_excluded: false
                             });
                         }
                     }
                     
-                    // Create data points for non-frontier points
-                    for (let i = 0; i < data.non_frontier_values.length; i++) {
-                        const x = data.non_frontier_values[i];
-                        const y = data.non_frontier_contributions[i];
-                        const planName = data.non_frontier_plan_names[i] || 'Unknown';
+                    // Create data points for excluded points
+                    for (let i = 0; i < data.excluded_values.length; i++) {
+                        const x = data.excluded_values[i];
+                        const y = data.excluded_contributions[i];
+                        const planName = data.excluded_plan_names[i] || 'Unknown';
                         
                         // Ensure x and y are numbers
                         if (typeof x === 'number' && typeof y === 'number' && !isNaN(x) && !isNaN(y)) {
-                            nonFrontierPoints.push({
+                            excludedPoints.push({
                                 x: x,
                                 y: y,
                                 plan_name: planName,
-                                is_frontier: false
+                                is_frontier: false,
+                                is_excluded: true
                             });
                         }
                     }
                     
-                    console.log(`Created ${frontierPoints.length} frontier points and ${nonFrontierPoints.length} non-frontier points for ${feature}`);
+                    // Create data points for other points
+                    for (let i = 0; i < data.other_values.length; i++) {
+                        const x = data.other_values[i];
+                        const y = data.other_contributions[i];
+                        const planName = data.other_plan_names[i] || 'Unknown';
+                        
+                        // Ensure x and y are numbers
+                        if (typeof x === 'number' && typeof y === 'number' && !isNaN(x) && !isNaN(y)) {
+                            otherPoints.push({
+                                x: x,
+                                y: y,
+                                plan_name: planName,
+                                is_frontier: false,
+                                is_excluded: false
+                            });
+                        }
+                    }
                     
-                    if (frontierPoints.length === 0 && nonFrontierPoints.length === 0) {
+                    console.log(`Created ${frontierPoints.length} frontier points, ${excludedPoints.length} excluded points, and ${otherPoints.length} other points for ${feature}`);
+                    
+                    if (frontierPoints.length === 0 && excludedPoints.length === 0 && otherPoints.length === 0) {
                         console.warn(`No valid data points for ${feature}, skipping chart`);
                         continue;
                     }
@@ -671,8 +715,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                     const frontierDataset = {
                         label: 'Frontier Points',
                         data: frontierPoints,
-                        backgroundColor: 'rgba(255, 99, 132, 1)',
-                        borderColor: 'rgba(255, 99, 132, 1)',
+                        backgroundColor: 'rgba(255, 0, 0, 1)',
+                        borderColor: 'rgba(255, 0, 0, 1)',
                         pointRadius: 5,
                         pointHoverRadius: 8,
                         showLine: true,
@@ -685,8 +729,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                     const frontierAreaDataset = {
                         label: 'Frontier Line',
                         data: frontierPoints,
-                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                        borderColor: 'rgba(255, 99, 132, 0)',
+                        backgroundColor: 'rgba(255, 0, 0, 0.1)',
+                        borderColor: 'rgba(255, 0, 0, 0)',
                         pointRadius: 0,
                         showLine: true,
                         tension: 0.1,
@@ -699,11 +743,21 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         spanGaps: true
                     };
                     
-                    const nonFrontierDataset = {
+                    const excludedDataset = {
+                        label: 'Excluded Points',
+                        data: excludedPoints,
+                        backgroundColor: 'rgba(255, 165, 0, 0.8)',  // Orange for excluded
+                        borderColor: 'rgba(255, 165, 0, 0.8)',
+                        pointRadius: 4,
+                        pointHoverRadius: 7,
+                        showLine: false
+                    };
+                    
+                    const otherDataset = {
                         label: 'Other Points',
-                        data: nonFrontierPoints,
-                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                        borderColor: 'rgba(54, 162, 235, 0.5)',
+                        data: otherPoints,
+                        backgroundColor: 'rgba(100, 100, 100, 0.5)',  // Gray for others
+                        borderColor: 'rgba(100, 100, 100, 0.5)',
                         pointRadius: 3,
                         pointHoverRadius: 6,
                         showLine: false
@@ -711,7 +765,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                     
                     // Determine which datasets to include
                     const datasets = [];
-                    if (nonFrontierPoints.length > 0) datasets.push(nonFrontierDataset);
+                    if (otherPoints.length > 0) datasets.push(otherDataset);
+                    if (excludedPoints.length > 0) datasets.push(excludedDataset);
                     if (frontierPoints.length > 0) {
                         if (frontierPoints.length > 1) datasets.push(frontierAreaDataset);
                         datasets.push(frontierDataset);
@@ -739,12 +794,24 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                                             const point = context.raw;
                                             // Don't show tooltip for area dataset
                                             if (context.dataset.label === 'Frontier Line') return null;
-                                            return [
+                                            
+                                            // Base info
+                                            const tooltipLines = [
                                                 "Plan: " + point.plan_name,
                                                 "Value: " + point.x,
-                                                "Cost: " + point.y.toLocaleString() + " KRW",
-                                                "Frontier Point: " + (point.is_frontier ? "Yes" : "No")
+                                                "Cost: " + point.y.toLocaleString() + " KRW"
                                             ];
+                                            
+                                            // Add point type explanation
+                                            if (point.is_frontier) {
+                                                tooltipLines.push("Type: Frontier point - used in baseline cost");
+                                            } else if (point.is_excluded) {
+                                                tooltipLines.push("Type: Excluded - minimum cost for value but not monotonic");
+                                            } else {
+                                                tooltipLines.push("Type: Other - not minimum cost for value");
+                                            }
+                                            
+                                            return tooltipLines;
                                         }
                                     }
                                 },
