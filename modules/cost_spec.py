@@ -45,13 +45,13 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
     """
     Create a robust, strictly increasing monotonic frontier for a given feature.
     This ensures the frontier "crawls the bottom" of optimal points.
-
+    
     Args:
         df_feature_specific: DataFrame filtered for non-unlimited values of the specific feature.
         feature_col: The name of the feature column (e.g., 'basic_data_clean').
         cost_col: The name of the column representing the cost for that feature (e.g., 'fee' or 'contribution_feature').
                   For calculate_feature_frontiers, this will typically be the overall plan 'fee'.
-
+        
     Returns:
         A pandas Series where the index is the feature value and the values are the frontier costs.
     """
@@ -71,21 +71,29 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
             # We don't need plan_name here for cost_spec.py's frontier generation
         })
 
-    # Step 2: Build the true monotonic frontier (strictly increasing cost) using a stack
+    # Step 2: Build the true monotonic frontier with minimum 1 KRW cost increase rule
     actual_frontier_stack = []
     for candidate in candidate_details:
-        # Prune: Remove points from stack if current candidate makes them non-optimal or non-monotonic
-        while actual_frontier_stack and candidate['cost'] <= actual_frontier_stack[-1]['cost']:
+        # Part 1: Bottom-crawling based on cost.
+        # If current candidate is strictly cheaper than stack top, stack top is suboptimal.
+        while actual_frontier_stack and candidate['cost'] < actual_frontier_stack[-1]['cost']:
             actual_frontier_stack.pop()
         
-        # Add current candidate if stack is empty or it's strictly more expensive and has a higher feature value
-        if not actual_frontier_stack or \
-           (candidate['cost'] > actual_frontier_stack[-1]['cost'] and candidate['value'] > actual_frontier_stack[-1]['value']): 
+        # Part 2: Add candidate if it forms a valid next step from the (new) stack top.
+        if not actual_frontier_stack:
+            # If stack is empty, add current candidate.
             actual_frontier_stack.append(candidate)
-        elif actual_frontier_stack and candidate['value'] == actual_frontier_stack[-1]['value'] and candidate['cost'] < actual_frontier_stack[-1]['cost']:
-            # Edge case: Same feature value, but this new candidate is cheaper (should ideally not happen if idxmin is perfect for this, but good safeguard)
-            actual_frontier_stack.pop()
-            actual_frontier_stack.append(candidate)
+        else:
+            last_frontier_point = actual_frontier_stack[-1]
+            # Conditions for adding to the frontier:
+            # 1. Candidate's feature value must be strictly greater.
+            # 2. Candidate's cost must be strictly greater.
+            # 3. Cost increase must be at least 1.0 KRW.
+            if (candidate['value'] > last_frontier_point['value'] and
+                candidate['cost'] > last_frontier_point['cost'] and
+                (candidate['cost'] - last_frontier_point['cost']) >= 1.0):
+                actual_frontier_stack.append(candidate)
+            # Else: Candidate is not added (due to plateau, insufficient increase, or same feature value).
             
     if not actual_frontier_stack:
         return pd.Series(dtype=float)
@@ -113,14 +121,12 @@ def calculate_feature_frontiers(df: pd.DataFrame, features: List[str],
             continue
 
         unlimited_flag = unlimited_flags.get(feature)
-        df_for_current_feature_frontier = df # Start with the whole df
-
+        # df_for_current_feature_frontier = df # Start with the whole df - This line seems unused, can be removed or kept if intended for future use.
+        
         if unlimited_flag and unlimited_flag in df.columns:
             # Handle non-unlimited part first
             df_non_unlimited = df[df[unlimited_flag] == 0].copy()
             if not df_non_unlimited.empty:
-                # For features with an unlimited option, the frontier is built from non-unlimited values using their plan fees.
-                # The cost_col for create_robust_monotonic_frontier is fee_column (overall plan fee)
                 robust_frontier = create_robust_monotonic_frontier(df_non_unlimited, feature, fee_column)
                 if not robust_frontier.empty:
                     frontiers[feature] = robust_frontier
@@ -136,10 +142,11 @@ def calculate_feature_frontiers(df: pd.DataFrame, features: List[str],
                 min_fee_unlimited = unlimited_plans_df[fee_column].min()
                 frontiers[unlimited_flag] = pd.Series([min_fee_unlimited]) # Store under the flag's name
                 logger.info(f"Added unlimited case for {feature} (as {unlimited_flag}) with fee {min_fee_unlimited}")
-            else:
+            else: # This else corresponds to `if not unlimited_plans_df.empty:` for unlimited_plans_df
                 logger.info(f"No unlimited plans found for {feature} (flag: {unlimited_flag})")
 
-        else: # Feature does not have an unlimited flag
+        else: # This else corresponds to `if unlimited_flag and unlimited_flag in df.columns:`
+            # Feature does not have an unlimited flag
             # Frontier is built from all values of this feature using their plan fees.
             robust_frontier = create_robust_monotonic_frontier(df, feature, fee_column)
             if not robust_frontier.empty:
@@ -147,7 +154,7 @@ def calculate_feature_frontiers(df: pd.DataFrame, features: List[str],
                 logger.info(f"Created ROBUST monotonic frontier for {feature} (no unlimited option) with {len(robust_frontier)} points")
             else:
                 logger.warning(f"Robust frontier for {feature} (no unlimited option) is empty.")
-                
+    
     return frontiers
 
 def estimate_frontier_value(feature_value: float, frontier: pd.Series) -> float:

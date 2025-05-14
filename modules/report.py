@@ -161,7 +161,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             min_cost_indices = df_for_frontier.loc[df_for_frontier.groupby(feature)[contribution_col].idxmin()].index
             min_cost_candidates_df = df_for_frontier.loc[min_cost_indices]
             
-            # Sort these candidates by feature value
+            # Sort these candidates by feature value, then cost
             min_cost_candidates_df = min_cost_candidates_df.sort_values(by=[feature, contribution_col])
 
             for _, row in min_cost_candidates_df.iterrows():
@@ -171,25 +171,38 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                     'plan_name': row['plan_name'] if 'plan_name' in row else "Unknown"
                 })
         
-        # Step 2: Build the true monotonic frontier (strictly increasing cost)
+        # Step 2: Build the true monotonic frontier with minimum 1 KRW cost increase rule
         actual_frontier_stack = []
+        # candidate_points_details is a list of dicts: {'value': V, 'cost': C, 'plan_name': PN},
+        # sorted by 'value' then 'cost'. These are minimum costs for each unique 'value'.
+
         for candidate in candidate_points_details:
-            # Prune: Remove points from stack if current candidate is better or makes them non-monotonic
-            # A point is removed if current candidate offers same/more feature for same/less cost,
-            # or simply if current candidate's cost is not strictly greater than stack top's cost.
-            while actual_frontier_stack and candidate['cost'] <= actual_frontier_stack[-1]['cost']:
+            # Part 1: Bottom-crawling based on cost.
+            # If current candidate is strictly cheaper than stack top, stack top is suboptimal.
+            # This handles cases like (2GB, 1200 KRW) then (5GB, 1100 KRW) -> 2GB point is removed.
+            while actual_frontier_stack and candidate['cost'] < actual_frontier_stack[-1]['cost']:
                 actual_frontier_stack.pop()
             
-            # Add current candidate if stack is empty or it's strictly more expensive than stack top
-            if not actual_frontier_stack or candidate['cost'] > actual_frontier_stack[-1]['cost']:
-                 # Also ensure feature value is increasing (it should be due to sort, but as a safeguard)
-                if not actual_frontier_stack or candidate['value'] > actual_frontier_stack[-1]['value']:
+            # Part 2: Add candidate if it forms a valid next step from the (new) stack top.
+            if not actual_frontier_stack:
+                # If stack is empty (either initially, or after popping all dominated points), add current candidate.
+                # The first point on the frontier does not need to satisfy the 1 KRW increase rule against a prior point.
+                actual_frontier_stack.append(candidate)
+            else:
+                last_frontier_point = actual_frontier_stack[-1]
+                # Conditions for adding to the frontier:
+                # 1. Candidate's feature value must be strictly greater than the last frontier point's feature value.
+                # 2. Candidate's cost must be strictly greater than the last frontier point's cost.
+                #    (This, combined with the pop logic, handles plateaus: if costs are equal, earlier value is kept).
+                # 3. The cost increase (candidate_cost - last_frontier_cost) must be at least 1.0 KRW.
+                if (candidate['value'] > last_frontier_point['value'] and
+                    candidate['cost'] > last_frontier_point['cost'] and
+                    (candidate['cost'] - last_frontier_point['cost']) >= 1.0):
                     actual_frontier_stack.append(candidate)
-                elif actual_frontier_stack and candidate['value'] == actual_frontier_stack[-1]['value'] and candidate['cost'] < actual_frontier_stack[-1]['cost']:
-                    # Same feature value, but cheaper cost - replace last point
-                    actual_frontier_stack.pop()
-                    actual_frontier_stack.append(candidate)
-
+                # Else: Candidate is not added.
+                # This covers:
+                # - Plateau: candidate_cost == last_frontier_point['cost'] (fails cost > last_cost)
+                # - Insufficient increase: candidate_cost > last_frontier_point['cost'] but (delta < 1.0)
 
         # Step 3: Classify all points from df_for_frontier
         frontier_feature_values = []
@@ -303,7 +316,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             logger.info(f"Added data for {feature} to chart data. Frontier: {frontier_points_count}, Excluded: {excluded_points_count}, Other: {other_points_count}, Unlimited: {unlimited_count}")
         else:
             logger.warning(f"No points found for {feature} (including unlimited), skipping chart data preparation")
-
+    
     # Serialize feature frontier data to JSON
     try:
         feature_frontier_json = json.dumps(feature_frontier_data, cls=NumpyEncoder)
@@ -715,7 +728,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 
                 // Prepare chart data points for frontier points
                 try {
-                    const frontierPoints = [];
+                const frontierPoints = [];
                     const excludedPoints = [];
                     const otherPoints = [];
                     const unlimitedPoints = [];
@@ -884,7 +897,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                     
                     // Create Chart.js chart options with possible unlimited annotation
                     const chartOptions = {
-                        responsive: true,
+                            responsive: true,
                         maintainAspectRatio: true,
                         aspectRatio: 1.8,
                         plugins: {
@@ -897,7 +910,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                                 },
                                 callbacks: {
                                     label: function(context) {
-                                        const point = context.raw;
+                                            const point = context.raw;
                                         // Don't show tooltip for area dataset
                                         if (context.dataset.label === 'Frontier Line') return null;
                                         
@@ -924,7 +937,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                                 }
                             },
                             legend: {
-                                position: 'top',
+                                    position: 'top',
                                 labels: {
                                     font: {
                                         size: 11
@@ -944,7 +957,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         scales: {
                             x: {
                                 title: {
-                                    display: true,
+                                        display: true,
                                     text: featureDisplayNames[feature] || feature,
                                     font: {
                                         size: 11
@@ -962,7 +975,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                             },
                             y: {
                                 title: {
-                                    display: true,
+                                        display: true,
                                     text: 'Baseline Cost (KRW)',
                                     font: {
                                         size: 11
@@ -970,7 +983,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                                 },
                                 ticks: {
                                     callback: function(value) {
-                                        return value.toLocaleString();
+                                            return value.toLocaleString();
                                     },
                                     font: {
                                         size: 10
