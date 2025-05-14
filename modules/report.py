@@ -141,12 +141,23 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             plan_name = matching_plans.iloc[0]['plan_name'] if not matching_plans.empty else "Unknown"
             plan_names.append(plan_name)
         
+        # Filter to keep only frontier points
+        frontier_feature_values = []
+        frontier_contribution_values = []
+        frontier_plan_names = []
+        
+        for i in range(len(feature_values)):
+            if is_frontier_points[i]:
+                frontier_feature_values.append(feature_values[i])
+                frontier_contribution_values.append(contribution_values[i])
+                frontier_plan_names.append(plan_names[i])
+        
         # Add to feature frontier data
         feature_frontier_data[feature] = {
-            'values': feature_values,
-            'contributions': contribution_values,
-            'is_frontier': is_frontier_points,
-            'plan_names': plan_names
+            'values': frontier_feature_values,
+            'contributions': frontier_contribution_values,
+            'is_frontier': [True] * len(frontier_feature_values),
+            'plan_names': frontier_plan_names
         }
     
     # Serialize feature frontier data to JSON
@@ -483,17 +494,17 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     """
     
     # Add JavaScript for feature frontier charts
-    html += f"""
+    script_template = """
         <script>
         // Feature frontier data
-        const featureFrontierData = {feature_frontier_json};
+        const featureFrontierData = FRONTIER_DATA_JSON;
         
         // Create feature frontier charts
-        document.addEventListener('DOMContentLoaded', function() {{
+        document.addEventListener('DOMContentLoaded', function() {
             console.log('Initializing feature frontier charts...');
             
             // Feature display names
-            const featureDisplayNames = {{
+            const featureDisplayNames = {
                 'basic_data_clean': 'Basic Data (GB)',
                 'daily_data_clean': 'Daily Data (GB)',
                 'voice_clean': 'Voice Minutes',
@@ -501,17 +512,17 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 'additional_call': 'Additional Call Minutes',
                 'speed_when_exhausted': 'Throttled Speed (Mbps)',
                 'tethering_gb': 'Tethering Data (GB)'
-            }};
+            };
             
             // Get the container
             const container = document.getElementById('feature-charts-container');
-            if (!container) {{
+            if (!container) {
                 console.error('Could not find feature charts container');
                 return;
-            }}
+            }
             
             // Create a chart for each feature
-            for (const [feature, data] of Object.entries(featureFrontierData)) {{
+            for (const [feature, data] of Object.entries(featureFrontierData)) {
                 // Create chart container
                 const chartContainer = document.createElement('div');
                 chartContainer.className = 'chart-container';
@@ -524,117 +535,95 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 
                 // Create canvas for chart
                 const canvas = document.createElement('canvas');
-                canvas.id = `chart-${{feature}}`;
+                canvas.id = "chart-" + feature;
                 chartContainer.appendChild(canvas);
                 
                 // Add to main container
                 container.appendChild(chartContainer);
                 
-                // Prepare datasets
-                const frontierPoints = [];
-                const nonFrontierPoints = [];
-                
-                // Split data into frontier and non-frontier points
-                for (let i = 0; i < data.values.length; i++) {{
-                    const point = {{
-                        x: data.values[i],
-                        y: data.contributions[i],
-                        plan_name: data.plan_names[i]
-                    }};
-                    
-                    if (data.is_frontier[i]) {{
-                        frontierPoints.push(point);
-                    }} else {{
-                        nonFrontierPoints.push(point);
-                    }}
-                }}
+                // Prepare chart data points
+                const chartPoints = data.values.map((value, i) => ({
+                    x: value,
+                    y: data.contributions[i],
+                    plan_name: data.plan_names[i]
+                }));
                 
                 // Create Chart.js chart
-                try {{
-                    const frontierDataset = {{
+                try {
+                    const frontierDataset = {
                         label: 'Frontier Points',
-                        data: frontierPoints,
+                        data: chartPoints,
                         backgroundColor: 'rgba(255, 99, 132, 1)',
                         borderColor: 'rgba(255, 99, 132, 1)',
                         pointRadius: 6,
                         pointHoverRadius: 10,
                         showLine: true,
                         tension: 0.1
-                    }};
+                    };
                     
-                    const nonFrontierDataset = {{
-                        label: 'Other Points',
-                        data: nonFrontierPoints,
-                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                        borderColor: 'rgba(54, 162, 235, 0.5)',
-                        pointRadius: 4,
-                        pointHoverRadius: 8
-                    }};
-                    
-                    const datasets = [frontierDataset];
-                    if (nonFrontierPoints.length > 0) {{
-                        datasets.push(nonFrontierDataset);
-                    }}
-                    
-                    new Chart(canvas, {{
+                    new Chart(canvas, {
                         type: 'scatter',
-                        data: {{
-                            datasets: datasets
-                        }},
-                        options: {{
+                        data: {
+                            datasets: [frontierDataset]
+                        },
+                        options: {
                             responsive: true,
                             maintainAspectRatio: false,
                             aspectRatio: 1.5,
-                            plugins: {{
-                                tooltip: {{
-                                    callbacks: {{
-                                        label: function(context) {{
+                            plugins: {
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
                                             const point = context.raw;
                                             return [
-                                                `Plan: ${{point.plan_name}}`,
-                                                `Value: ${{point.x}}`,
-                                                `Cost: ${{point.y.toLocaleString()}} KRW`
+                                                "Plan: " + point.plan_name,
+                                                "Value: " + point.x,
+                                                "Cost: " + point.y.toLocaleString() + " KRW"
                                             ];
-                                        }}
-                                    }}
-                                }},
-                                legend: {{
+                                        }
+                                    }
+                                },
+                                legend: {
                                     position: 'top',
-                                }},
-                                title: {{
+                                },
+                                title: {
                                     display: false
-                                }}
-                            }},
-                            scales: {{
-                                x: {{
-                                    title: {{
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    title: {
                                         display: true,
                                         text: featureDisplayNames[feature] || feature
-                                    }}
-                                }},
-                                y: {{
-                                    title: {{
+                                    }
+                                },
+                                y: {
+                                    title: {
                                         display: true,
                                         text: 'Baseline Cost (KRW)'
-                                    }},
-                                    ticks: {{
-                                        callback: function(value) {{
+                                    },
+                                    ticks: {
+                                        callback: function(value) {
                                             return value.toLocaleString();
-                                        }}
-                                    }}
-                                }}
-                            }}
-                        }}
-                    }});
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
                     
-                    console.log(`Chart for ${{feature}} created successfully`);
-                }} catch (err) {{
-                    console.error(`Error creating chart for ${{feature}}:`, err);
-                }}
-            }}
-        }});
+                    console.log("Chart for " + feature + " created successfully");
+                } catch (err) {
+                    console.error("Error creating chart for " + feature + ":", err);
+                }
+            }
+        });
         </script>
     """
+    
+    # Replace the placeholder with actual JSON data
+    script_html = script_template.replace('FRONTIER_DATA_JSON', feature_frontier_json)
+    html += script_html
     
     # Close HTML
     html += """
