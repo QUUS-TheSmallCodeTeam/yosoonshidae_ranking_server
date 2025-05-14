@@ -362,21 +362,22 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             /* Feature charts grid */
             .chart-grid {{
                 display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-                gap: 10px;
+                grid-template-columns: repeat(2, 1fr); /* Changed to 2 columns */
+                gap: 20px; /* Increased gap for better separation */
                 margin-top: 15px;
             }}
             
             .chart-container {{
                 border: 1px solid #ddd;
                 border-radius: 6px;
-                padding: 10px;
+                padding: 15px; /* Increased padding */
                 background-color: white;
                 box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                height: 250px;
-                min-width: 280px;
-                max-width: 400px;
-                margin: 0 auto;
+                height: 380px; /* Increased height */
+                width: 100%; /* Fill grid cell width */
+                max-width: 650px; /* Allow larger charts, capped */
+                margin: 0 auto; /* Center if grid cell is wider than max-width */
+                position: relative; /* Ensure absolute positioning of unlimited label is contained */
             }}
             
             .chart-title {{
@@ -858,8 +859,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                     // Create Chart.js chart options with possible unlimited annotation
                     const chartOptions = {
                             responsive: true,
-                        maintainAspectRatio: true,
-                        aspectRatio: 1.8,
+                        maintainAspectRatio: false, // Set to false to fill container dimensions
+                        // aspectRatio: 1.8, // No longer primary driver if maintainAspectRatio is false
                         plugins: {
                             tooltip: {
                                 titleFont: {
@@ -974,8 +975,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         const unlimitedLabel = document.createElement('div');
                         unlimitedLabel.style.position = 'absolute';
                         unlimitedLabel.style.right = '10px';
-                        unlimitedLabel.style.top = '50%';
-                        unlimitedLabel.style.transform = 'translateY(-50%)';
+                        unlimitedLabel.style.top = '30px'; // Adjusted top position for taller chart
+                        // unlimitedLabel.style.transform = 'translateY(-50%)'; // Keep if vertical centering is desired relative to top
                         unlimitedLabel.style.backgroundColor = 'rgba(128, 0, 128, 0.1)';
                         unlimitedLabel.style.borderLeft = '3px solid rgba(128, 0, 128, 0.8)';
                         unlimitedLabel.style.padding = '4px 8px';
