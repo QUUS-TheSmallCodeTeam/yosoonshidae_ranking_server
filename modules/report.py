@@ -348,18 +348,34 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         actual_frontier_plans_series_list = [] 
         
         for candidate_plan_series in candidate_points_details_series:
-            while actual_frontier_plans_series_list and \
-                  candidate_plan_series[cost_metric_for_visualization] < actual_frontier_plans_series_list[-1][cost_metric_for_visualization]:
-                actual_frontier_plans_series_list.pop()
-            
+            # If this is the first point, always add it
             if not actual_frontier_plans_series_list:
                 actual_frontier_plans_series_list.append(candidate_plan_series)
-            else:
-                last_frontier_plan_series = actual_frontier_plans_series_list[-1]
-                if (candidate_plan_series[feature] > last_frontier_plan_series[feature] and
-                    candidate_plan_series[cost_metric_for_visualization] > last_frontier_plan_series[cost_metric_for_visualization] and
-                    (candidate_plan_series[cost_metric_for_visualization] - last_frontier_plan_series[cost_metric_for_visualization]) >= 1.0):
-                    actual_frontier_plans_series_list.append(candidate_plan_series)
+                continue
+            
+            last_frontier_plan_series = actual_frontier_plans_series_list[-1]
+            current_value = candidate_plan_series[feature]
+            current_cost = candidate_plan_series[cost_metric_for_visualization]
+            last_value = last_frontier_plan_series[feature]
+            last_cost = last_frontier_plan_series[cost_metric_for_visualization]
+            
+            # Pop points that this one dominates (more value for less or equal cost)
+            while actual_frontier_plans_series_list and \
+                  current_value > last_frontier_plan_series[feature] and \
+                  current_cost <= last_frontier_plan_series[cost_metric_for_visualization]:
+                actual_frontier_plans_series_list.pop()
+                if actual_frontier_plans_series_list:
+                    last_frontier_plan_series = actual_frontier_plans_series_list[-1]
+                    last_value = last_frontier_plan_series[feature]
+                    last_cost = last_frontier_plan_series[cost_metric_for_visualization]
+            
+            # Add point if:
+            # 1. It offers more value at the same cost
+            # 2. It offers more value at a higher cost (maintaining monotonicity)
+            # 3. It's the last point in the sequence (to ensure connection)
+            if (current_value > last_value and current_cost >= last_cost) or \
+               (current_value > last_value and abs(current_cost - last_cost) < 1.0):  # Handle floating point comparison
+                actual_frontier_plans_series_list.append(candidate_plan_series)
         
         # Populate visual_frontiers_for_residual_table with (value, original_fee) tuples from these Series
         current_feature_visual_frontier_tuples = [(p[feature], p[cost_metric_for_visualization]) for p in actual_frontier_plans_series_list]
