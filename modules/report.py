@@ -343,16 +343,18 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
 
             for _, plan_series_row in min_cost_candidates_df.iterrows():
                 candidate_points_details_series.append(plan_series_row) # Append the full Series
-        
+                
+            logger.info(f"Identified {len(candidate_points_details_series)} candidate points for feature {feature}")
+            
         # Step 2: Build the true monotonic frontier (list of Pandas Series for plans on the frontier)
         actual_frontier_plans_series_list = [] 
-        
+
         for candidate_plan_series in candidate_points_details_series:
             # If this is the first point, always add it
             if not actual_frontier_plans_series_list:
                 actual_frontier_plans_series_list.append(candidate_plan_series)
                 continue
-            
+                
             last_frontier_plan_series = actual_frontier_plans_series_list[-1]
             current_value = candidate_plan_series[feature]
             current_cost = candidate_plan_series[cost_metric_for_visualization]
@@ -363,6 +365,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             while actual_frontier_plans_series_list and \
                   current_value > last_frontier_plan_series[feature] and \
                   current_cost <= last_frontier_plan_series[cost_metric_for_visualization]:
+                logger.info(f"Popping dominated point: value={last_frontier_plan_series[feature]}, cost={last_frontier_plan_series[cost_metric_for_visualization]}")
                 actual_frontier_plans_series_list.pop()
                 if actual_frontier_plans_series_list:
                     last_frontier_plan_series = actual_frontier_plans_series_list[-1]
@@ -374,8 +377,13 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             # 2. It offers more value at a higher cost (maintaining monotonicity)
             # 3. It's the last point in the sequence (to ensure connection)
             if (current_value > last_value and current_cost >= last_cost) or \
-               (current_value > last_value and abs(current_cost - last_cost) < 1.0):  # Handle floating point comparison
+                (current_value > last_value and abs(current_cost - last_cost) < 1.0):  # Handle floating point comparison
+                logger.info(f"Adding frontier point: value={current_value}, cost={current_cost}")
                 actual_frontier_plans_series_list.append(candidate_plan_series)
+                
+        # Ensure frontier points are sorted by feature value 
+        actual_frontier_plans_series_list.sort(key=lambda p: p[feature])
+        logger.info(f"Final frontier has {len(actual_frontier_plans_series_list)} points for feature {feature}, sorted by feature value")
         
         # Populate visual_frontiers_for_residual_table with (value, original_fee) tuples from these Series
         current_feature_visual_frontier_tuples = [(p[feature], p[cost_metric_for_visualization]) for p in actual_frontier_plans_series_list]
@@ -1093,6 +1101,9 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                             });
                         }
                     }
+                    
+                    // Sort frontier points by x-value (feature value) to ensure proper line connections
+                    frontierPoints.sort((a, b) => a.x - b.x);
                     
                     // Create data points for excluded points
                     for (let i = 0; i < data.excluded_values.length; i++) {
