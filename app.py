@@ -524,32 +524,20 @@ async def process_data(request: Request):
         # Store the complete dataframe
         config.df_with_rankings = df_ranked.copy()
         
-        # Step 7: Generate HTML report
-        timestamp_now = datetime.now()
-        report_filename = f"cs_ranking_{timestamp_now.strftime('%Y%m%d_%H%M%S')}.html"
-        report_path = config.cs_report_dir / report_filename
-        
-        # Generate HTML content
-        # Pass is_cs=True to indicate this is a Cost-Spec report
-        html_report = generate_html_report(df_ranked, timestamp_now, is_cs=True, title="Cost-Spec Mobile Plan Rankings")
-        
-        # Write HTML content to file
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write(html_report)
-        
-        # Step 8: Prepare response with CS ranking data
+        # Step 7: Prepare response data first before HTML generation
         # First, ensure all float values are JSON-serializable
         # Replace inf, -inf, and NaN with appropriate values
-        df_ranked = df_ranked.replace([np.inf, -np.inf], np.finfo(np.float64).max)
-        df_ranked = df_ranked.replace(np.nan, 0)
+        df_for_response = df_ranked.copy()
+        df_for_response = df_for_response.replace([np.inf, -np.inf], np.finfo(np.float64).max)
+        df_for_response = df_for_response.replace(np.nan, 0)
         
         # Create all_ranked_plans for the response
         columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
                              "rank_number", "rank_display", "B", "CS"]
-        available_columns = [col for col in columns_to_include if col in df_ranked.columns]
+        available_columns = [col for col in columns_to_include if col in df_for_response.columns]
         
         # Sort by CS ratio (descending) and add value_ratio field for compatibility
-        all_ranked_plans = df_ranked.sort_values("CS", ascending=False)[available_columns].to_dict(orient="records")
+        all_ranked_plans = df_for_response.sort_values("CS", ascending=False)[available_columns].to_dict(orient="records")
         
         # Ensure each plan has a value_ratio field (required for edge function DB upsert)
         for plan in all_ranked_plans:
@@ -564,6 +552,11 @@ async def process_data(request: Request):
         # Calculate timing
         end_time = time.time()
         processing_time = end_time - start_time
+        
+        # Set up HTML report info
+        timestamp_now = datetime.now()
+        report_filename = f"cs_ranking_{timestamp_now.strftime('%Y%m%d_%H%M%S')}.html"
+        report_path = config.cs_report_dir / report_filename
         
         # Prepare response
         response = {
@@ -585,6 +578,24 @@ async def process_data(request: Request):
             "top_10_plans": top_10_plans,
             "all_ranked_plans": all_ranked_plans
         }
+        
+        # Try to generate HTML report, but don't block API response if it fails
+        try:
+            # Generate HTML content
+            # Pass is_cs=True to indicate this is a Cost-Spec report
+            html_report = generate_html_report(df_ranked, timestamp_now, is_cs=True, title="Cost-Spec Mobile Plan Rankings")
+            
+            # Write HTML content to file
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(html_report)
+            
+            logger.info(f"[{request_id}] HTML report successfully generated and saved to {report_path}")
+        except Exception as e:
+            logger.error(f"[{request_id}] Error generating HTML report: {str(e)}")
+            response["message"] = "Data processing complete, but HTML report generation failed"
+            response["status"] = "partial_success"
+            response["error"] = f"HTML report generation failed: {str(e)}"
+            # We still return the ranking data even if HTML generation fails
         
         return response
     except Exception as e:
