@@ -15,18 +15,24 @@ from .report_tables import generate_all_plans_table_html, generate_residual_anal
 # Configure logging
 logger = logging.getLogger(__name__)
 
-def generate_html_report(df, report_title="Mobile Plan Rankings", timestamp=None):
+def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings", is_cs=True, title=None):
     """
     Generate a full HTML report with plan rankings and feature frontier charts.
     
     Args:
         df: DataFrame with ranking data
-        report_title: Title for the report
         timestamp: Timestamp for the report (defaults to current time)
+        report_title: Title for the report
+        is_cs: Whether this is a Cost-Spec report (for backward compatibility)
+        title: Alternative title (for backward compatibility)
         
     Returns:
         HTML string for the complete report
     """
+    # Use title parameter if provided (for backward compatibility)
+    if title:
+        report_title = title
+        
     logger.info(f"Generating HTML report with title: {report_title}")
     
     # Set timestamp if not provided
