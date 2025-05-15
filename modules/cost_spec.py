@@ -103,15 +103,15 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
     frontier_s = frontier_s.sort_index() # Ensure it's sorted by feature value
     return frontier_s
 
-def calculate_feature_frontiers(df: pd.DataFrame, features: List[str],
-                              unlimited_flags: Dict[str, str],
+def calculate_feature_frontiers(df: pd.DataFrame, features: List[str], 
+                              unlimited_flags: Dict[str, str], 
                               fee_column: str = 'fee') -> Dict[str, pd.Series]:
     """
     Compute cost frontiers for each feature using the robust monotonicity logic.
     The `fee_column` here is the overall plan fee, used to establish the initial feature cost frontiers.
     """
     frontiers = {}
-
+    
     # Define the cost column to be used for creating feature frontiers.
     # This should be 'original_fee' as per the new requirement for B calculation.
     cost_col_for_frontier_creation = 'original_fee'
@@ -129,7 +129,7 @@ def calculate_feature_frontiers(df: pd.DataFrame, features: List[str],
             continue
 
         unlimited_flag = unlimited_flags.get(feature)
-
+        
         if unlimited_flag and unlimited_flag in df.columns:
             # Process non-unlimited plans for this feature
             df_non_unlimited = df[(df[unlimited_flag] == 0) & df[cost_col_for_frontier_creation].notna()].copy()
@@ -164,7 +164,7 @@ def calculate_feature_frontiers(df: pd.DataFrame, features: List[str],
                     logger.warning(f"Robust frontier for {feature} (no unlimited option, using '{cost_col_for_frontier_creation}') is empty.")
             else:  # This else corresponds to `if not df_feature_specific.empty:`
                 logger.warning(f"No plans with valid '{cost_col_for_frontier_creation}' for {feature} (no unlimited option) to build frontier.")
-
+    
     return frontiers
 
 def estimate_frontier_value(feature_value: float, frontier: pd.Series) -> float:

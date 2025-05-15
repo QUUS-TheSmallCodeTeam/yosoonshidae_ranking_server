@@ -343,8 +343,9 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
 
             for _, plan_series_row in min_cost_candidates_df.iterrows():
                 candidate_points_details_series.append(plan_series_row) # Append the full Series
-                
-            logger.info(f"Identified {len(candidate_points_details_series)} candidate points for feature {feature}")
+            
+            # Only log the count of candidate points, not every addition
+            logger.info(f"Found {len(candidate_points_details_series)} minimum-cost candidate points for feature {feature}")
             
         # Step 2: Build the true monotonic frontier (list of Pandas Series for plans on the frontier)
         actual_frontier_plans_series_list = [] 
@@ -362,15 +363,21 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             last_cost = last_frontier_plan_series[cost_metric_for_visualization]
             
             # Pop points that this one dominates (more value for less or equal cost)
+            # Don't log each individual point being popped
+            points_popped = 0
             while actual_frontier_plans_series_list and \
                   current_value > last_frontier_plan_series[feature] and \
                   current_cost <= last_frontier_plan_series[cost_metric_for_visualization]:
-                logger.info(f"Popping dominated point: value={last_frontier_plan_series[feature]}, cost={last_frontier_plan_series[cost_metric_for_visualization]}")
+                points_popped += 1
                 actual_frontier_plans_series_list.pop()
                 if actual_frontier_plans_series_list:
                     last_frontier_plan_series = actual_frontier_plans_series_list[-1]
                     last_value = last_frontier_plan_series[feature]
                     last_cost = last_frontier_plan_series[cost_metric_for_visualization]
+            
+            # Only log if points were actually popped
+            if points_popped > 0:
+                logger.debug(f"Removed {points_popped} dominated points for feature {feature}")
             
             # Add point if:
             # 1. It offers more value at the same cost
@@ -378,12 +385,13 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             # 3. It's the last point in the sequence (to ensure connection)
             if (current_value > last_value and current_cost >= last_cost) or \
                 (current_value > last_value and abs(current_cost - last_cost) < 1.0):  # Handle floating point comparison
-                logger.info(f"Adding frontier point: value={current_value}, cost={current_cost}")
                 actual_frontier_plans_series_list.append(candidate_plan_series)
                 
         # Ensure frontier points are sorted by feature value 
         actual_frontier_plans_series_list.sort(key=lambda p: p[feature])
-        logger.info(f"Final frontier has {len(actual_frontier_plans_series_list)} points for feature {feature}, sorted by feature value")
+        
+        # Log summary of frontier building, not every point
+        logger.info(f"Built monotonic frontier with {len(actual_frontier_plans_series_list)} points for feature {feature}")
         
         # Populate visual_frontiers_for_residual_table with (value, original_fee) tuples from these Series
         current_feature_visual_frontier_tuples = [(p[feature], p[cost_metric_for_visualization]) for p in actual_frontier_plans_series_list]
@@ -470,7 +478,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         other_points_count = len(other_feature_values)
         unlimited_count = 1 if has_unlimited_data else 0
         
-        logger.info(f"Identified {frontier_points_count} visual frontier points, {excluded_points_count} excluded, {other_points_count} other, {unlimited_count} unlimited for {feature} using '{cost_metric_for_visualization}'")
+        logger.info(f"Feature {feature}: Found {frontier_points_count} frontier, {excluded_points_count} excluded, {unlimited_count} unlimited points")
         
         # For the JS chart, we will only pass frontier and excluded points.
         # The 'other_values', 'other_visual_costs', etc., are calculated for logging/debugging but not sent for plotting.
@@ -518,45 +526,25 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 'unlimited_value': unlimited_min_visual_cost if has_unlimited_data else None, 
                 'unlimited_plan': unlimited_min_plan if has_unlimited_data else None
             }
-            logger.info(f"Added data for {feature} to chart data. Visual Frontier: {frontier_points_count}, Excluded: {excluded_points_count}, Unlimited: {unlimited_count}. 'Other' points ({other_points_count}) are not plotted.")
         else:
-            logger.warning(f"No frontier, excluded, or unlimited points found for {feature} using '{cost_metric_for_visualization}', skipping chart data preparation")
+            logger.info(f"Skipping chart data for feature {feature}: no frontier, excluded, or unlimited points")
     
     # Log the state of all_chart_data after the loop
-    logger.info("Finished populating all_chart_data for charts. Checking contents before residual analysis.")
-    for f_key, f_data in all_chart_data.items():
-        if 'actual_frontier_plans_series' in f_data:
-            logger.info(f"  Feature '{f_key}' in all_chart_data has {len(f_data['actual_frontier_plans_series'])} series in 'actual_frontier_plans_series'.")
-        else:
-            logger.warning(f"  Feature '{f_key}' in all_chart_data is MISSING 'actual_frontier_plans_series' key.")
-
+    logger.info("Finished populating all_chart_data for charts.")
+    
     # --- Start: New section for Residual Analysis Data Preparation ---
     residual_analysis_table_data = []
-    logger.info("Starting Residual Original Fee Analysis (from Visual Frontier Minimums).")
+    logger.info("Starting Residual Original Fee Analysis.")
 
     for feature_analyzed in core_continuous_features:
-        # Diagnostic logging for the condition
-        logger.info(f"RES-ANALYSIS: Checking feature_analyzed = '{feature_analyzed}'")
-        is_feature_in_all_chart_data = feature_analyzed in all_chart_data
-        logger.info(f"RES-ANALYSIS: '{feature_analyzed}' in all_chart_data? {is_feature_in_all_chart_data}")
-        if is_feature_in_all_chart_data:
-            has_key_actual_frontier_series = 'actual_frontier_plans_series' in all_chart_data[feature_analyzed]
-            logger.info(f"RES-ANALYSIS: 'actual_frontier_plans_series' in all_chart_data['{feature_analyzed}']? {has_key_actual_frontier_series}")
-            if has_key_actual_frontier_series:
-                series_list_length = len(all_chart_data[feature_analyzed]['actual_frontier_plans_series'])
-                logger.info(f"RES-ANALYSIS: Length of all_chart_data['{feature_analyzed}']['actual_frontier_plans_series']: {series_list_length}")
-            else:
-                logger.info(f"RES-ANALYSIS: Key 'actual_frontier_plans_series' is MISSING for '{feature_analyzed}'.")
-        else:
-            logger.info(f"RES-ANALYSIS: Feature '{feature_analyzed}' is MISSING from all_chart_data keys.")
-
+        # Simplified logging - just log once if we're skipping a feature
         if feature_analyzed not in all_chart_data or \
            'actual_frontier_plans_series' not in all_chart_data[feature_analyzed] or \
            not all_chart_data[feature_analyzed]['actual_frontier_plans_series']:
-            logger.warning(f"Visual frontier plan series for '{feature_analyzed}' not found or empty (Final Check). Skipping in residual table.")
+            logger.info(f"Skipping residual analysis for '{feature_analyzed}': missing frontier data.")
             continue
         if feature_analyzed not in FEATURE_DISPLAY_NAMES_PY:
-            logger.warning(f"Display name for '{feature_analyzed}' not found. Skipping in residual table.")
+            logger.info(f"Skipping residual analysis for '{feature_analyzed}': missing display name.")
             continue
 
         # 1. Get the list of plans on the visual frontier for the current feature_analyzed
@@ -570,7 +558,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         ]
 
         if not candidate_target_plans:
-            logger.info(f"No plans found on visual frontier for '{feature_analyzed}' with min value {min_val_for_feature_on_frontier}. Skipping.")
+            logger.info(f"Skipping residual analysis for '{feature_analyzed}': no min-value plans found.")
             continue
 
         # 3. Tie-breaking:
@@ -662,20 +650,25 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         })
         logger.info(f"Added row for '{feature_analyzed}' to residual table. Plan: {target_plan_name_display}. Breakdown: {fee_breakdown_str}")
 
-    logger.info(f"Generated {len(residual_analysis_table_data)} rows for the residual analysis table (from visual frontier minimums).")
+    logger.info(f"Completed residual analysis with {len(residual_analysis_table_data)} feature entries.")
     # --- End: New section for Residual Analysis Data Preparation ---
     
     # Serialize feature frontier data to JSON
     try:
         feature_frontier_json = json.dumps(feature_frontier_data, cls=NumpyEncoder)
-        logger.info(f"Successfully serialized frontier data: {len(feature_frontier_data)} features included")
+        logger.info(f"Serialized frontier data for {len(feature_frontier_data)} features")
     except Exception as e:
         logger.error(f"Error serializing feature frontier data: {e}")
         feature_frontier_json = "{}"
     
     # Check if we have any frontier data to display
     if not feature_frontier_data:
-        logger.warning("No feature frontier data available for charts, charts will not be displayed")
+        logger.warning("No feature frontier data available for charts")
+        
+        # Skip logging for each feature frontier data addition
+        other_feature_values = [] # Not plotted, but calculated for completeness/logging
+        other_visual_costs = []
+        other_plan_names = []
     
     # Create HTML
     html = f"""
@@ -1018,7 +1011,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         // Create feature frontier charts
         document.addEventListener('DOMContentLoaded', function() {
             console.log('Initializing feature frontier charts...');
-            console.log('Feature frontier data:', featureFrontierData);
             
             // Check if we have data
             if (!featureFrontierData || Object.keys(featureFrontierData).length === 0) {
@@ -1047,7 +1039,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             
             // Create a chart for each feature
             for (const [feature, data] of Object.entries(featureFrontierData)) {
-                console.log(`Processing feature: ${feature} with ${data.all_values.length} total data points`);
+                console.log(`Processing feature: ${feature}`);
                 
                 // Validate data
                 if (!data.all_values || !data.all_contributions || data.all_values.length === 0) {
@@ -1142,17 +1134,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         });
                     }
                     
-                    const pointCounts = {
-                        frontier: frontierPoints.length,
-                        excluded: excludedPoints.length,
-                        // other: otherPoints.length, // 'otherPoints' no longer exists
-                        unlimited: unlimitedPoints.length
-                    };
-                    
-                    console.log(`Created ${frontierPoints.length} frontier points, ${excludedPoints.length} excluded points, and ${unlimitedPoints.length} unlimited point for ${feature}. 'Other' points are not processed for chart datasets.`);
-                    
                     if (frontierPoints.length === 0 && excludedPoints.length === 0 && unlimitedPoints.length === 0) {
-                        console.warn(`No valid data points for ${feature} (Frontier, Excluded, Unlimited), skipping chart`);
+                        console.warn(`No valid data points for ${feature}, skipping chart`);
                         continue;
                     }
                     
@@ -1350,8 +1333,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         chartContainer.style.position = 'relative';
                         chartContainer.appendChild(unlimitedLabel);
                     }
-                    
-                    console.log("Chart for " + feature + " created successfully");
                 } catch (err) {
                     console.error("Error creating chart for " + feature + ":", err);
                 }
