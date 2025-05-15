@@ -5,9 +5,9 @@ from pathlib import Path
 import json
 from datetime import datetime
 
-# This file previously contained the XGBoostModel class and related functions
-# Since the codebase now only uses the Spearman method for ranking,
-# the XGBoost implementation has been removed.
+# This file previously contained the XGBoostModel class and related functions.
+# Both the XGBoost and Spearman implementations have been removed in favor
+# of the Cost-Spec ratio method.
 
 # If model functionality is needed in the future, it should be implemented here.
 

@@ -9,8 +9,8 @@ import logging
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Note: The XGBoost-specific calculate_rankings function has been removed 
-# as part of the refactoring process since only the Spearman method is now used.
+# Note: The XGBoost-specific calculate_rankings function and Spearman-related
+# functionality have been removed as part of the refactoring process.
 
 def format_number_with_commas(value):
     """Format a numeric value with commas."""

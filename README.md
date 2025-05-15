@@ -11,7 +11,7 @@ Check out the configuration reference at https://huggingface.co/docs/hub/spaces-
 
 # Moyo Mobile Plan Ranking API
 
-This FastAPI application provides an API for preprocessing, training, and ranking mobile phone plans based on various features using the Spearman correlation method.
+This FastAPI application provides an API for preprocessing and ranking mobile phone plans based on various features using the Cost-Spec ratio method.
 
 ## API Endpoints
 
@@ -20,7 +20,7 @@ This FastAPI application provides an API for preprocessing, training, and rankin
 - **POST `/process`**: Main endpoint - processes plan data through the complete pipeline:
   1. Processes and saves raw data
   2. Applies feature engineering
-  3. Calculates rankings using Spearman correlation
+  3. Calculates Cost-Spec ratios
   4. Ranks plans and generates reports
 
 ## Requirements
@@ -30,7 +30,6 @@ This FastAPI application provides an API for preprocessing, training, and rankin
 - Uvicorn
 - pandas
 - numpy
-- scipy
 - scikit-learn
 
 ## Directory Structure
@@ -46,7 +45,7 @@ hf_server/
 │   ├── preprocess.py    # Feature engineering
 │   ├── ranking.py       # Ranking display logic
 │   ├── report.py        # Report generation
-│   ├── spearman.py      # Spearman correlation ranking algorithm
+│   ├── cost_spec.py     # Cost-Spec ratio calculation
 │   └── utils.py         # Utility functions
 └── requirements.txt     # Dependencies
 ```
@@ -97,7 +96,7 @@ The ranking model follows this general workflow:
 
 1. Receive plan data via API request
 2. Preprocess the data to prepare features for analysis
-3. Apply the Spearman correlation ranking algorithm
+3. Apply the Cost-Spec ratio method
 4. Calculate value metrics and rankings
 5. Generate reports and return results
 
@@ -108,9 +107,8 @@ When a request is sent to the `/process` endpoint:
 - The API accepts JSON data containing a list of plan objects
 - Each plan object contains details like plan name, carrier, data allowance, voice, messaging, fees, etc.
 - Optional ranking parameters can be specified:
-  - `rankMethod`: 'relative' (default), 'absolute', or 'net'
-  - `logTransform`: true (default) or false
-  - `feeType`: 'original' or 'discounted'
+  - `featureSet`: 'basic' (default) or 'extended'
+  - `feeColumn`: 'original_fee' or 'fee'
 
 ### 3. Data Preprocessing
 
@@ -175,57 +173,31 @@ The `prepare_features()` function transforms raw plan data into model-ready feat
 - Replaces infinities with NaN
 - Imputes missing values with column medians
 
-### 4. Spearman Correlation Ranking Algorithm
+### 4. Cost-Spec Ratio Method
 
-The Spearman ranking method (`calculate_rankings_with_spearman()`) works as follows:
+The Cost-Spec ratio method calculates plan value as follows:
 
 #### 4.1 Feature Selection
 
 - Uses a predefined set of basic features like data allowances, voice, messaging, etc.
-- Identifies and removes constant features (having only one unique value)
+- Features are selected based on their core value contribution to plans
 
-#### 4.2 Log Transformation (optional)
+#### 4.2 Baseline Cost Calculation
 
-- When enabled, applies log(1+x) transformation to non-categorical features:
-  - `basic_data_clean`, `daily_data_clean`, `voice_clean`, `message_clean`, etc.
-- Helps normalize highly skewed numeric distributions
+- For each feature (e.g., data, voice, messages), identifies the minimum cost in the market
+- Creates a feature frontier based on value vs. cost
+- Calculates baseline cost (B) by estimating the minimum market cost for each feature
 
-#### 4.3 Correlation Calculation
+#### 4.3 Cost-Spec Ratio Calculation
 
-- Computes Spearman's rank correlation (ρ) between each feature and `original_fee`
-- Stores both correlation values and their signs (positive/negative)
+- For each plan, calculates the Cost-Spec ratio (CS = B / fee)
+- CS ratio > 1 indicates good value (baseline cost higher than actual cost)
+- CS ratio < 1 indicates poor value (baseline cost lower than actual cost)
 
-#### 4.4 Feature Weight Calculation
+#### 4.4 Ranking by CS Ratio
 
-- Normalizes the absolute correlation values to create feature weights
-- Higher absolute correlation = higher weight
-- Sum of all weights equals 1.0
-
-#### 4.5 Feature Normalization
-
-- Binary/categorical features: kept as-is (0/1)
-- Continuous features: z-score normalization (x - mean) / std
-
-#### 4.6 Score Calculation
-
-- For each plan j, calculates raw score:
-  ```
-  S_j = Σ sign(ρᵢ) * wᵢ * nᵢⱼ
-  ```
-  where:
-  - sign(ρᵢ) = sign of correlation for feature i (±1)
-  - wᵢ = weight of feature i
-  - nᵢⱼ = normalized value of feature i for plan j
-
-#### 4.7 Price Delta Calculation
-
-- Calculates price delta using: ΔP_j = S_j × σ(price)
-- Where σ(price) is the standard deviation of original fees
-
-#### 4.8 Worth Estimation
-
-- Calculates predicted price: worth = mean(price) + delta
-- This represents the estimated "fair market value" of the plan
+- Plans are ranked by CS ratio in descending order
+- Higher CS ratio = better value for money
 
 ### 5. Value Metrics and Rankings
 
@@ -233,15 +205,12 @@ The model calculates multiple value metrics:
 
 #### 5.1 Value Metrics
 
-- **Absolute value** (ΔP): The raw price delta (predicted - actual)
-- **Relative value** (value_ratio): Predicted price / actual fee
-- **Net value**: Delta - actual fee
-
-Each metric is calculated for both original and discounted fees.
+- **CS Ratio**: Baseline cost / actual fee
+- **Value Differential**: Baseline cost - actual fee
 
 #### 5.2 Ranking Calculation
 
-- Plans are ranked by the selected metric in descending order
+- Plans are ranked by CS ratio in descending order
 - The function `calculate_rankings_with_ties()` handles proper ranking with ties
 - For tied ranks, uses '공동 X위' (joint X rank) notation
 - All plans in a tied group receive the same numeric rank

@@ -10,7 +10,6 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 from typing import Optional, Union, List
-from scipy.stats import spearmanr
 import os
 
 # Import configuration
@@ -24,7 +23,6 @@ from modules.ranking import calculate_rankings_with_ties
 from modules.report import generate_html_report
 from modules.cost_spec import calculate_cs_ratio, rank_plans_by_cs
 from modules.models import get_basic_feature_list
-from modules.spearman import calculate_rankings_with_spearman
 from fastapi import UploadFile, File
 
 # Initialize FastAPI
@@ -107,9 +105,6 @@ class PlanInput(BaseModel):
     discount_period: Optional[int] = None
     post_discount_fee: float
 
-# Spearman ranking calculation is now imported from the modules.spearman module
-# calculate_rankings_with_ties function is now imported from the modules.ranking module
-
 # HTML report generation and saving is now handled by the modules.report module
 
 # Define FastAPI endpoints
@@ -162,8 +157,7 @@ def read_root():
                     title="Cost-Spec Mobile Plan Rankings"
                 )
             else:
-                # For non-CS reports (e.g. Spearman)
-                logger.info("Generating Spearman report for main endpoint")
+                logger.info("Generating report for main endpoint")
                 html_content = generate_html_report(config.df_with_rankings, datetime.now())
                 
             return HTMLResponse(content=html_content)
@@ -173,7 +167,6 @@ def read_root():
     
     # Look for the latest HTML report in all potential directories
     report_dirs = [
-        config.spearman_report_dir,  # Spearman reports
         config.cs_report_dir,        # CS reports
         Path("./reports"), 
         Path("/tmp/reports"), 
@@ -483,7 +476,7 @@ async def process_data(request: Request):
         
         # Step 3: Save raw data
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        raw_data_path = config.spearman_raw_dir / f"raw_data_{timestamp}.json"
+        raw_data_path = config.cs_raw_dir / f"raw_data_{timestamp}.json"
         
         with open(raw_data_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -501,7 +494,7 @@ async def process_data(request: Request):
         gc.collect()
         
         # Step 5: Save processed data
-        processed_data_path = config.spearman_processed_dir / f"processed_data_{timestamp}.csv"
+        processed_data_path = config.cs_processed_dir / f"processed_data_{timestamp}.csv"
         
         processed_df.to_csv(processed_data_path, index=False, encoding='utf-8')
         

@@ -44,12 +44,9 @@ class Config:
     
     # CS-specific paths
     cs_input_dir: Path = DATA_DIR / "cs_input"
+    cs_raw_dir: Path = DATA_DIR / "raw"
+    cs_processed_dir: Path = DATA_DIR / "processed"
     cs_report_dir: Path = REPORT_DIR_BASE / "cs_reports"
-    
-    # Spearman-specific paths
-    spearman_raw_dir: Path = DATA_DIR / "raw"
-    spearman_processed_dir: Path = DATA_DIR / "processed"
-    spearman_report_dir: Path = REPORT_DIR_BASE / "spearman_reports"
     
     # Global state
     df_with_rankings: Optional[pd.DataFrame] = None
@@ -63,10 +60,9 @@ class Config:
             self.data_dir,
             self.report_dir,
             self.cs_input_dir,
-            self.cs_report_dir,
-            self.spearman_raw_dir,
-            self.spearman_processed_dir,
-            self.spearman_report_dir
+            self.cs_raw_dir,
+            self.cs_processed_dir,
+            self.cs_report_dir
         ]:
             if not path.exists():
                 path.mkdir(parents=True, exist_ok=True)
