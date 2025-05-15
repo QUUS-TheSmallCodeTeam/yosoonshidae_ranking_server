@@ -817,7 +817,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
     <head>
         <title>{report_title} - {timestamp_str}</title>
         <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; }}
+            body {{ font-family: Arial, sans-serif; margin: 0; padding: 0; }}
             h1, h2, h3 {{ color: #333; }}
             table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; font-size: 14px; }}
             th, td {{ padding: 8px; text-align: left; border: 1px solid #ddd; }}
@@ -1044,6 +1044,9 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 chartContainer.className = 'chart-container';
                 chartContainer.style.width = '100vw';  // Full viewport width
                 chartContainer.style.maxWidth = '100%';  // Prevent horizontal overflow
+                chartContainer.style.margin = '0';      // No margin
+                chartContainer.style.padding = '10px';  // Small padding inside container
+                chartContainer.style.boxSizing = 'border-box'; // Include padding in width
                 chartContainer.style.height = '500px';  // Taller charts
                 
                 // Create chart title
@@ -1264,57 +1267,65 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         </script>
     </head>
     <body>
-        <h1>{report_title} - {timestamp_str}</h1>
-        
-        <div class="note">
-            <p>This report shows mobile plan rankings based on the Cost-Spec Ratio methodology. Plans with higher CS ratios offer better value relative to their specifications.</p>
-            <p>All costs shown are in Korean Won (KRW).</p>
+        <div class="content-wrapper" style="padding: 20px;">
+            <h1>{report_title} - {timestamp_str}</h1>
+            
+            <div class="note">
+                <p>This report shows mobile plan rankings based on the Cost-Spec Ratio methodology. Plans with higher CS ratios offer better value relative to their specifications.</p>
+                <p>All costs shown are in Korean Won (KRW).</p>
+            </div>
         </div>
         
         <!-- Feature Frontier Charts -->
-        <h2>Feature Frontier Charts</h2>
-        <div class="note">
-            <p>These charts show the cost frontiers for each feature, representing the optimal (minimum cost) options available at each feature value.</p>
-            <p>Red points and lines represent the frontier, while yellow points are non-frontier minimum cost options that were excluded due to lack of monotonicity.</p>
-        </div>
-        <div class="chart-grid" id="feature-charts-container">
-            <!-- Charts will be inserted here by JavaScript -->
-        </div>
-        
-        <!-- Residual analysis table -->
-        <h2>Residual Fee Analysis</h2>
-        <div class="container">
-            <div class="note">
-                <p>This table shows how much of a plan's fee is attributable to its analyzed feature versus other features, for plans on the feature cost frontier.</p>
+        <div class="charts-wrapper" style="width: 100%; margin: 0; padding: 0;">
+            <div style="padding: 0 20px;">
+                <h2>Feature Frontier Charts</h2>
+                <div class="note">
+                    <p>These charts show the cost frontiers for each feature, representing the optimal (minimum cost) options available at each feature value.</p>
+                    <p>Red points and lines represent the frontier, while yellow points are non-frontier minimum cost options that were excluded due to lack of monotonicity.</p>
+                </div>
             </div>
-            <table class="residual-table">
-                <tr>
-                    <th>Analyzed Feature</th>
-                    <th>Sample Plan</th>
-                    <th>Plan Core Specs</th>
-                    <th>Fee Breakdown</th>
-                </tr>
-                
-                <!-- Generate table rows for residual analysis -->
-                {residual_table_html}
-            </table>
+            <div class="chart-grid" id="feature-charts-container" style="width: 100vw; max-width: 100%; margin: 0; padding: 0;">
+                <!-- Charts will be inserted here by JavaScript -->
+            </div>
         </div>
         
-        <!-- All plans table -->
-        <h2>Complete Plan Rankings</h2>
-        <div class="container">
-            <table>
-                <tr>
-                    <th>Rank</th>
-                    <th>Plan Name</th>
-                    <th>MVNO</th>
-                    <th>Fee</th>
-                    <th>CS Ratio</th>
-                    <th>Baseline Cost</th>
-                </tr>
-                <!-- Generate rows for all ranked plans -->
-                {all_plans_html}
-            </table>
+        <div class="content-wrapper" style="padding: 20px;">
+            <!-- Residual analysis table -->
+            <h2>Residual Fee Analysis</h2>
+            <div class="container">
+                <div class="note">
+                    <p>This table shows how much of a plan's fee is attributable to its analyzed feature versus other features, for plans on the feature cost frontier.</p>
+                </div>
+                <table class="residual-table">
+                    <tr>
+                        <th>Analyzed Feature</th>
+                        <th>Sample Plan</th>
+                        <th>Plan Core Specs</th>
+                        <th>Fee Breakdown</th>
+                    </tr>
+                    
+                    <!-- Generate table rows for residual analysis -->
+                    {residual_table_html}
+                </table>
+            </div>
+            
+            <!-- All plans table -->
+            <h2>Complete Plan Rankings</h2>
+            <div class="container">
+                <table>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Plan Name</th>
+                        <th>MVNO</th>
+                        <th>Fee</th>
+                        <th>CS Ratio</th>
+                        <th>Baseline Cost</th>
+                    </tr>
+                    <!-- Generate rows for all ranked plans -->
+                    {all_plans_html}
+                </table>
+            </div>
         </div>
     </body>
     </html>
