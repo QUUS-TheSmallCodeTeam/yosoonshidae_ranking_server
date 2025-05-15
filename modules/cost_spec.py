@@ -63,6 +63,20 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
     candidate_points_df = df_feature_specific.loc[df_feature_specific.groupby(feature_col)[cost_col].idxmin()]
     candidate_points_df = candidate_points_df.sort_values(by=[feature_col, cost_col])
     
+    # Calculate the smallest feature value unit increase in the dataset
+    sorted_feature_values = sorted(df_feature_specific[feature_col].unique())
+    min_feature_increment = float('inf')
+    for i in range(1, len(sorted_feature_values)):
+        increment = sorted_feature_values[i] - sorted_feature_values[i-1]
+        if increment > 0 and increment < min_feature_increment:
+            min_feature_increment = increment
+    
+    # If no valid increment found (e.g., only one unique value), use a small default
+    if min_feature_increment == float('inf'):
+        min_feature_increment = 0.1
+        
+    logger.info(f"Smallest feature increment for {feature_col}: {min_feature_increment}")
+    
     candidate_details = []
     for _, row in candidate_points_df.iterrows():
         candidate_details.append({
@@ -106,6 +120,24 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
         # Insert at the beginning
         actual_frontier_stack.insert(0, zero_point)
         logger.info(f"Added (0,0) starting point to frontier for {feature_col}")
+
+    # Check for the max feature value and see if we need to add a proper endpoint
+    all_feature_values = df_feature_specific[feature_col].values
+    max_feature_value = max(all_feature_values) if len(all_feature_values) > 0 else 0
+    
+    # If the highest feature value is not in our frontier, find the best cost for it
+    if max_feature_value > 0 and (not actual_frontier_stack or max_feature_value > actual_frontier_stack[-1]['value']):
+        max_value_rows = df_feature_specific[df_feature_specific[feature_col] == max_feature_value]
+        if not max_value_rows.empty:
+            min_cost_for_max = max_value_rows[cost_col].min()
+            max_point = {'value': max_feature_value, 'cost': min_cost_for_max}
+            
+            # Only add if it maintains monotonicity and 1.0 KRW minimum increase
+            if not actual_frontier_stack or (
+               min_cost_for_max > actual_frontier_stack[-1]['cost'] and 
+               (min_cost_for_max - actual_frontier_stack[-1]['cost']) >= 1.0):
+                actual_frontier_stack.append(max_point)
+                logger.info(f"Added endpoint ({max_feature_value},{min_cost_for_max}) to frontier for {feature_col}")
 
     # Convert stack to pandas Series
     frontier_s = pd.Series({p['value']: p['cost'] for p in actual_frontier_stack})
