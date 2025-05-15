@@ -718,6 +718,26 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         other_visual_costs = []
         other_plan_names = []
     
+    # Generate the residual table HTML from residual_analysis_table_data
+    residual_table_html = ""
+    for entry in residual_analysis_table_data:
+        residual_table_html += f"""
+        <tr>
+            <td>{entry['analyzed_feature_display']}</td>
+            <td>{entry['target_plan_name']}</td>
+            <td>{entry['plan_specs_string']}</td>
+            <td>{entry['fee_breakdown_string']}</td>
+        </tr>
+        """
+    
+    # If no residual data, show a message
+    if not residual_table_html:
+        residual_table_html = """
+        <tr>
+            <td colspan="4" style="text-align: center;">No residual analysis data available</td>
+        </tr>
+        """
+    
     # Create HTML
     html = f"""
     <!DOCTYPE html>
