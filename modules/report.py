@@ -390,6 +390,39 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         # Ensure frontier points are sorted by feature value 
         actual_frontier_plans_series_list.sort(key=lambda p: p[feature])
         
+        # Add (0,0) as the starting point if not present
+        min_feature_value = actual_frontier_plans_series_list[0][feature] if actual_frontier_plans_series_list else 0
+        if min_feature_value > 0 and not df_for_frontier.empty:
+            # Create a synthetic starting point at (0,0)
+            zero_point_series = actual_frontier_plans_series_list[0].copy() if actual_frontier_plans_series_list else pd.Series({})
+            zero_point_series[feature] = 0
+            zero_point_series[cost_metric_for_visualization] = 0
+            zero_point_series['plan_name'] = "Free Baseline"
+            # Insert at the beginning
+            actual_frontier_plans_series_list.insert(0, zero_point_series)
+            logger.info(f"Added (0,0) starting point to feature {feature} frontier")
+        
+        # Find the maximum feature value in the dataset, and add the lowest cost point for that value to the frontier if not present
+        if not df_for_frontier.empty:
+            max_feature_value = df_for_frontier[feature].max()
+            max_feature_rows = df_for_frontier[df_for_frontier[feature] == max_feature_value]
+            
+            if not max_feature_rows.empty:
+                # Find minimum cost for the maximum feature value
+                min_cost_for_max_value = max_feature_rows[cost_metric_for_visualization].min()
+                max_value_min_cost_row = max_feature_rows.loc[max_feature_rows[cost_metric_for_visualization] == min_cost_for_max_value].iloc[0]
+                
+                # Check if this max value point is already in our frontier 
+                existing_max_values = [p[feature] for p in actual_frontier_plans_series_list if p[feature] == max_feature_value]
+                
+                # If not in frontier, or if our frontier is empty, add it
+                if not existing_max_values and actual_frontier_plans_series_list:
+                    # Only add if it maintains monotonicity
+                    last_frontier_point = actual_frontier_plans_series_list[-1]
+                    if max_feature_value > last_frontier_point[feature] and min_cost_for_max_value >= last_frontier_point[cost_metric_for_visualization]:
+                        actual_frontier_plans_series_list.append(max_value_min_cost_row)
+                        logger.info(f"Added maximum value point ({max_feature_value}) with minimum cost to feature {feature} frontier")
+        
         # Log summary of frontier building, not every point
         logger.info(f"Built monotonic frontier with {len(actual_frontier_plans_series_list)} points for feature {feature}")
         
@@ -1139,6 +1172,20 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         continue;
                     }
                     
+                    // Ensure x-axis starts at 0 if first point is not at x=0
+                    const startAtZero = frontierPoints.length > 0 && frontierPoints[0].x > 0;
+                    if (startAtZero) {
+                        // If there's no point at x=0, add one that connects to the first point
+                        frontierPoints.unshift({
+                            x: 0,
+                            y: 0, // Start at 0 cost
+                            plan_name: "Free Baseline",
+                            is_frontier: true,
+                            is_excluded: false,
+                            is_unlimited: false
+                        });
+                    }
+                    
                     // Create Chart.js datasets
                     const frontierDataset = {
                         label: 'Frontier Points',
@@ -1277,7 +1324,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                                 ticks: {
                                     font: {
                                         size: 10
-                                    }
+                                    },
+                                    min: 0 // Always start x-axis at 0
                                 }
                             },
                             y: {
@@ -1294,7 +1342,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                                     },
                                     font: {
                                         size: 10
-                                    }
+                                    },
+                                    min: 0 // Always start y-axis at 0
                                 }
                             }
                         },
