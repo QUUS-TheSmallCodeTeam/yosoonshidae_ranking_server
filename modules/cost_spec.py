@@ -97,6 +97,15 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
             
     if not actual_frontier_stack:
         return pd.Series(dtype=float)
+    
+    # Add (0,0) as the starting point if not present
+    min_feature_value = actual_frontier_stack[0]['value'] if actual_frontier_stack else 0
+    if min_feature_value > 0:
+        # Create a synthetic starting point at (0,0)
+        zero_point = {'value': 0, 'cost': 0}
+        # Insert at the beginning
+        actual_frontier_stack.insert(0, zero_point)
+        logger.info(f"Added (0,0) starting point to frontier for {feature_col}")
 
     # Convert stack to pandas Series
     frontier_s = pd.Series({p['value']: p['cost'] for p in actual_frontier_stack})
