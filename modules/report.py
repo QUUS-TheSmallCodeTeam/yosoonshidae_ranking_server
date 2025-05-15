@@ -775,6 +775,41 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         </tr>
         """
     
+    # Generate the complete rankings HTML
+    all_plans_html = ""
+    
+    if not df_sorted.empty:
+        for _, row in df_sorted.iterrows():
+            rank = row.get('rank_number', 'N/A')
+            rank_display = row.get('rank_display', str(rank))
+            plan_name = row.get('plan_name', 'N/A')
+            mvno = row.get('mvno', 'N/A')
+            fee = row.get('original_fee', 0)
+            cs_ratio = row.get('CS', 0)
+            baseline_cost = row.get('B', 0)
+            
+            # Format numbers with commas for better readability
+            fee_formatted = f"{fee:,.0f}" if isinstance(fee, (int, float)) else fee
+            baseline_cost_formatted = f"{baseline_cost:,.0f}" if isinstance(baseline_cost, (int, float)) else baseline_cost
+            cs_ratio_formatted = f"{cs_ratio:.4f}" if isinstance(cs_ratio, float) else cs_ratio
+            
+            all_plans_html += f"""
+            <tr>
+                <td>{rank_display}</td>
+                <td>{plan_name}</td>
+                <td>{mvno}</td>
+                <td>{fee_formatted}</td>
+                <td>{cs_ratio_formatted}</td>
+                <td>{baseline_cost_formatted}</td>
+            </tr>
+            """
+    else:
+        all_plans_html = """
+        <tr>
+            <td colspan="6" style="text-align: center;">No ranking data available</td>
+        </tr>
+        """
+    
     # Create HTML
     html = f"""
     <!DOCTYPE html>
@@ -901,6 +936,48 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 overflow: hidden;
             }}
             
+            /* Tab styles */
+            .tab {{
+                overflow: hidden;
+                border: 1px solid #ccc;
+                background-color: #f1f1f1;
+                border-radius: 5px 5px 0 0;
+            }}
+            
+            .tab button {{
+                background-color: inherit;
+                float: left;
+                border: none;
+                outline: none;
+                cursor: pointer;
+                padding: 14px 16px;
+                transition: 0.3s;
+                font-size: 16px;
+            }}
+            
+            .tab button:hover {{
+                background-color: #ddd;
+            }}
+            
+            .tab button.active {{
+                background-color: #007bff;
+                color: white;
+            }}
+            
+            .tabcontent {{
+                display: none;
+                padding: 6px 12px;
+                border: 1px solid #ccc;
+                border-top: none;
+                border-radius: 0 0 5px 5px;
+                animation: fadeEffect 1s;
+            }}
+            
+            @keyframes fadeEffect {{
+                from {{opacity: 0;}}
+                to {{opacity: 1;}}
+            }}
+            
             /* Responsive styles */
             @media (max-width: 768px) {{
                 .container {{
@@ -960,17 +1037,41 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         }});
                     }}
                 }});
+                
+                // Set top plans tab as active by default
+                document.getElementById("top-plans-tab").click();
             }});
+            
+            // Tab functionality
+            function openTab(evt, tabName) {{
+                var i, tabcontent, tablinks;
+                
+                // Hide all tab content
+                tabcontent = document.getElementsByClassName("tabcontent");
+                for (i = 0; i < tabcontent.length; i++) {{
+                    tabcontent[i].style.display = "none";
+                }}
+                
+                // Remove active class from all tab links
+                tablinks = document.getElementsByClassName("tablinks");
+                for (i = 0; i < tablinks.length; i++) {{
+                    tablinks[i].className = tablinks[i].className.replace(" active", "");
+                }}
+                
+                // Show the current tab and add active class to the button
+                document.getElementById(tabName).style.display = "block";
+                evt.currentTarget.className += " active";
+            }}
         </script>
         
         <!-- Chart.js initialization for feature frontier charts -->
         <script>
-            // Feature frontier data
+        // Feature frontier data
             const FRONTIER_DATA_JSON = {feature_frontier_json};
-            
-            // Create feature frontier charts
-            document.addEventListener('DOMContentLoaded', function() {{
-                console.log('Initializing feature frontier charts...');
+        
+        // Create feature frontier charts
+        document.addEventListener('DOMContentLoaded', function() {{
+            console.log('Initializing feature frontier charts...');
                 
                 // Check if we have data
                 if (!FRONTIER_DATA_JSON || Object.keys(FRONTIER_DATA_JSON).length === 0) {{
@@ -978,23 +1079,23 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                     document.getElementById('feature-charts-container').innerHTML = '<p>No frontier data available for visualization.</p>';
                     return;
                 }}
-                
-                // Feature display names
-                const featureDisplayNames = {{
-                    'basic_data_clean': 'Basic Data (GB)',
+            
+            // Feature display names
+            const featureDisplayNames = {{
+                'basic_data_clean': 'Basic Data (GB)',
                     'daily_data_clean': 'Daily Data (GB/day)',
-                    'voice_clean': 'Voice Minutes',
-                    'message_clean': 'SMS Messages',
+                'voice_clean': 'Voice Minutes',
+                'message_clean': 'SMS Messages',
                     'additional_call': 'Additional Call Price (KRW)',
-                    'speed_when_exhausted': 'Throttled Speed (Mbps)',
-                    'tethering_gb': 'Tethering Data (GB)'
-                }};
-                
+                'speed_when_exhausted': 'Throttled Speed (Mbps)',
+                'tethering_gb': 'Tethering Data (GB)'
+            }};
+            
                 // Create a chart for each feature
                 const chartsContainer = document.getElementById('feature-charts-container');
                 chartsContainer.innerHTML = ''; // Clear previous content
-                
-                // Create a chart for each feature
+            
+            // Create a chart for each feature
                 for (const [feature, data] of Object.entries(FRONTIER_DATA_JSON)) {{
                     console.log(`Processing feature: ${{feature}}`);
                     
@@ -1004,21 +1105,21 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         continue;
                     }}
                     
-                    // Create chart container
-                    const chartContainer = document.createElement('div');
-                    chartContainer.className = 'chart-container';
-                    
-                    // Create chart title
-                    const chartTitle = document.createElement('div');
-                    chartTitle.className = 'chart-title';
-                    chartTitle.textContent = featureDisplayNames[feature] || feature;
-                    chartContainer.appendChild(chartTitle);
-                    
-                    // Create canvas for chart
-                    const canvas = document.createElement('canvas');
-                    canvas.id = `chart-${{feature}}`;
-                    chartContainer.appendChild(canvas);
-                    
+                // Create chart container
+                const chartContainer = document.createElement('div');
+                chartContainer.className = 'chart-container';
+                
+                // Create chart title
+                const chartTitle = document.createElement('div');
+                chartTitle.className = 'chart-title';
+                chartTitle.textContent = featureDisplayNames[feature] || feature;
+                chartContainer.appendChild(chartTitle);
+                
+                // Create canvas for chart
+                const canvas = document.createElement('canvas');
+                canvas.id = `chart-${{feature}}`;
+                chartContainer.appendChild(canvas);
+                
                     // Add chart container to grid
                     chartsContainer.appendChild(chartContainer);
                     
@@ -1091,14 +1192,14 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                     if (frontierPoints.length > 0) {{
                         datasets.push({{
                             label: 'Frontier',
-                            data: frontierPoints,
-                            borderColor: 'rgba(255, 99, 132, 1)',
+                        data: frontierPoints,
+                        borderColor: 'rgba(255, 99, 132, 1)',
                             backgroundColor: 'rgba(255, 99, 132, 0.5)',
                             pointBackgroundColor: 'rgba(255, 99, 132, 1)',
                             pointBorderColor: '#fff',
-                            pointRadius: 6,
+                        pointRadius: 6,
                             pointHoverRadius: 8,
-                            showLine: true,
+                        showLine: true,
                             fill: false,
                             borderWidth: 2.5
                         }});
@@ -1221,8 +1322,8 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                             }}
                         }}
                     }});
-                }}
-            }});
+            }}
+        }});
         </script>
     </head>
     <body>
@@ -1233,21 +1334,47 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             <p>All costs shown are in Korean Won (KRW).</p>
         </div>
         
-        <!-- Top-ranked plans table -->
-        <h2>Top-Ranked Plans</h2>
-        <div class="container">
-            <table>
-                <tr>
-                    <th>Rank</th>
-                    <th>Plan Name</th>
-                    <th>MVNO</th>
-                    <th>Fee</th>
-                    <th>CS Ratio</th>
-                    <th>Baseline Cost</th>
-                </tr>
-                <!-- Generate rows for top 20 plans -->
-                {top_plans_html}
-            </table>
+        <!-- Tab navigation for plans -->
+        <h2>Mobile Plan Rankings</h2>
+        <div class="tab">
+            <button class="tablinks" id="top-plans-tab" onclick="openTab(event, 'TopPlans')">Top Plans</button>
+            <button class="tablinks" onclick="openTab(event, 'AllPlans')">All Plans</button>
+        </div>
+        
+        <!-- Top-ranked plans tab content -->
+        <div id="TopPlans" class="tabcontent">
+            <div class="container">
+                <table>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Plan Name</th>
+                        <th>MVNO</th>
+                        <th>Fee</th>
+                        <th>CS Ratio</th>
+                        <th>Baseline Cost</th>
+                    </tr>
+                    <!-- Generate rows for top 50 plans -->
+                    {top_plans_html}
+                </table>
+            </div>
+        </div>
+        
+        <!-- All plans tab content -->
+        <div id="AllPlans" class="tabcontent">
+            <div class="container">
+                <table>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Plan Name</th>
+                        <th>MVNO</th>
+                        <th>Fee</th>
+                        <th>CS Ratio</th>
+                        <th>Baseline Cost</th>
+                    </tr>
+                    <!-- Generate rows for all ranked plans -->
+                    {all_plans_html}
+                </table>
+            </div>
         </div>
         
         <!-- Feature Frontier Charts -->
