@@ -936,48 +936,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 overflow: hidden;
             }}
             
-            /* Tab styles */
-            .tab {{
-                overflow: hidden;
-                border: 1px solid #ccc;
-                background-color: #f1f1f1;
-                border-radius: 5px 5px 0 0;
-            }}
-            
-            .tab button {{
-                background-color: inherit;
-                float: left;
-                border: none;
-                outline: none;
-                cursor: pointer;
-                padding: 14px 16px;
-                transition: 0.3s;
-                font-size: 16px;
-            }}
-            
-            .tab button:hover {{
-                background-color: #ddd;
-            }}
-            
-            .tab button.active {{
-                background-color: #007bff;
-                color: white;
-            }}
-            
-            .tabcontent {{
-                display: none;
-                padding: 6px 12px;
-                border: 1px solid #ccc;
-                border-top: none;
-                border-radius: 0 0 5px 5px;
-                animation: fadeEffect 1s;
-            }}
-            
-            @keyframes fadeEffect {{
-                from {{opacity: 0;}}
-                to {{opacity: 1;}}
-            }}
-            
             /* Responsive styles */
             @media (max-width: 768px) {{
                 .container {{
@@ -1037,31 +995,7 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                         }});
                     }}
                 }});
-                
-                // Set top plans tab as active by default
-                document.getElementById("top-plans-tab").click();
             }});
-            
-            // Tab functionality
-            function openTab(evt, tabName) {{
-                var i, tabcontent, tablinks;
-                
-                // Hide all tab content
-                tabcontent = document.getElementsByClassName("tabcontent");
-                for (i = 0; i < tabcontent.length; i++) {{
-                    tabcontent[i].style.display = "none";
-                }}
-                
-                // Remove active class from all tab links
-                tablinks = document.getElementsByClassName("tablinks");
-                for (i = 0; i < tablinks.length; i++) {{
-                    tablinks[i].className = tablinks[i].className.replace(" active", "");
-                }}
-                
-                // Show the current tab and add active class to the button
-                document.getElementById(tabName).style.display = "block";
-                evt.currentTarget.className += " active";
-            }}
         </script>
         
         <!-- Chart.js initialization for feature frontier charts -->
@@ -1108,6 +1042,9 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 // Create chart container
                 const chartContainer = document.createElement('div');
                 chartContainer.className = 'chart-container';
+                chartContainer.style.width = '100vw';  // Full viewport width
+                chartContainer.style.maxWidth = '100%';  // Prevent horizontal overflow
+                chartContainer.style.height = '500px';  // Taller charts
                 
                 // Create chart title
                 const chartTitle = document.createElement('div');
@@ -1334,49 +1271,6 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             <p>All costs shown are in Korean Won (KRW).</p>
         </div>
         
-        <!-- Tab navigation for plans -->
-        <h2>Mobile Plan Rankings</h2>
-        <div class="tab">
-            <button class="tablinks" id="top-plans-tab" onclick="openTab(event, 'TopPlans')">Top Plans</button>
-            <button class="tablinks" onclick="openTab(event, 'AllPlans')">All Plans</button>
-        </div>
-        
-        <!-- Top-ranked plans tab content -->
-        <div id="TopPlans" class="tabcontent">
-            <div class="container">
-                <table>
-                    <tr>
-                        <th>Rank</th>
-                        <th>Plan Name</th>
-                        <th>MVNO</th>
-                        <th>Fee</th>
-                        <th>CS Ratio</th>
-                        <th>Baseline Cost</th>
-                    </tr>
-                    <!-- Generate rows for top 50 plans -->
-                    {top_plans_html}
-                </table>
-            </div>
-        </div>
-        
-        <!-- All plans tab content -->
-        <div id="AllPlans" class="tabcontent">
-            <div class="container">
-                <table>
-                    <tr>
-                        <th>Rank</th>
-                        <th>Plan Name</th>
-                        <th>MVNO</th>
-                        <th>Fee</th>
-                        <th>CS Ratio</th>
-                        <th>Baseline Cost</th>
-                    </tr>
-                    <!-- Generate rows for all ranked plans -->
-                    {all_plans_html}
-                </table>
-            </div>
-        </div>
-        
         <!-- Feature Frontier Charts -->
         <h2>Feature Frontier Charts</h2>
         <div class="note">
@@ -1403,6 +1297,23 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
                 
                 <!-- Generate table rows for residual analysis -->
                 {residual_table_html}
+            </table>
+        </div>
+        
+        <!-- All plans table -->
+        <h2>Complete Plan Rankings</h2>
+        <div class="container">
+            <table>
+                <tr>
+                    <th>Rank</th>
+                    <th>Plan Name</th>
+                    <th>MVNO</th>
+                    <th>Fee</th>
+                    <th>CS Ratio</th>
+                    <th>Baseline Cost</th>
+                </tr>
+                <!-- Generate rows for all ranked plans -->
+                {all_plans_html}
             </table>
         </div>
     </body>
