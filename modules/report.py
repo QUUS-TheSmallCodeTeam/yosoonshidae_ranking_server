@@ -738,6 +738,43 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         </tr>
         """
     
+    # Generate the top plans HTML (typically top 20 plans)
+    top_plans_html = ""
+    display_limit = 50  # Display top 50 plans
+    top_plans_df = df_sorted.head(display_limit)
+    
+    if not top_plans_df.empty:
+        for _, row in top_plans_df.iterrows():
+            rank = row.get('rank_number', 'N/A')
+            rank_display = row.get('rank_display', str(rank))
+            plan_name = row.get('plan_name', 'N/A')
+            mvno = row.get('mvno', 'N/A')
+            fee = row.get('original_fee', 0)
+            cs_ratio = row.get('CS', 0)
+            baseline_cost = row.get('B', 0)
+            
+            # Format numbers with commas for better readability
+            fee_formatted = f"{fee:,.0f}" if isinstance(fee, (int, float)) else fee
+            baseline_cost_formatted = f"{baseline_cost:,.0f}" if isinstance(baseline_cost, (int, float)) else baseline_cost
+            cs_ratio_formatted = f"{cs_ratio:.4f}" if isinstance(cs_ratio, float) else cs_ratio
+            
+            top_plans_html += f"""
+            <tr>
+                <td>{rank_display}</td>
+                <td>{plan_name}</td>
+                <td>{mvno}</td>
+                <td>{fee_formatted}</td>
+                <td>{cs_ratio_formatted}</td>
+                <td>{baseline_cost_formatted}</td>
+            </tr>
+            """
+    else:
+        top_plans_html = """
+        <tr>
+            <td colspan="6" style="text-align: center;">No ranking data available</td>
+        </tr>
+        """
+    
     # Create HTML
     html = f"""
     <!DOCTYPE html>
@@ -926,7 +963,267 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
             }});
         </script>
         
-        <title>{report_title} - {timestamp_str}</title>
+        <!-- Chart.js initialization for feature frontier charts -->
+        <script>
+            // Feature frontier data
+            const FRONTIER_DATA_JSON = {feature_frontier_json};
+            
+            // Create feature frontier charts
+            document.addEventListener('DOMContentLoaded', function() {{
+                console.log('Initializing feature frontier charts...');
+                
+                // Check if we have data
+                if (!FRONTIER_DATA_JSON || Object.keys(FRONTIER_DATA_JSON).length === 0) {{
+                    console.warn('No frontier data available, charts will not be displayed');
+                    document.getElementById('feature-charts-container').innerHTML = '<p>No frontier data available for visualization.</p>';
+                    return;
+                }}
+                
+                // Feature display names
+                const featureDisplayNames = {{
+                    'basic_data_clean': 'Basic Data (GB)',
+                    'daily_data_clean': 'Daily Data (GB/day)',
+                    'voice_clean': 'Voice Minutes',
+                    'message_clean': 'SMS Messages',
+                    'additional_call': 'Additional Call Price (KRW)',
+                    'speed_when_exhausted': 'Throttled Speed (Mbps)',
+                    'tethering_gb': 'Tethering Data (GB)'
+                }};
+                
+                // Create a chart for each feature
+                const chartsContainer = document.getElementById('feature-charts-container');
+                chartsContainer.innerHTML = ''; // Clear previous content
+                
+                // Create a chart for each feature
+                for (const [feature, data] of Object.entries(FRONTIER_DATA_JSON)) {{
+                    console.log(`Processing feature: ${{feature}}`);
+                    
+                    // Validate data
+                    if (!data.all_values || !data.all_contributions || data.all_values.length === 0) {{
+                        console.warn(`Invalid data for feature ${{feature}}, skipping`);
+                        continue;
+                    }}
+                    
+                    // Create chart container
+                    const chartContainer = document.createElement('div');
+                    chartContainer.className = 'chart-container';
+                    
+                    // Create chart title
+                    const chartTitle = document.createElement('div');
+                    chartTitle.className = 'chart-title';
+                    chartTitle.textContent = featureDisplayNames[feature] || feature;
+                    chartContainer.appendChild(chartTitle);
+                    
+                    // Create canvas for chart
+                    const canvas = document.createElement('canvas');
+                    canvas.id = `chart-${{feature}}`;
+                    chartContainer.appendChild(canvas);
+                    
+                    // Add chart container to grid
+                    chartsContainer.appendChild(chartContainer);
+                    
+                    // Prepare data points
+                    let frontierPoints = [];
+                    let excludedPoints = [];
+                    let unlimitedPoints = [];
+                    
+                    // Sort frontier points by x-value (feature value) to ensure proper line connections
+                    if (data.frontier_values && data.frontier_values.length > 0) {{
+                        // Create data points for frontier points
+                        for (let i = 0; i < data.frontier_values.length; i++) {{
+                            const x = data.frontier_values[i];
+                            const y = data.frontier_contributions[i];
+                            const planName = data.frontier_plan_names[i] || 'Unknown';
+                            
+                            // Ensure x and y are numbers
+                            if (typeof x === 'number' && typeof y === 'number' && !isNaN(x) && !isNaN(y)) {{
+                                frontierPoints.push({{
+                                    x: x,
+                                    y: y,
+                                    plan_name: planName,
+                                    is_frontier: true,
+                                    is_excluded: false,
+                                }});
+                            }}
+                        }}
+                        
+                        // Sort frontier points by x-value to ensure proper line connections
+                        frontierPoints.sort((a, b) => a.x - b.x);
+                    }}
+                    
+                    // Create data points for excluded points
+                    for (let i = 0; i < data.excluded_values.length; i++) {{
+                        const x = data.excluded_values[i];
+                        const y = data.excluded_contributions[i];
+                        const planName = data.excluded_plan_names[i] || 'Unknown';
+                        
+                        if (typeof x === 'number' && typeof y === 'number' && !isNaN(x) && !isNaN(y)) {{
+                            excludedPoints.push({{
+                                x: x,
+                                y: y,
+                                plan_name: planName,
+                                is_frontier: false,
+                                is_excluded: true,
+                            }});
+                        }}
+                    }}
+                    
+                    // Create a special point for unlimited if available
+                    if (data.has_unlimited && data.unlimited_value !== null) {{
+                        const unlimitedValue = data.unlimited_value;
+                        const unlimitedPlan = data.unlimited_plan || 'Unknown';
+                        
+                        // Create a special mark for unlimited (using the right edge of the chart)
+                        unlimitedPoints.push({{
+                            // Position at the maximum of actual data points plus 20% or at a default position
+                            x: data.frontier_values.length > 0 ? Math.max(...data.frontier_values) * 1.2 : 10,
+                            y: unlimitedValue,
+                            plan_name: unlimitedPlan,
+                            is_frontier: true,
+                            is_excluded: false,
+                        }});
+                    }}
+                    
+                    // Create datasets for Chart.js
+                    const datasets = [];
+                    
+                    // Frontier points dataset (red line)
+                    if (frontierPoints.length > 0) {{
+                        datasets.push({{
+                            label: 'Frontier',
+                            data: frontierPoints,
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                            pointBackgroundColor: 'rgba(255, 99, 132, 1)',
+                            pointBorderColor: '#fff',
+                            pointRadius: 6,
+                            pointHoverRadius: 8,
+                            showLine: true,
+                            fill: false,
+                            borderWidth: 2.5
+                        }});
+                    }}
+                    
+                    // Excluded points dataset (yellow points)
+                    if (excludedPoints.length > 0) {{
+                        datasets.push({{
+                            label: 'Excluded',
+                            data: excludedPoints,
+                            borderColor: 'rgba(255, 205, 86, 1)',
+                            backgroundColor: 'rgba(255, 205, 86, 0.5)',
+                            pointBackgroundColor: 'rgba(255, 205, 86, 1)',
+                            pointBorderColor: '#fff',
+                            pointRadius: 5,
+                            pointHoverRadius: 7,
+                            showLine: false
+                        }});
+                    }}
+                    
+                    // Unlimited point dataset (purple marker with dashed vertical line)
+                    if (unlimitedPoints.length > 0) {{
+                        datasets.push({{
+                            label: 'Unlimited',
+                            data: unlimitedPoints,
+                            borderColor: 'rgba(128, 0, 128, 1)',
+                            backgroundColor: 'rgba(128, 0, 128, 0.5)',
+                            pointBackgroundColor: 'rgba(128, 0, 128, 1)',
+                            pointBorderColor: '#fff',
+                            pointStyle: 'rectRot',
+                            pointRadius: 10,
+                            pointHoverRadius: 12,
+                            showLine: false
+                        }});
+                        
+                        // Add text label for unlimited value if present
+                        const unlimitedLabel = document.createElement('div');
+                        unlimitedLabel.style.position = 'absolute';
+                        unlimitedLabel.style.right = '10px';
+                        unlimitedLabel.style.top = '30px'; // Adjusted top position for taller chart
+                        unlimitedLabel.style.backgroundColor = 'rgba(128, 0, 128, 0.1)';
+                        unlimitedLabel.style.borderLeft = '3px solid rgba(128, 0, 128, 0.8)';
+                        unlimitedLabel.style.padding = '4px 8px';
+                        unlimitedLabel.style.borderRadius = '0 4px 4px 0';
+                        unlimitedLabel.innerHTML = `<b>Unlimited</b>: ${{unlimitedPoints[0].plan_name}} (${{unlimitedPoints[0].y.toLocaleString()}} KRW)`;
+                        chartContainer.appendChild(unlimitedLabel);
+                    }}
+                    
+                    // Create chart
+                    const ctx = canvas.getContext('2d');
+                    new Chart(ctx, {{
+                        type: 'scatter',
+                        data: {{
+                            datasets: datasets
+                        }},
+                        options: {{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {{
+                                tooltip: {{
+                                    callbacks: {{
+                                        label: function(context) {{
+                                            const point = context.raw;
+                                            return `${{point.plan_name}}: ${{point.x}} → ${{point.y.toLocaleString()}} KRW`;
+                                        }}
+                                    }}
+                                }},
+                                legend: {{
+                                    position: 'top',
+                                    labels: {{
+                                        usePointStyle: true,
+                                        padding: 10,
+                                        boxWidth: 10,
+                                        boxHeight: 10
+                                    }}
+                                }}
+                            }},
+                            scales: {{
+                                x: {{
+                                    title: {{
+                                        display: true,
+                                        text: featureDisplayNames[feature] || feature,
+                                        font: {{
+                                            size: 11
+                                        }},
+                                        padding: {{
+                                            top: 0,
+                                            bottom: 0
+                                        }}
+                                    }},
+                                    ticks: {{
+                                        font: {{
+                                            size: 10
+                                        }}
+                                    }},
+                                    min: 0 // Always start x-axis at 0
+                                }},
+                                y: {{
+                                    title: {{
+                                        display: true,
+                                        text: 'Price (KRW)',
+                                        font: {{
+                                            size: 11
+                                        }},
+                                        padding: {{
+                                            top: 0,
+                                            bottom: 0
+                                        }}
+                                    }},
+                                    ticks: {{
+                                        callback: function(value) {{
+                                            return value.toLocaleString();
+                                        }},
+                                        font: {{
+                                            size: 10
+                                        }}
+                                    }},
+                                    min: 0 // Always start y-axis at 0
+                                }}
+                            }}
+                        }}
+                    }});
+                }}
+            }});
+        </script>
     </head>
     <body>
         <h1>{report_title} - {timestamp_str}</h1>
@@ -934,6 +1231,33 @@ def generate_html_report(df, timestamp, is_dea=False, is_cs=True, title="Mobile 
         <div class="note">
             <p>This report shows mobile plan rankings based on the Cost-Spec Ratio methodology. Plans with higher CS ratios offer better value relative to their specifications.</p>
             <p>All costs shown are in Korean Won (KRW).</p>
+        </div>
+        
+        <!-- Top-ranked plans table -->
+        <h2>Top-Ranked Plans</h2>
+        <div class="container">
+            <table>
+                <tr>
+                    <th>Rank</th>
+                    <th>Plan Name</th>
+                    <th>MVNO</th>
+                    <th>Fee</th>
+                    <th>CS Ratio</th>
+                    <th>Baseline Cost</th>
+                </tr>
+                <!-- Generate rows for top 20 plans -->
+                {top_plans_html}
+            </table>
+        </div>
+        
+        <!-- Feature Frontier Charts -->
+        <h2>Feature Frontier Charts</h2>
+        <div class="note">
+            <p>These charts show the cost frontiers for each feature, representing the optimal (minimum cost) options available at each feature value.</p>
+            <p>Red points and lines represent the frontier, while yellow points are non-frontier minimum cost options that were excluded due to lack of monotonicity.</p>
+        </div>
+        <div class="chart-grid" id="feature-charts-container">
+            <!-- Charts will be inserted here by JavaScript -->
         </div>
         
         <!-- Residual analysis table -->
