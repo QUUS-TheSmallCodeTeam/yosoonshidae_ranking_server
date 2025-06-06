@@ -68,14 +68,37 @@ def prepare_feature_frontier_data(df, core_continuous_features):
         # Step 1: Get all unique feature values and their minimum costs
         candidate_points_details_series = [] 
         if not df_for_frontier.empty:
-            min_cost_indices = df_for_frontier.loc[df_for_frontier.groupby(feature)[cost_metric_for_visualization].idxmin()].index
-            min_cost_candidates_df = df_for_frontier.loc[min_cost_indices]
+            # For each unique cost, find the point with maximum feature value
+            # This ensures we pick higher spec points when costs are the same
+            cost_to_max_feature = {}
+            for _, row in df_for_frontier.iterrows():
+                cost = row[cost_metric_for_visualization]
+                feature_val = row[feature]
+                
+                if cost not in cost_to_max_feature or feature_val > cost_to_max_feature[cost]['feature_val']:
+                    cost_to_max_feature[cost] = {
+                        'feature_val': feature_val,
+                        'row': row
+                    }
             
-            # Sort these candidates by feature value, then by cost_metric_for_visualization
-            min_cost_candidates_df = min_cost_candidates_df.sort_values(by=[feature, cost_metric_for_visualization])
-
-            for _, plan_series_row in min_cost_candidates_df.iterrows():
-                candidate_points_details_series.append(plan_series_row)
+            # Now for each feature value, find the minimum cost among the selected high-spec points
+            feature_to_min_cost = {}
+            for cost_info in cost_to_max_feature.values():
+                feature_val = cost_info['feature_val']
+                row = cost_info['row']
+                cost = row[cost_metric_for_visualization]
+                
+                if feature_val not in feature_to_min_cost or cost < feature_to_min_cost[feature_val]['cost']:
+                    feature_to_min_cost[feature_val] = {
+                        'cost': cost,
+                        'row': row
+                    }
+            
+            # Sort candidates by feature value, then by cost
+            sorted_candidates = sorted(feature_to_min_cost.items(), key=lambda x: (x[0], x[1]['cost']))
+            
+            for feature_val, cost_info in sorted_candidates:
+                candidate_points_details_series.append(cost_info['row'])
             
             logger.info(f"Found {len(candidate_points_details_series)} minimum-cost candidate points for feature {feature}")
             

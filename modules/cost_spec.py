@@ -58,9 +58,36 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
     if df_feature_specific.empty:
         return pd.Series(dtype=float)
 
-    # Step 1: Identify candidate points (minimum cost for each unique feature value)
-    # Sort by feature_col, then by cost_col to handle ties consistently (though idxmin handles it)
-    candidate_points_df = df_feature_specific.loc[df_feature_specific.groupby(feature_col)[cost_col].idxmin()]
+    # Step 1: Identify candidate points with tie-breaking logic
+    # For each unique cost, find the point with maximum feature value
+    # This ensures we pick higher spec points when costs are the same
+    cost_to_max_feature = {}
+    for _, row in df_feature_specific.iterrows():
+        cost = row[cost_col]
+        feature_val = row[feature_col]
+        
+        if cost not in cost_to_max_feature or feature_val > cost_to_max_feature[cost]['feature_val']:
+            cost_to_max_feature[cost] = {
+                'feature_val': feature_val,
+                'row_index': row.name
+            }
+    
+    # Now for each feature value, find the minimum cost among the selected high-spec points
+    feature_to_min_cost = {}
+    for cost_info in cost_to_max_feature.values():
+        row = df_feature_specific.loc[cost_info['row_index']]
+        feature_val = row[feature_col]
+        cost = row[cost_col]
+        
+        if feature_val not in feature_to_min_cost or cost < feature_to_min_cost[feature_val]['cost']:
+            feature_to_min_cost[feature_val] = {
+                'cost': cost,
+                'row_index': cost_info['row_index']
+            }
+    
+    # Create candidate_points_df from the selected indices
+    selected_indices = [cost_info['row_index'] for cost_info in feature_to_min_cost.values()]
+    candidate_points_df = df_feature_specific.loc[selected_indices]
     candidate_points_df = candidate_points_df.sort_values(by=[feature_col, cost_col])
     
     # Calculate the smallest feature value unit increase in the dataset
