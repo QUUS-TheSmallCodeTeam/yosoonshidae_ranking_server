@@ -139,13 +139,21 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
             last_value = last_frontier_point['value']
             last_cost = last_frontier_point['cost']
 
+            # Skip this candidate if it doesn't meet the monotonic increase criteria
+            if current_value <= last_value:
+                continue  # Skip points with same or lower feature value
+            
+            if current_cost <= last_cost:
+                continue  # Skip points with same or lower cost
+            
             cost_per_unit = (current_cost - last_cost) / (current_value - last_value)
-            if (current_value > last_value and 
-                current_cost > last_cost and
-                cost_per_unit >= 1.0):
-                actual_frontier_stack.append(candidate)
-                if current_value > 0:  # Only disable zero point if we have a non-zero value
-                    should_add_zero_point = False
+            if cost_per_unit < 1.0:
+                continue  # Skip points that don't meet minimum 1 KRW per unit increase
+            
+            # If we reach here, the point is valid for the frontier
+            actual_frontier_stack.append(candidate)
+            if current_value > 0:  # Only disable zero point if we have a non-zero value
+                should_add_zero_point = False
         else:
             # First candidate point
             actual_frontier_stack.append(candidate)
