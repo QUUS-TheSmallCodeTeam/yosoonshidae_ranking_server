@@ -139,9 +139,10 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
             last_value = last_frontier_point['value']
             last_cost = last_frontier_point['cost']
 
+            cost_per_unit = (current_cost - last_cost) / (current_value - last_value)
             if (current_value > last_value and 
                 current_cost > last_cost and
-                (current_cost - last_cost) >= 1.0):
+                cost_per_unit >= 1.0):
                 actual_frontier_stack.append(candidate)
                 if current_value > 0:  # Only disable zero point if we have a non-zero value
                     should_add_zero_point = False
@@ -174,9 +175,13 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
             max_point = {'value': max_feature_value, 'cost': min_cost_for_max}
             
             # Only add if it maintains monotonicity and 1.0 KRW minimum increase
-            if not actual_frontier_stack or (
-               min_cost_for_max > actual_frontier_stack[-1]['cost'] and 
-               (min_cost_for_max - actual_frontier_stack[-1]['cost']) >= 1.0):
+            if not actual_frontier_stack:
+                actual_frontier_stack.append(max_point)
+                logger.info(f"Added endpoint ({max_feature_value},{min_cost_for_max}) to frontier for {feature_col}")
+            else:
+                last_point = actual_frontier_stack[-1]
+                cost_per_unit = (min_cost_for_max - last_point['cost']) / (max_feature_value - last_point['value'])
+                if (min_cost_for_max > last_point['cost'] and cost_per_unit >= 1.0):
                 actual_frontier_stack.append(max_point)
                 logger.info(f"Added endpoint ({max_feature_value},{min_cost_for_max}) to frontier for {feature_col}")
 
