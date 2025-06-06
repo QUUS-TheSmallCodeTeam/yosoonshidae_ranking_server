@@ -182,8 +182,8 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
                 last_point = actual_frontier_stack[-1]
                 cost_per_unit = (min_cost_for_max - last_point['cost']) / (max_feature_value - last_point['value'])
                 if (min_cost_for_max > last_point['cost'] and cost_per_unit >= 1.0):
-                actual_frontier_stack.append(max_point)
-                logger.info(f"Added endpoint ({max_feature_value},{min_cost_for_max}) to frontier for {feature_col}")
+                    actual_frontier_stack.append(max_point)
+                    logger.info(f"Added endpoint ({max_feature_value},{min_cost_for_max}) to frontier for {feature_col}")
 
     # Convert stack to pandas Series
     frontier_s = pd.Series({p['value']: p['cost'] for p in actual_frontier_stack})
