@@ -125,25 +125,47 @@ def prepare_feature_frontier_data(df, core_continuous_features):
 
             # Check if the candidate can be added based on monotonic increase rule
             if actual_frontier_plans_series_list:
-                last_frontier_plan_series = actual_frontier_plans_series_list[-1]
-                last_value = last_frontier_plan_series[feature]
-                last_cost = last_frontier_plan_series[cost_metric_for_visualization]
+                # Remove points from the end of the frontier that conflict with adding this candidate
+                while actual_frontier_plans_series_list:
+                    last_frontier_plan_series = actual_frontier_plans_series_list[-1]
+                    last_value = last_frontier_plan_series[feature]
+                    last_cost = last_frontier_plan_series[cost_metric_for_visualization]
 
-                # Skip this candidate if it doesn't meet the monotonic increase criteria
-                if current_value <= last_value:
-                    continue  # Skip points with same or lower feature value
+                    # Skip this candidate if it has same or lower feature value
+                    if current_value <= last_value:
+                        break  # Cannot add this candidate
+                    
+                    # Skip this candidate if it has same or lower cost
+                    if current_cost <= last_cost:
+                        break  # Cannot add this candidate
+                    
+                    cost_per_unit = (current_cost - last_cost) / (current_value - last_value)
+                    if cost_per_unit >= 1.0:
+                        # This candidate can be added - it meets all criteria
+                        break
+                    else:
+                        # Remove the last point and try again with the previous point
+                        actual_frontier_plans_series_list.pop()
+                        should_add_zero_point = True  # Reconsider adding zero point
                 
-                if current_cost <= last_cost:
-                    continue  # Skip points with same or lower cost
-                
-                cost_per_unit = (current_cost - last_cost) / (current_value - last_value)
-                if cost_per_unit < 1.0:
-                    continue  # Skip points that don't meet minimum 1 KRW per unit increase
-                
-                # If we reach here, the point is valid for the frontier
-                actual_frontier_plans_series_list.append(candidate_plan_series)
-                if current_value > 0:  # Only disable zero point if we have a non-zero value
-                    should_add_zero_point = False
+                # If we still have points in the frontier, check one more time if we can add the candidate
+                if actual_frontier_plans_series_list:
+                    last_frontier_plan_series = actual_frontier_plans_series_list[-1]
+                    last_value = last_frontier_plan_series[feature]
+                    last_cost = last_frontier_plan_series[cost_metric_for_visualization]
+                    
+                    if (current_value > last_value and 
+                        current_cost > last_cost and
+                        (current_cost - last_cost) / (current_value - last_value) >= 1.0):
+                        actual_frontier_plans_series_list.append(candidate_plan_series)
+                        if current_value > 0:
+                            should_add_zero_point = False
+                    # If criteria not met, skip this candidate
+                else:
+                    # Frontier is empty, add this as first point
+                    actual_frontier_plans_series_list.append(candidate_plan_series)
+                    if current_value > 0:
+                        should_add_zero_point = False
             else:
                 # First candidate point
                 actual_frontier_plans_series_list.append(candidate_plan_series)
