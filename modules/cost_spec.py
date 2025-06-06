@@ -87,34 +87,48 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
 
     # Step 2: Build the true monotonic frontier with minimum 1 KRW cost increase rule
     actual_frontier_stack = []
+    should_add_zero_point = True
+    
     for candidate in candidate_details:
-        # Part 1: Bottom-crawling based on cost.
-        # If current candidate is strictly cheaper than stack top, stack top is suboptimal.
-        while actual_frontier_stack and candidate['cost'] < actual_frontier_stack[-1]['cost']:
-            actual_frontier_stack.pop()
-        
-        # Part 2: Add candidate if it forms a valid next step from the (new) stack top.
-        if not actual_frontier_stack:
-            # If stack is empty, add current candidate.
-            actual_frontier_stack.append(candidate)
-        else:
+        current_value = candidate['value']
+        current_cost = candidate['cost']
+
+        # Allow the addition of the candidate if it completely dominates the frontier so far
+        while actual_frontier_stack:
             last_frontier_point = actual_frontier_stack[-1]
-            # Conditions for adding to the frontier:
-            # 1. Candidate's feature value must be strictly greater.
-            # 2. Candidate's cost must be strictly greater.
-            # 3. Cost increase must be at least 1.0 KRW.
-            if (candidate['value'] > last_frontier_point['value'] and
-                candidate['cost'] > last_frontier_point['cost'] and
-                (candidate['cost'] - last_frontier_point['cost']) >= 1.0):
+            last_value = last_frontier_point['value']
+            last_cost = last_frontier_point['cost']
+
+            # If the candidate is more optimal, we remove points and recheck conditions
+            if current_value > last_value and current_cost < last_cost:
+                actual_frontier_stack.pop()
+                should_add_zero_point = True  # We need to reconsider adding the (0,0) point
+            else:
+                break
+
+        # Check if the candidate can be added based on monotonic increase rule
+        if actual_frontier_stack:
+            last_frontier_point = actual_frontier_stack[-1]
+            last_value = last_frontier_point['value']
+            last_cost = last_frontier_point['cost']
+
+            if (current_value > last_value and 
+                current_cost > last_cost and
+                (current_cost - last_cost) >= 1.0):
                 actual_frontier_stack.append(candidate)
-            # Else: Candidate is not added (due to plateau, insufficient increase, or same feature value).
+                if current_value > 0:  # Only disable zero point if we have a non-zero value
+                    should_add_zero_point = False
+        else:
+            # First candidate point
+            actual_frontier_stack.append(candidate)
+            if current_value > 0:  # Only disable zero point if we have a non-zero value
+                should_add_zero_point = False
             
     if not actual_frontier_stack:
         return pd.Series(dtype=float)
     
-    # Add (0,0) as the starting point if not present
-    min_feature_value = actual_frontier_stack[0]['value'] if actual_frontier_stack else 0
-    if min_feature_value > 0:
+    # Add (0,0) as the starting point if conditions are met
+    if should_add_zero_point:
         # Create a synthetic starting point at (0,0)
         zero_point = {'value': 0, 'cost': 0}
         # Insert at the beginning

@@ -80,53 +80,53 @@ def prepare_feature_frontier_data(df, core_continuous_features):
             logger.info(f"Found {len(candidate_points_details_series)} minimum-cost candidate points for feature {feature}")
             
         # Step 2: Build the true monotonic frontier
-        actual_frontier_plans_series_list = [] 
+        actual_frontier_plans_series_list = []
+        should_add_zero_point = True
 
         for candidate_plan_series in candidate_points_details_series:
-            # If this is the first point, always add it
-            if not actual_frontier_plans_series_list:
-                actual_frontier_plans_series_list.append(candidate_plan_series)
-                continue
-                
-            last_frontier_plan_series = actual_frontier_plans_series_list[-1]
             current_value = candidate_plan_series[feature]
             current_cost = candidate_plan_series[cost_metric_for_visualization]
-            last_value = last_frontier_plan_series[feature]
-            last_cost = last_frontier_plan_series[cost_metric_for_visualization]
-            
-            # Pop points that this one dominates (more value for less cost)
-            while actual_frontier_plans_series_list and \
-                  current_value > actual_frontier_plans_series_list[-1][feature] and \
-                  current_cost < actual_frontier_plans_series_list[-1][cost_metric_for_visualization]:
-                actual_frontier_plans_series_list.pop()
-                if actual_frontier_plans_series_list:
-                    last_frontier_plan_series = actual_frontier_plans_series_list[-1]
-                    last_value = last_frontier_plan_series[feature]
-                    last_cost = last_frontier_plan_series[cost_metric_for_visualization]
-            
-            # Add point if:
-            # 1. It offers more value than last point
-            # 2. It costs more than the last point
-            # 3. The cost increase is at least 1.0 KRW
-            if (current_value > last_value and 
-                current_cost > last_cost and
-                (current_cost - last_cost) >= 1.0):
+
+            # Allow the addition of the candidate if it completely dominates the frontier so far
+            while actual_frontier_plans_series_list:
+                last_frontier_plan_series = actual_frontier_plans_series_list[-1]
+                last_value = last_frontier_plan_series[feature]
+                last_cost = last_frontier_plan_series[cost_metric_for_visualization]
+
+                # If the candidate is more optimal, we remove points and recheck conditions
+                if current_value > last_value and current_cost < last_cost:
+                    actual_frontier_plans_series_list.pop()
+                    should_add_zero_point = True  # We need to reconsider adding the (0,0) point
+                else:
+                    break
+
+            # Check if the candidate can be added based on monotonic increase rule
+            if actual_frontier_plans_series_list:
+                last_frontier_plan_series = actual_frontier_plans_series_list[-1]
+                last_value = last_frontier_plan_series[feature]
+                last_cost = last_frontier_plan_series[cost_metric_for_visualization]
+
+                if current_value > last_value and current_cost > last_cost and (current_cost - last_cost) >= 1.0:
+                    actual_frontier_plans_series_list.append(candidate_plan_series)
+                    if current_value > 0:  # Only disable zero point if we have a non-zero value
+                        should_add_zero_point = False
+            else:
+                # First candidate point
                 actual_frontier_plans_series_list.append(candidate_plan_series)
-                
-        # Ensure frontier points are sorted by feature value 
-        actual_frontier_plans_series_list.sort(key=lambda p: p[feature])
-        
-        # Add (0,0) as the starting point if not present
-        min_feature_value = actual_frontier_plans_series_list[0][feature] if actual_frontier_plans_series_list else 0
-        if min_feature_value > 0 and not df_for_frontier.empty:
-            # Create a synthetic starting point at (0,0)
+                if current_value > 0:  # Only disable zero point if we have a non-zero value
+                    should_add_zero_point = False
+
+        # Add (0,0) as the starting point if conditions are met
+        if should_add_zero_point and not df_for_frontier.empty:
             zero_point_series = actual_frontier_plans_series_list[0].copy() if actual_frontier_plans_series_list else pd.Series({})
             zero_point_series[feature] = 0
             zero_point_series[cost_metric_for_visualization] = 0
             zero_point_series['plan_name'] = "Free Baseline"
-            # Insert at the beginning
             actual_frontier_plans_series_list.insert(0, zero_point_series)
             logger.info(f"Added (0,0) starting point to feature {feature} frontier")
+
+        # Ensure the last points are connected by sorting
+        actual_frontier_plans_series_list.sort(key=lambda p: p[feature])
         
         # Find the maximum feature value in the dataset, and add the lowest cost point for that value to the frontier if not present
         if not df_for_frontier.empty:
