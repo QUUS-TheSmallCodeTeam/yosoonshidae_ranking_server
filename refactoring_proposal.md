@@ -257,21 +257,15 @@ subject to:
 ```
 **Why needed**: Negative marginal costs are mathematically nonsensical (would mean paying less for more features).
 
-**2. Frontier Constraints (X[i]·β ≥ c[i] - δ):**
+**2. Frontier Constraints (for complete frontier plans only):**
 ```
-For each frontier plan i: β₀ + β₁×data[i] + β₂×voice[i] + ... ≥ actual_cost[i] - tolerance
+For each plan that contributed to ANY frontier: β₀ + β₁×data[i] + β₂×voice[i] + ... ≥ original_fee[i] - tolerance
 ```
-**Why needed**: Your decomposed costs must never suggest a plan can be cheaper than already-proven market minimums.
+**Why needed**: Our decomposed costs must be able to explain the actual costs of real frontier plans.
 
-**What actual_cost[i] means**: This is the `original_fee` of the plan that created the frontier point. For example:
-- If your data frontier shows "6GB → ₩6,000", then actual_cost = ₩6,000 
-- This came from a real plan in your dataset with original_fee = ₩6,000 that had 6GB data
-- The constraint ensures our decomposed model predicts at least ₩6,000 for that feature combination
+**What this means**: If a plan with (6GB, 300min, 300SMS, 6GB tether) costs ₩6,000 and contributed to frontiers, our model must predict ≥ ₩6,000 for that exact combination. But a plan with (6GB, 100min, 50SMS, 0GB tether) could cost much less.
 
-**Direction of constraint**: 
-- **≥ (greater than or equal)**: Prevents going BELOW proven minimums
-- We allow predictions to be higher than frontier costs (that's fine - means less efficient)
-- We prevent predictions below frontier costs (impossible - would beat proven market minimums)
+**Key insight**: We only constrain **complete plans that actually exist**, not partial feature combinations. This prevents artificial price inflation while ensuring our model respects real market data.
 
 **3. Base Cost Feasibility:**
 ```
