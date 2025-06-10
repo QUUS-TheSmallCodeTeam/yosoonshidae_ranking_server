@@ -18,21 +18,12 @@
 - [x] **Cleanup test files and finalize implementation**
 - [x] **Data cleaning functionality**
 
-## 🚨 CRITICAL ISSUE - IMMEDIATE PRIORITY
-- [ ] **Fix frontier point exclusion timing problem**
-  - Current: Points excluded BEFORE decomposition based on bundled costs  
-  - Impact: 15-25% potentially valid plans wrongly excluded
-  - Location: `create_robust_monotonic_frontier()` in `cost_spec.py:238-418`
-  - Solution: Implement post-decomposition frontier refinement
-  
-  **Implementation Tasks:**
-  - [ ] Modify `create_robust_monotonic_frontier()` to add `apply_strict_filtering` parameter
-  - [ ] Create `refine_frontiers_post_decomposition()` function that uses β coefficients
-  - [ ] Update `calculate_cs_ratio_enhanced()` for two-phase workflow:
-    - Phase 1: Relaxed frontier collection for initial decomposition
-    - Phase 2: Refined frontier construction using discovered marginal costs
-  - [ ] Add validation to ensure excluded points are reconsidered post-decomposition
-  - [ ] Implement economic efficiency check using true marginal costs vs bundled costs
+## 💡 DESIGN CLARIFICATION RESOLVED
+- [x] **Understanding of monotonicity exclusion corrected** ✅ RESOLVED
+  - **User Intent**: Exclude non-monotonic data BY DESIGN for reasonable cost trends
+  - **Purpose**: Most optimistic baseline for fair 가성비 ranking
+  - **Tethering Example**: ₩0/GB coefficient correct - insufficient reasonable data after proper exclusion
+  - **System Working As Intended**: Not a bug, but proper filtering for realistic ranking
 
 ## 🔄 Production Integration Tasks  
 - [ ] Update `ranking.py` to use enhanced cost_spec functions (if needed)
@@ -60,6 +51,11 @@
   - [x] Interactive tooltips with plan details
   - [x] Bubble size represents total feature levels
   - [x] Replaced outdated residual fee analysis
+- [x] **Marginal Cost Analysis Chart** ⭐ PRIORITY 1 ✅ COMPLETED
+  - [x] Visualize individual β coefficients (marginal costs) per feature
+  - [x] Business interpretation tooltips (e.g., "데이터 1GB 추가시 ₩50 비용 증가")
+  - [x] Base infrastructure cost display separate from marginal costs
+  - [x] Color-coded bar chart with Korean labels
 - [ ] Confidence intervals for coefficient estimates
 - [ ] Feature importance analysis for cost drivers
 - [ ] Market segment analysis using decomposed costs
@@ -119,4 +115,37 @@ The entire system has been successfully refactored to include:
 - Enhanced HTML reports with method information and comparison data
 - Full backward compatibility maintained
 
-**Next Priority**: Testing with real production data and performance optimization. 
+**Next Priority**: Testing with real production data and performance optimization.
+
+# Todo List
+
+## 완료된 작업 ✅
+- ✅ Cost Structure Decomposition Charts 구현 (Linear Decomposition 전용)
+- ✅ Plan Value Efficiency Matrix 구현  
+- ✅ Marginal Cost Analysis Chart 구현
+- ✅ Debug 정보 섹션 추가 (method 및 cost_structure 상태 표시)
+- ✅ `attrs['cost_structure']` 호환성 문제 해결
+- ✅ 상세한 로깅 및 안전장치 추가
+
+## 현재 디버깅 중인 작업 🔍
+- 🔍 Linear decomposition 실행 실패 원인 분석 및 해결
+- 🔍 Feature 존재 확인 및 안전성 개선
+- 🔍 실제 데이터로 로그 검증 대기
+
+## 현재 대기 중인 작업 🔄
+- 사용자의 실제 데이터 테스트 결과 및 로그 확인 대기
+- Linear decomposition vs frontier method 실행 결과 비교
+- 필요시 추가 버그 수정
+
+## 제안사항 (향후 개선) 💡
+- 추가 차트 유형 (시계열 분석, 경쟁사 비교 등)
+- 차트 내보내기 기능 (PNG, PDF)
+- 인터랙티브 필터링 기능
+- 모바일 최적화 개선
+
+## 구현된 안전장치 🛡️
+- Linear decomposition 실패 시 frontier method로 자동 fallback
+- DataFrame에 존재하는 features만 사용
+- 최소 3개 feature 요구사항 체크
+- Exception handling 및 상세 에러 로깅
+- JSON 직렬화 안전성 확보 

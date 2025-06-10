@@ -72,9 +72,55 @@ def prepare_cost_structure_chart_data(cost_structure):
                 unit_cost_data['data'].append(cost)
                 unit_cost_data['units'].append(info['unit'])
     
+    # Chart 3: Detailed marginal cost analysis with business interpretation
+    marginal_analysis = {
+        'features': [],
+        'coefficients': [],
+        'interpretations': [],
+        'colors': ['#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#34495e'],
+        'base_cost': base_cost
+    }
+    
+    # Feature analysis with business context
+    feature_analysis = {
+        'basic_data_clean': {
+            'name': '데이터 (Data)', 
+            'unit': '₩/GB',
+            'interpretation': lambda x: f"데이터 1GB 추가시 ₩{x:.0f} 비용 증가"
+        },
+        'voice_clean': {
+            'name': '음성통화 (Voice)', 
+            'unit': '₩/100분',
+            'interpretation': lambda x: f"음성 100분 추가시 ₩{x:.0f} 비용 증가"
+        },
+        'message_clean': {
+            'name': 'SMS 문자', 
+            'unit': '₩/100건',
+            'interpretation': lambda x: f"SMS 100건 추가시 ₩{x:.0f} 비용 증가"
+        },
+        'tethering_gb': {
+            'name': '테더링 (Tethering)', 
+            'unit': '₩/GB',
+            'interpretation': lambda x: f"테더링 1GB 추가시 ₩{x:.0f} 비용 증가"
+        },
+        'is_5g': {
+            'name': '5G 기술료', 
+            'unit': '₩/요금제',
+            'interpretation': lambda x: f"5G 지원시 ₩{x:.0f} 추가 비용"
+        }
+    }
+    
+    for feature, cost in cost_structure.items():
+        if feature != 'base_cost' and feature in feature_analysis:
+            analysis = feature_analysis[feature]
+            marginal_analysis['features'].append(analysis['name'])
+            marginal_analysis['coefficients'].append(cost)
+            marginal_analysis['interpretations'].append(analysis['interpretation'](cost))
+    
     return {
         'overall': overall_data,
-        'unit_costs': unit_cost_data
+        'unit_costs': unit_cost_data,
+        'marginal_analysis': marginal_analysis
     }
 
 def prepare_plan_efficiency_data(df, method):
@@ -257,16 +303,15 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     # Generate cost structure chart (only for linear decomposition)
     cost_structure_chart_html = ""
     cost_structure_json = "null"  # Default value
-    if method == "linear_decomposition" and cost_structure:
-        # Prepare chart data
-        cost_structure_data = prepare_cost_structure_chart_data(cost_structure)
-        cost_structure_json = json.dumps(cost_structure_data, cls=NumpyEncoder)
-        
+    
+    if method == "linear_decomposition":
+        # Debug: Always show the chart section for linear decomposition
         cost_structure_chart_html = f"""
         <div class="charts-wrapper">
-            <h2>📊 Discovered Cost Structure</h2>
+            <h2>📊 Linear Decomposition Charts</h2>
             <div class="note">
-                <p>이 차트는 Linear Decomposition으로 발견된 실제 마진 비용 구조를 보여줍니다. 각 기능의 실제 제공 비용을 이해할 수 있습니다.</p>
+                <p><strong>Debug Info:</strong> Method = {method}, Cost Structure Available = {bool(cost_structure)}</p>
+                {f'<p>Cost Structure Keys: {list(cost_structure.keys()) if cost_structure else "None"}</p>' if cost_structure else ''}
             </div>
             <div style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: center;">
                 <div class="chart-container" style="width: 500px; height: 400px;">
@@ -277,9 +322,18 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     <h3 style="text-align: center; margin-top: 0;">단위당 비용 (Per-Unit Costs)</h3>
                     <canvas id="unitCostChart" style="max-height: 300px;"></canvas>
                 </div>
+                <div class="chart-container" style="width: 1000px; height: 400px;">
+                    <h3 style="text-align: center; margin-top: 0;">발견된 마진 비용 분석 (Discovered Marginal Costs)</h3>
+                    <canvas id="marginalCostChart" style="max-height: 300px;"></canvas>
+                </div>
             </div>
         </div>
         """
+        
+        if cost_structure:
+            # Prepare chart data
+            cost_structure_data = prepare_cost_structure_chart_data(cost_structure)
+            cost_structure_json = json.dumps(cost_structure_data, cls=NumpyEncoder)
     
     # Define continuous features for visualization (5 most important)
     core_continuous_features = [
@@ -661,22 +715,38 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     charts.push(chart);
                 }}
                 
+                // Debug: Log the data to console
+                console.log('Cost Structure Data:', costStructureData);
+                console.log('Plan Efficiency Data:', planEfficiencyData);
+                
                 // Create cost structure charts if data is available
-                if (costStructureData) {{
+                if (costStructureData && costStructureData !== null) {{
+                    console.log('Creating cost structure charts...');
                     createCostStructureCharts(costStructureData);
+                }} else {{
+                    console.log('No cost structure data available');
                 }}
                 
                 // Create plan efficiency chart if data is available
-                if (planEfficiencyData) {{
+                if (planEfficiencyData && planEfficiencyData !== null) {{
+                    console.log('Creating plan efficiency chart...');
                     createPlanEfficiencyChart(planEfficiencyData);
+                }} else {{
+                    console.log('No plan efficiency data available');
                 }}
             }});
             
             // Function to create cost structure charts
             function createCostStructureCharts(data) {{
+                console.log('createCostStructureCharts called with data:', data);
+                
                 // Chart 1: Cost structure breakdown (doughnut chart)
                 const costStructureCanvas = document.getElementById('costStructureChart');
+                console.log('Cost structure canvas element:', costStructureCanvas);
+                console.log('Data.overall:', data.overall);
+                
                 if (costStructureCanvas && data.overall) {{
+                    console.log('Creating doughnut chart...');
                     new Chart(costStructureCanvas, {{
                         type: 'doughnut',
                         data: {{
@@ -760,6 +830,70 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                                         display: true,
                                         text: '기능 (Features)'
                                     }}
+                                }}
+                            }}
+                        }}
+                    }});
+                }}
+                
+                // Chart 3: Detailed marginal cost analysis
+                const marginalCostCanvas = document.getElementById('marginalCostChart');
+                if (marginalCostCanvas && data.marginal_analysis) {{
+                    const marginalData = data.marginal_analysis;
+                    
+                    new Chart(marginalCostCanvas, {{
+                        type: 'bar',
+                        data: {{
+                            labels: marginalData.features,
+                            datasets: [{{
+                                label: '마진 비용 계수 (Marginal Cost Coefficient)',
+                                data: marginalData.coefficients,
+                                backgroundColor: marginalData.colors.slice(0, marginalData.coefficients.length),
+                                borderWidth: 1,
+                                borderColor: '#333'
+                            }}]
+                        }},
+                        options: {{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {{
+                                legend: {{
+                                    display: false
+                                }},
+                                title: {{
+                                    display: true,
+                                    text: `기본 인프라 비용: ₩${{marginalData.base_cost.toLocaleString()}} | 분석된 기능별 마진 비용`
+                                }},
+                                tooltip: {{
+                                    callbacks: {{
+                                        title: function(context) {{
+                                            return marginalData.features[context[0].dataIndex];
+                                        }},
+                                        label: function(context) {{
+                                            const index = context.dataIndex;
+                                            const value = context.parsed.y;
+                                            const interpretation = marginalData.interpretations[index];
+                                            return [
+                                                `마진 비용: ₩${{value.toLocaleString()}}`,
+                                                `해석: ${{interpretation}}`
+                                            ];
+                                        }}
+                                    }}
+                                }}
+                            }},
+                            scales: {{
+                                x: {{
+                                    title: {{
+                                        display: true,
+                                        text: '기능 (Features)'
+                                    }}
+                                }},
+                                y: {{
+                                    title: {{
+                                        display: true,
+                                        text: '마진 비용 계수 (Marginal Cost Coefficient, ₩)'
+                                    }},
+                                    beginAtZero: true
                                 }}
                             }}
                         }}

@@ -125,9 +125,6 @@ def read_root():
             # Check if this is a CS ranking based on column names
             is_cs = any(col for col in config.df_with_rankings.columns if col == 'CS')
             
-            # Log the dataframe info before generating the report
-            logger.info(f"Generating report from in-memory rankings with {len(config.df_with_rankings)} plans")
-            
             # Create a copy to avoid modifying the original
             df_for_html = config.df_with_rankings.copy()
             
@@ -135,34 +132,36 @@ def read_root():
                 # Sort by CS ratio descending to get the correct order
                 df_for_html = df_for_html.sort_values('CS', ascending=False)
                 
-                # Log some information for debugging
+                # Check if rank 1 exists for error detection
                 if 'rank_number' in df_for_html.columns:
-                    unique_ranks = sorted(df_for_html['rank_number'].unique())
-                    logger.info(f"Unique CS ranks in dataframe before HTML generation: {unique_ranks[:10]}")
-                    
-                    # Check if rank 1 exists
                     has_rank_one = 1 in df_for_html['rank_number'].values
                     if not has_rank_one:
                         logger.warning("No rank 1 found in original dataframe! This is unexpected.")
-                    
-                    # Count plans per rank
-                    rank_counts = df_for_html['rank_number'].value_counts().sort_index()
-                    logger.info(f"Plans per rank before HTML generation: {rank_counts.head(10).to_dict()}")
                 
-                # Log top plans for debugging
-                top_plans = df_for_html.sort_values('CS', ascending=False).head(5)
-                logger.info(f"Top 5 plans with ranks for HTML report:\n{top_plans[['plan_name', 'CS', 'rank_number']].to_string()}")
+                # Extract method and cost_structure from the stored data
+                method = "linear_decomposition"  # Default
+                cost_structure = {}
+                
+                # Try to get method and cost_structure from DataFrame attrs
+                if hasattr(df_for_html, 'attrs'):
+                    if 'cost_structure' in df_for_html.attrs:
+                        cost_structure = df_for_html.attrs['cost_structure']
+                        method = "linear_decomposition"
+                    else:
+                        method = "frontier"
+                else:
+                    method = "frontier"
                 
                 # Generate report with CS method
-                logger.info("Generating CS report for main endpoint")
                 html_content = generate_html_report(
                     df_for_html, 
                     datetime.now(), 
                     is_cs=True, 
-                    title="Cost-Spec Mobile Plan Rankings"
+                    title="Cost-Spec Mobile Plan Rankings",
+                    method=method,
+                    cost_structure=cost_structure
                 )
             else:
-                logger.info("Generating report for main endpoint")
                 html_content = generate_html_report(config.df_with_rankings, datetime.now())
                 
             return HTMLResponse(content=html_content)
@@ -318,16 +317,13 @@ def read_root():
     
     # Get the latest report by modification time
     latest_report = max(html_files, key=lambda x: x.stat().st_mtime)
-    logger.info(f"Serving latest report: {latest_report}")
     
     # Check if this is a CS report based on the filename
     is_cs_report = 'cs' in latest_report.name.lower()
-    logger.info(f"Report identified as CS report: {is_cs_report}")
     
     # If it's a file from the CS reports directory, it's definitely a CS report
     if latest_report.parent == config.cs_report_dir:
         is_cs_report = True
-        logger.info("Report confirmed as CS report based on directory")
     
     # Read the HTML file content
     with open(latest_report, 'r', encoding='utf-8') as f:
@@ -388,7 +384,6 @@ def read_root():
             """
             insert_pos = html_content.find('</body>')
             html_content = html_content[:insert_pos] + interactive_controls + html_content[insert_pos:]
-            logger.info(f"Added interactive ranking controls to HTML report")
             
         return html_content
     except Exception as e:
@@ -583,9 +578,17 @@ async def process_data(request: Request):
         
         # Extract cost structure if available (linear decomposition)
         cost_structure = {}
-        if hasattr(df_ranked, 'attrs') and 'cost_structure' in df_ranked.attrs:
-            cost_structure = df_ranked.attrs['cost_structure']
-            logger.info(f"[{request_id}] Cost structure discovered: {cost_structure}")
+        logger.info(f"[{request_id}] Checking for cost_structure in DataFrame attrs...")
+        logger.info(f"[{request_id}] DataFrame has attrs: {hasattr(df_ranked, 'attrs')}")
+        if hasattr(df_ranked, 'attrs'):
+            logger.info(f"[{request_id}] DataFrame attrs keys: {list(df_ranked.attrs.keys())}")
+            if 'cost_structure' in df_ranked.attrs:
+                cost_structure = df_ranked.attrs['cost_structure']
+                logger.info(f"[{request_id}] Cost structure discovered: {cost_structure}")
+            else:
+                logger.info(f"[{request_id}] No cost_structure found in attrs")
+        else:
+            logger.info(f"[{request_id}] DataFrame has no attrs")
         
         # Create all_ranked_plans for the response
         columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", "rank", "B", "CS"]

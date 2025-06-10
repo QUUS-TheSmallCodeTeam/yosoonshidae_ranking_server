@@ -710,6 +710,7 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
     
     elif method == 'linear_decomposition':
         # Use linear decomposition method
+        logger.info("Starting linear decomposition method")
         df_result = df.copy()
         
         # Get features for this feature set
@@ -718,42 +719,69 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
         else:
             raise ValueError(f"Unknown feature set: {feature_set}")
         
+        logger.info(f"Using features for decomposition: {features}")
+        
         # Initialize linear decomposition
         tolerance = method_kwargs.get('tolerance', 500)
-        decomp_features = method_kwargs.get('features', features[:5])  # Use first 5 features by default
+        # Use safe, commonly available features for decomposition
+        safe_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb', 'is_5g']
+        # Only use features that actually exist in the dataframe
+        decomp_features = [f for f in safe_features if f in df.columns]
+        if len(decomp_features) < 3:
+            logger.warning(f"Not enough valid features for decomposition: {decomp_features}")
+            logger.info("Falling back to frontier method due to insufficient features")
+            return calculate_cs_ratio(df, feature_set, fee_column)
+        decomp_features = method_kwargs.get('features', decomp_features)
         
-        decomposer = LinearDecomposition(tolerance=tolerance, features=decomp_features)
+        logger.info(f"Decomposition features: {decomp_features}")
         
-        # Extract representative plans
-        selection_method = method_kwargs.get('selection_method', 'diverse_segments')
-        representative_plans = decomposer.extract_representative_plans(df, selection_method)
-        
-        # Solve for coefficients
-        coefficients = decomposer.solve_coefficients(representative_plans, fee_column)
-        
-        # Calculate decomposed baselines
-        baselines = decomposer.calculate_decomposed_baselines(df)
-        
-        # Add results to dataframe
-        df_result['B_decomposed'] = baselines
-        df_result['CS_decomposed'] = baselines / df_result[fee_column]
-        
-        # Also calculate traditional method for comparison
-        df_traditional = calculate_cs_ratio(df, feature_set, fee_column)
-        df_result['B_frontier'] = df_traditional['B']
-        df_result['CS_frontier'] = df_traditional['CS']
-        
-        # Set primary columns to decomposed values
-        df_result['B'] = df_result['B_decomposed']
-        df_result['CS'] = df_result['CS_decomposed']
-        
-        # Add coefficient information as metadata
-        df_result.attrs['decomposition_coefficients'] = {
-            'base_cost': coefficients[0],
-            'feature_costs': dict(zip(decomp_features, coefficients[1:]))
-        }
-        
-        return df_result
+        try:
+            decomposer = LinearDecomposition(tolerance=tolerance, features=decomp_features)
+            
+            # Extract representative plans
+            selection_method = method_kwargs.get('selection_method', 'diverse_segments')
+            representative_plans = decomposer.extract_representative_plans(df, selection_method)
+            logger.info(f"Extracted {len(representative_plans)} representative plans")
+            
+            # Solve for coefficients
+            coefficients = decomposer.solve_coefficients(representative_plans, fee_column)
+            logger.info(f"Successfully solved coefficients: {coefficients}")
+            
+            # Calculate decomposed baselines
+            baselines = decomposer.calculate_decomposed_baselines(df)
+            logger.info(f"Calculated baselines for {len(baselines)} plans")
+            
+            # Add results to dataframe
+            df_result['B_decomposed'] = baselines
+            df_result['CS_decomposed'] = baselines / df_result[fee_column]
+            
+            # Also calculate traditional method for comparison
+            df_traditional = calculate_cs_ratio(df, feature_set, fee_column)
+            df_result['B_frontier'] = df_traditional['B']
+            df_result['CS_frontier'] = df_traditional['CS']
+            
+            # Set primary columns to decomposed values
+            df_result['B'] = df_result['B_decomposed']
+            df_result['CS'] = df_result['CS_decomposed']
+            
+            # Add coefficient information as metadata (both formats for compatibility)
+            cost_structure = {
+                'base_cost': float(coefficients[0]),
+                'feature_costs': {feature: float(coef) for feature, coef in zip(decomp_features, coefficients[1:])}
+            }
+            df_result.attrs['decomposition_coefficients'] = cost_structure
+            df_result.attrs['cost_structure'] = cost_structure
+            
+            logger.info(f"Created cost_structure: {cost_structure}")
+            
+            return df_result
+            
+        except Exception as e:
+            logger.error(f"Linear decomposition failed: {str(e)}")
+            logger.error(f"Error type: {type(e).__name__}")
+            # Fallback to frontier method
+            logger.info("Falling back to frontier method")
+            return calculate_cs_ratio(df, feature_set, fee_column)
     
     else:
         raise ValueError(f"Unknown method: {method}. Supported methods: 'frontier', 'linear_decomposition'")

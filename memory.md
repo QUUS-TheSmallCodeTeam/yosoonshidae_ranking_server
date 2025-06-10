@@ -94,16 +94,22 @@
   - 색상 코딩: 녹색(가성비 좋음) vs 빨간색(과가격)
   - 버블 크기: 총 기능 수준 표시
   - 구식 잔여 분석 테이블 제거 및 대체
+- **마진 비용 분석 차트**: ⭐ 신규 추가
+  - 기능별 마진 비용 계수 시각화 (β₁, β₂, β₃...)
+  - 각 기능의 단위당 추가 비용 분석
+  - 비즈니스 해석 툴팁 (예: "데이터 1GB 추가시 ₩50 비용 증가")
+  - 기본 인프라 비용과 분리된 순수 마진 비용 표시
 
 ## 비즈니스 로직
 
-### 🚨 CRITICAL ISSUE DISCOVERED: Frontier Point Exclusion Timing
-- **Problem**: Frontier points excluded BEFORE decomposition based on bundled costs
-- **Impact**: 15-25% of potentially valid plans wrongly excluded
-- **Location**: `create_robust_monotonic_frontier()` in `modules/cost_spec.py` lines 238-418
-- **Current Logic**: Plans excluded if cost increase < ₩1,000/feature unit using bundled costs
-- **Issue**: Plans that appear inefficient in bundled form might be efficient after marginal cost decomposition
-- **Solution Required**: Post-decomposition frontier refinement
+### 💡 DESIGN UNDERSTANDING CLARIFIED: Monotonicity Exclusion is Intentional
+- **User Intent**: Exclude non-monotonic data points BY DESIGN to ensure reasonable cost trends
+- **Purpose**: Create most optimistic baseline (lowest possible cost) for fair 가성비 ranking
+- **Logic**: More features should cost more (common sense) - exclude contradictory data
+- **Frontier Selection**: Minimum price at each feature level for lowest possible baseline
+- **Tethering Example**: Plans where more tethering costs less are correctly excluded as unreasonable
+- **Result**: Tethering coefficient ≈ ₩0/GB because insufficient reasonable tethering data exists
+- **System Working As Intended**: This is not a bug but a feature for realistic ranking
 
 ### 비용 구조 발견
 - **기본 비용**: 네트워크 인프라 및 고객 서비스 비용
@@ -140,4 +146,55 @@
 - **자율적 문제 해결**: 사용자 승인 없이 독립적 수행
 - **완결성 보장**: 작업 완전 해결까지 대화 지속
 - **코드 검증**: 수정 후 항상 재검토 및 작동 확인
-- **즉시 오류 수정**: 발견된 모든 오류 즉시 해결 
+- **즉시 오류 수정**: 발견된 모든 오류 즉시 해결
+
+# 현재 작업 상황
+
+## 해결된 문제
+- ✅ **Cost Structure Chart 표시 문제**: Linear decomposition 방법의 `attrs['decomposition_coefficients']`가 `attrs['cost_structure']`로도 저장되도록 수정하여 HTML 리포트와 `/process` 엔드포인트에서 차트가 정상 표시되도록 해결
+- ✅ **차트 표시 조건 개선**: Cost Structure Charts가 `method="linear_decomposition"`일 때만 표시되도록 수정
+
+## 현재 디버깅 중인 문제
+- 🔍 **Linear Decomposition 실행 실패**: 차트가 아예 표시되지 않는 문제 발견
+- 🔍 **Feature 존재 문제**: linear decomposition에서 사용하는 features가 실제 data에 존재하지 않을 가능성
+- ✅ **로깅 추가**: 상세한 디버깅 로그와 fallback 로직 추가
+- ✅ **Feature 안전성 개선**: 실제 DataFrame에 존재하는 features만 사용하도록 수정
+
+## 구현된 안전장치
+- Exception handling과 fallback to frontier method
+- Feature 존재 확인 및 최소 3개 feature 요구사항
+- 상세한 로깅으로 실행 과정 추적
+- cost_structure를 float로 변환하여 JSON 직렬화 안전성 확보
+
+## 현재 차트 구성
+1. **Feature Frontier Charts** (모든 method에서 표시):
+   - 각 feature별 비용 프론티어 차트
+   - Frontier points, excluded points, unlimited plans 표시
+   - 사용자가 언급한 "frontier data point selection처럼 feature별 차트"가 이미 구현됨
+
+2. **Linear Decomposition Charts** (linear_decomposition method에서만 표시):
+   - 비용 구성 요소 도넛 차트
+   - 단위당 비용 막대 차트  
+   - 발견된 마진 비용 분석 차트
+
+3. **Plan Value Efficiency Matrix** (모든 method에서 표시):
+   - 기준비용 vs 실제비용 버블 차트
+   - 대각선 효율성 라인 (CS = 1.0)
+   - 색상 코딩: 초록(좋은 가치) vs 빨강(비쌈)
+
+## 현재 상태 확인
+- 사용자는 `/process` 엔드포인트만 사용하며, 기본값이 `method='linear_decomposition'`로 설정됨
+- Debug 정보 섹션이 method 및 cost_structure 상태를 보여줌
+- Feature별 frontier 차트는 이미 모든 method에서 표시되고 있음
+- Linear decomposition 실패 시 automatic fallback to frontier method
+
+## 기술적 세부사항
+- Chart.js 사용한 시각화
+- 한국어 지원
+- 기존 인터페이스와 일치하는 반응형 디자인
+- JSON을 통한 JavaScript로 데이터 전달
+- JavaScript 콘솔 로깅으로 디버깅 지원
+- 상세한 서버 로깅으로 실행 과정 추적
+
+## 다음 단계
+- 사용자의 실제 데이터로 테스트하여 로그 확인 및 linear decomposition이 실제 작동하는지 검증 
