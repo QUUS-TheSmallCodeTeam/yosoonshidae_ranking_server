@@ -66,18 +66,55 @@ class LinearDecomposition:
         self.representative_plans = None
         
     def extract_representative_plans(self, df: pd.DataFrame, 
-                                   selection_method: str = 'diverse_segments') -> pd.DataFrame:
+                                   selection_method: str = 'frontier_points') -> pd.DataFrame:
         """
-        Extract representative plans that show diverse market strategies.
+        Extract frontier plans that represent optimal cost efficiency points.
         
         Args:
             df: DataFrame with plan data
-            selection_method: Method for selecting representative plans
+            selection_method: Method for selecting representative plans ('frontier_points')
             
         Returns:
-            DataFrame with selected representative plans
+            DataFrame with selected frontier plans
         """
-        if selection_method == 'diverse_segments':
+        if selection_method == 'frontier_points':
+            # Use the same logic as the original frontier calculation
+            # to identify the optimal plans for each feature
+            
+            # Calculate frontiers for each feature
+            frontiers = calculate_feature_frontiers(df, self.features, UNLIMITED_FLAGS, 'original_fee')
+            
+            # Collect all unique plans that contribute to any frontier
+            frontier_plan_indices = set()
+            
+            for feature in self.features:
+                if feature not in frontiers:
+                    continue
+                    
+                frontier = frontiers[feature]
+                
+                # For each frontier point, find the plan that contributes to it
+                for feature_value, cost in frontier.items():
+                    # Find plans with this exact feature value and cost
+                    matching_plans = df[
+                        (df[feature] == feature_value) & 
+                        (df['original_fee'] == cost)
+                    ]
+                    
+                    if not matching_plans.empty:
+                        # Add the first matching plan's index
+                        frontier_plan_indices.add(matching_plans.index[0])
+            
+            # Extract the frontier plans
+            if frontier_plan_indices:
+                rep_df = df.loc[list(frontier_plan_indices)].copy()
+            else:
+                # Fallback: if no frontier plans found, use a small diverse sample
+                logger.warning("No frontier plans found, using fallback selection")
+                rep_df = df.sample(min(5, len(df))).copy()
+                
+        elif selection_method == 'diverse_segments':
+            # Keep the old method as fallback
             representatives = []
             
             # Budget segment (lowest cost plans)
@@ -738,13 +775,13 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
         try:
             decomposer = LinearDecomposition(tolerance=tolerance, features=decomp_features)
             
-            # Extract representative plans
-            selection_method = method_kwargs.get('selection_method', 'diverse_segments')
+            # Extract representative plans using frontier points
+            selection_method = method_kwargs.get('selection_method', 'frontier_points')
             representative_plans = decomposer.extract_representative_plans(df, selection_method)
             logger.info(f"Extracted {len(representative_plans)} representative plans")
             
-            # Solve for coefficients
-            coefficients = decomposer.solve_coefficients(representative_plans, fee_column)
+            # Solve for coefficients using 'original_fee' to match frontier selection
+            coefficients = decomposer.solve_coefficients(representative_plans, 'original_fee')
             logger.info(f"Successfully solved coefficients: {coefficients}")
             
             # Calculate decomposed baselines

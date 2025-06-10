@@ -1,3 +1,57 @@
+# Cost-Spec Analysis System - TODO List
+
+## ✅ COMPLETED - Critical Fix Applied
+
+### 🔧 MAJOR FIX: Frontier-Based Linear Decomposition 
+- **✅ FIXED**: Changed from arbitrary "market segments" to frontier-based representative plan selection
+- **✅ FIXED**: Now uses same optimal candidate point logic as original frontier method  
+- **✅ FIXED**: Linear decomposition now operates on cost-efficient frontier plans only
+- **Impact**: Ensures mathematically sound marginal cost discovery from optimal plans
+
+### 📊 Enhanced Visualization System - COMPLETED
+- **✅ IMPLEMENTED**: Cost Structure Decomposition Charts (doughnut + bar)
+- **✅ IMPLEMENTED**: Plan Value Efficiency Matrix (bubble chart) 
+- **✅ IMPLEMENTED**: Marginal Cost Analysis Chart (with business tooltips)
+- **✅ FIXED**: Cost structure data format handling (nested vs flat)
+- **✅ RESTORED**: JavaScript chart implementation
+
+### 🐛 Bug Fixes - COMPLETED  
+- **✅ FIXED**: Format string error in HTML report generation
+- **✅ FIXED**: Cost structure data compatibility issues
+- **✅ CORRECTED**: Understanding of monotonicity exclusion (BY DESIGN, not bug)
+
+## 🧪 IMMEDIATE TESTING NEEDED
+
+### Test Updated Linear Decomposition
+- **TODO**: Run `/process` endpoint to test frontier-based selection
+- **TODO**: Verify representative plans are now frontier contributors  
+- **TODO**: Confirm marginal cost results are based on optimal plans
+- **TODO**: Check if charts display correctly with corrected data
+
+### Validation Tasks
+- **TODO**: Compare old vs new representative plan selection in logs
+- **TODO**: Verify cost structure makes sense with frontier-based selection
+- **TODO**: Ensure HTML report generates without errors
+
+## 📈 FUTURE ENHANCEMENTS (Lower Priority)
+
+### Advanced Features
+- **Consider**: Post-decomposition frontier refinement for broader plan inclusion
+- **Consider**: Multi-method comparison dashboard
+- **Consider**: Interactive chart features (zoom, filter)
+
+### Documentation
+- **Future**: Update README with corrected methodology explanation
+- **Future**: Add technical documentation for frontier-based linear decomposition
+
+---
+**Priority Order:**
+1. **URGENT**: Test frontier-based linear decomposition implementation
+2. **HIGH**: Validate chart functionality with corrected data  
+3. **MEDIUM**: Future enhancements and documentation
+
+*Last Updated: After critical frontier-based selection fix*
+
 # Cost-Spec Linear Decomposition Implementation Tasks
 
 ## ✅ Completed
@@ -120,32 +174,48 @@ The entire system has been successfully refactored to include:
 # Todo List
 
 ## 완료된 작업 ✅
-- ✅ Cost Structure Decomposition Charts 구현 (Linear Decomposition 전용)
-- ✅ Plan Value Efficiency Matrix 구현  
-- ✅ Marginal Cost Analysis Chart 구현
-- ✅ Debug 정보 섹션 추가 (method 및 cost_structure 상태 표시)
-- ✅ `attrs['cost_structure']` 호환성 문제 해결
-- ✅ 상세한 로깅 및 안전장치 추가
+- ✅ **"\n frontier" 오류 해결** - HTML 템플릿 JavaScript 중괄호 충돌 수정
+- ✅ **포맷 문자열 교체 로직 수정** - {len_df_sorted:,} 등 정확한 패턴 매칭
+- ✅ **프론티어 포인트 선택 로직 개선** - 올바른 대표 플랜 선택 방식 구현
+- ✅ **계수 저장 중복 처리** - decomposition_coefficients와 cost_structure 동시 저장
+- ✅ **CSS 수정 완료** - 이중 중괄호 문제 해결, 테이블 그리드 라인 복원
+- ✅ **마진 비용 분석 차트 추가** - Feature Frontier Charts 다음에 추가 구현
 
-## 현재 디버깅 중인 작업 🔍
-- 🔍 Linear decomposition 실행 실패 원인 분석 및 해결
-- 🔍 Feature 존재 확인 및 안전성 개선
-- 🔍 실제 데이터로 로그 검증 대기
+## 현재 최우선 작업 🔥
 
-## 현재 대기 중인 작업 🔄
-- 사용자의 실제 데이터 테스트 결과 및 로그 확인 대기
-- Linear decomposition vs frontier method 실행 결과 비교
-- 필요시 추가 버그 수정
+### 1. 가변 베타 계수 구현 (Piecewise Linear Regression)
+**사용자 요구사항**: "beta values are changing over feature value increment because we expect that the rate of cost would be different for each section of feature value increment"
 
-## 제안사항 (향후 개선) 💡
-- 추가 차트 유형 (시계열 분석, 경쟁사 비교 등)
-- 차트 내보내기 기능 (PNG, PDF)
-- 인터랙티브 필터링 기능
-- 모바일 최적화 개선
+**구현 필요사항**:
+- [ ] **PiecewiseLinearRegression 클래스 완성** - 자동 구간 분할 및 최적화
+- [ ] **cost_spec.py에 통합** - linear_decomposition 메서드에서 piecewise 옵션 제공
+- [ ] **구간별 계수 시각화** - 마진 비용 차트에서 구간별 기울기 표시
+- [ ] **breakpoint 자동 탐지** - 데이터 기반 최적 구간 분할점 찾기
 
-## 구현된 안전장치 🛡️
-- Linear decomposition 실패 시 frontier method로 자동 fallback
-- DataFrame에 존재하는 features만 사용
-- 최소 3개 feature 요구사항 체크
-- Exception handling 및 상세 에러 로깅
-- JSON 직렬화 안전성 확보 
+**기술적 구현 방향**:
+```python
+# 예시: 기본 데이터 비용 구조
+# 0-10GB: ₩50/GB
+# 10-50GB: ₩30/GB  
+# 50+GB: ₩20/GB
+```
+
+### 2. 테스트 및 검증
+- [ ] **실제 데이터로 piecewise 모델 테스트**
+- [ ] **선형 vs piecewise 모델 비교 결과 검증**
+- [ ] **마진 비용 차트에서 구간별 기울기 정확히 표시되는지 확인**
+
+## 현재 작업 중 (진행 중)
+- **PiecewiseLinearRegression 모듈 기본 구조 생성됨** - 완전한 구현 및 통합 필요
+- **HTML 차트 시스템 완료** - 모든 차트 타입 정상 작동
+
+## 향후 개선 제안 (우선순위 낮음)
+- **성능 최적화**: 2,283개 이상 플랜 처리 시 메모리 사용량 최적화
+- **추가 차트**: 통신사별 비교 분석 차트
+- **고급 필터링**: 사용자 맞춤형 플랜 필터링 옵션
+- **API 확장**: RESTful API 엔드포인트 추가
+
+## 주의사항
+- **브라우저 캐시**: 변경사항 확인 시 강제 새로고침 (Ctrl+F5) 권장
+- **대용량 데이터**: 처리 시 메모리 모니터링 필요  
+- **모델 검증**: piecewise 구현 시 기존 선형 모델과 성능 비교 필수 

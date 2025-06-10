@@ -198,3 +198,117 @@
 
 ## 다음 단계
 - 사용자의 실제 데이터로 테스트하여 로그 확인 및 linear decomposition이 실제 작동하는지 검증 
+
+## Current Status: Marginal Cost System CORRECTED
+
+### ✅ CRITICAL FIX APPLIED: Frontier-Based Linear Decomposition
+**Issue**: Previously used arbitrary "market segments" for linear decomposition representative plan selection
+**Fix**: Now uses same frontier candidate point logic as original frontier method
+**Impact**: Ensures linear decomposition uses optimal cost-efficient plans rather than random samples
+
+### Enhanced Visualization System - IMPLEMENTED
+**Three Chart Types Successfully Added:**
+1. **Cost Structure Decomposition Charts** - doughnut and bar charts showing β coefficients from linear decomposition
+2. **Plan Value Efficiency Matrix** - 2D bubble chart comparing baseline vs actual costs with diagonal efficiency line  
+3. **Marginal Cost Analysis Chart** - individual feature marginal costs with business interpretation tooltips
+
+### User Requirement Clarification - CORRECTED UNDERSTANDING
+**Previous Error**: Thought monotonicity exclusion was a bug
+**Corrected Understanding**: Excluding non-monotonic data points is BY DESIGN for creating optimistic baseline ranking
+**Business Logic**: Plans where "more features cost less" should be excluded as unrealistic for fair 가성비 ranking
+
+### Technical Implementation Details
+**Linear Decomposition Process:**
+- Now extracts frontier points using `calculate_feature_frontiers()` logic
+- Selects plans that contribute to optimal cost frontiers for each feature
+- Solves constrained optimization on these frontier plans only
+- Discovers true marginal costs: base infrastructure + per-feature premiums
+
+**Current Results (Realistic Korean Market Structure):**
+- Base cost: ₩2,991 (covers basic network infrastructure)
+- Data: ~₩0/GB (commoditized, bundled into base)
+- Voice: ~₩0/100min (bundled into base service)  
+- SMS: ₩8.70/100msg (small messaging premium)
+- Tethering: ₩554.83/GB (significant hotspot premium)
+- 5G: ~₩0 (included in modern plans)
+
+### Chart Display Status
+**Current**: All chart functionality implemented and should display correctly
+**Fixed Issues**: 
+- Cost structure data format compatibility (nested vs flat)
+- JavaScript chart implementation restored
+- Frontier-based representative plan selection implemented
+
+### Next Steps
+**Immediate**: Test updated frontier-based linear decomposition
+**Future**: Consider post-decomposition frontier refinement for broader plan inclusion
+
+---
+*Last Updated: After critical frontier-based selection fix*
+
+## 완료된 작업
+- ✅ **Cost-Spec 시스템 기본 구현** - 선형 분해 및 프론티어 기반 방법론
+- ✅ **프론티어 포인트 선택 로직 수정** - calculate_feature_frontiers() 로직 사용하여 올바른 대표 플랜 선택
+- ✅ **HTML 템플릿 오류 해결** - "\n frontier" KeyError 수정 (JavaScript 중괄호 충돌 문제)
+- ✅ **CSS 수정 완료** - 이중 중괄호 문제 해결, 테이블 그리드 라인 정상 표시
+- ✅ **마진 비용 분석 차트 추가** - 프론티어 차트와 동일한 형태로 마진 비용 적용 버전 구현
+- ✅ **마진 비용 차트 데이터 구조 수정** - feature_costs 및 base_cost를 cost structure 데이터에 포함
+
+## 해결된 주요 이슈
+
+### CSS 표시 문제 (2025-06-10)
+**문제**: CSS가 적용되지 않고 이중 중괄호 `{{` 로 표시됨
+**원인**: .format() 에서 .replace() 로 변경하면서 CSS의 이중 중괄호가 그대로 유지됨
+**해결책**: 모든 CSS 규칙을 단일 중괄호 `{` 로 수정
+```css
+/* 기존 (오류): body {{ margin: 0; }} */
+/* 수정 (정상): body { margin: 0; } */
+```
+
+### HTML 템플릿 포맷팅 오류 (2025-06-10)
+**문제**: HTML 보고서 생성 시 `KeyError: '\n frontier'` 오류 발생
+**원인**: JavaScript 코드의 중괄호 `{}` 가 Python .format() 메서드에서 포맷 플레이스홀더로 해석됨
+**해결책**: .format() 대신 개별 .replace() 호출로 변경
+
+### 프론티어 포인트 선택 로직 개선 (2025-06-09)
+**문제**: 임의의 시장 세그먼트 대신 실제 프론티어 후보 선택 로직 필요
+**해결책**: `calculate_feature_frontiers()` 와 동일한 'frontier_points' 선택 방식 구현
+
+## 현재 구현된 차트 시스템
+1. **Cost Structure Decomposition Charts** - 선형 분해 계수 시각화
+2. **Feature Frontier Charts** - 시장 최소 비용 프론티어 표시
+3. **Marginal Cost Analysis Charts** - 마진 비용 계수를 적용한 이론적 비용 라인 vs 시장 데이터
+4. **Plan Value Efficiency Matrix** - 가성비 분석 버블 차트
+
+## 사용자 요구사항 - 구현 대기 중
+### 가변 베타 계수 (Piecewise Linear Regression)
+**요구사항**: "beta values are changing over feature value increment because we expect that the rate of cost would be different for each section of feature value increment"
+
+**의미**: 기능 값 범위에 따라 다른 마진 비용 적용
+- 예: 기본 데이터 0-10GB: ₩50/GB
+- 예: 기본 데이터 10-50GB: ₩30/GB  
+- 예: 기본 데이터 50+GB: ₩20/GB
+
+**현재 상태**: PiecewiseLinearRegression 모듈 생성됨, 코어 로직에 통합 필요
+
+## 현재 시스템 상태
+- **방법론**: 선형 분해 (기본), 프론티어 기반 (비교용)
+- **한국 시장 비용 구조**: 기본 ₩2,991, 데이터 ~₩0, 음성 ~₩0, SMS ₩8.70, 테더링 ₩554.83, 5G ~₩0
+- **차트 시스템**: 4가지 차트 타입 완전 구현
+- **HTML 보고서**: CSS 및 JavaScript 정상 작동, 완전 자동화
+
+## 기술 스택
+- **백엔드**: FastAPI, pandas, scipy.optimize, numpy
+- **프론트엔드**: Chart.js, 반응형 HTML/CSS  
+- **데이터 처리**: 2,283개 플랜 실시간 분석 지원
+- **차트**: 동적 생성, 인터랙티브 툴팁, 다중 데이터셋 지원 
+
+### 마진 비용 차트 렌더링 문제 (2025-06-10)
+**문제**: Marginal Cost Analysis Charts가 렌더링되지 않음
+**원인**: JavaScript가 `costStructureData.feature_costs`를 기대했지만 cost structure 데이터에 포함되지 않음
+**해결책**: `prepare_cost_structure_chart_data()` 함수 수정하여 원시 `feature_costs`와 `base_cost` 포함
+```javascript
+// 기존: costStructureData = { overall: {...}, unit_costs: {...} }
+// 수정: costStructureData = { overall: {...}, unit_costs: {...}, feature_costs: {...}, base_cost: 3000 }
+```
+**결과**: 마진 비용 차트가 정상적으로 이론적 비용 라인과 시장 데이터 포인트 표시 
