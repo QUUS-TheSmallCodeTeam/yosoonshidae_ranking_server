@@ -11,22 +11,27 @@ import pandas as pd
 import numpy as np
 from typing import Optional, Union, List
 import os
+import psutil
+import logging
 
 # Import configuration
 from modules.config import config, logger
 
 # Import necessary modules
-from modules.data import load_data_from_json
-from modules.preprocess import prepare_features
-from modules.utils import ensure_directories, save_raw_data, save_processed_data
-from modules.ranking import calculate_rankings_with_ties
-from modules.report import generate_html_report
-from modules.cost_spec import calculate_cs_ratio, rank_plans_by_cs
-from modules.models import get_basic_feature_list
+# Legacy imports (cleaned up - now using consolidated import below)
 from fastapi import UploadFile, File
+from modules import (
+    prepare_features, 
+    calculate_rankings_with_ties, 
+    generate_html_report, 
+    save_report, 
+    ensure_directories,
+    cleanup_all_datasets,
+    rank_plans_by_cs_enhanced
+)
 
 # Initialize FastAPI
-app = FastAPI(title="Moyo Plan Ranking Model Server - Cost-Spec Method")
+app = FastAPI(title="Moyo Plan Ranking Model Server - Enhanced Cost-Spec Method")
 
 # Global variables for storing data
 df_with_rankings = None  # Global variable to store the latest rankings
@@ -201,52 +206,64 @@ def read_root():
                 <h1>Welcome to the Moyo Ranking Model API</h1>
                 
                 <div class="method-info">
-                    <h2>Cost-Spec Ratio Method</h2>
-                    <p>This API uses the Cost-Spec method to estimate plan value and rank mobile plans:</p>
-                    <ol>
-                        <li>Calculate baseline costs for each feature value</li>
-                        <li>Sum baseline costs to get a theoretical baseline cost (B) for each plan</li>
-                        <li>Calculate Cost-Spec ratio (CS = B / fee)</li>
-                        <li>Rank plans by CS ratio (higher is better)</li>
-                        <li>Generate comprehensive reports with detailed metrics</li>
-                    </ol>
+                    <h2>Enhanced Cost-Spec Ratio Method</h2>
+                    <p>This API offers advanced Cost-Spec analysis with two methods:</p>
+                    
+                    <h3>🔬 Linear Decomposition Method (Default, Recommended)</h3>
+                    <ul>
+                        <li><strong>Advanced Analysis</strong>: Extracts true marginal costs for individual features</li>
+                        <li><strong>Fair Baselines</strong>: Eliminates double-counting artifacts</li>
+                        <li><strong>Realistic Ratios</strong>: CS ratios typically 0.8-1.5x (realistic efficiency)</li>
+                        <li><strong>Cost Discovery</strong>: Reveals actual marginal costs for strategic insights</li>
+                        <li><strong>Mathematical Model</strong>: plan_cost = β₀ + β₁×data + β₂×voice + β₃×SMS + ...</li>
+                    </ul>
+                    
+                    <h3>📈 Frontier-Based Method (Legacy)</h3>
+                    <ul>
+                        <li><strong>Traditional Approach</strong>: Identifies minimum costs for each feature level</li>
+                        <li><strong>Simple Logic</strong>: Sums frontier costs to create baselines</li>
+                        <li><strong>Note</strong>: May show inflated CS ratios (4-7x) due to double-counting</li>
+                        <li><strong>Compatibility</strong>: Maintained for comparison and legacy support</li>
+                    </ul>
                 </div>
                 
                 <p>No ranking reports are available yet. Use the <code>/process</code> endpoint to analyze data and generate rankings.</p>
                 
-                <h2>Ranking Method Details</h2>
-                <div class="method-info">
-                    <h3>Cost-Spec Ratio Method</h3>
-                    <p>The Cost-Spec method offers several advantages for ranking mobile plans:</p>
-                    <ul>
-                        <li><strong>Intuitive approach</strong>: Compares plans to the theoretical minimum cost for features</li>
-                        <li><strong>Value measurement</strong>: Higher CS ratio means better value for money</li>
-                        <li><strong>Transparent</strong>: Easy to understand why one plan ranks higher than another</li>
-                        <li><strong>Objective</strong>: Based on actual minimum costs in the market</li>
-                        <li><strong>Flexible configuration</strong>: Supports different feature sets</li>
-                    </ul>
-                </div>
-
                 <div class="method-info">
                     <h3>API Usage</h3>
-                    <p>Submit plan data to the <code>/process</code> endpoint to generate rankings using the Cost-Spec method.</p>
-                    <p>Required columns: 'fee' and basic feature columns (basic_data_clean, voice_clean, message_clean, etc.)</p>
-                    <p>Use the <code>/process</code> endpoint to submit plan data in JSON format:</p>
+                    <p>Submit plan data to generate rankings using the Enhanced Cost-Spec method:</p>
                     <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto;">
 {
   "options": {
+    "method": "linear_decomposition",  // or "frontier"
     "featureSet": "basic",
-    "feeColumn": "fee"
+    "feeColumn": "fee",
+    "tolerance": 500,
+    "includeComparison": false
   },
   "data": [
-    { "id": 1, "plan_name": "Plan A", ... },
-    { "id": 2, "plan_name": "Plan B", ... }
+    { "id": 1, "plan_name": "Plan A", "fee": 10000, ... },
+    { "id": 2, "plan_name": "Plan B", "fee": 15000, ... }
   ]
 }
                     </pre>
+                    <p><strong>Options:</strong></p>
+                    <ul>
+                        <li><code>method</code>: "linear_decomposition" (default) or "frontier"</li>
+                        <li><code>tolerance</code>: Optimization tolerance for linear decomposition (default: 500)</li>
+                        <li><code>includeComparison</code>: Include both methods in results (default: false)</li>
+                        <li><code>featureSet</code>: Feature set to use (default: "basic")</li>
+                        <li><code>feeColumn</code>: Fee column for analysis (default: "fee")</li>
+                    </ul>
                 </div>
 
-                <h2>Ranking Options</h2>
+                <h2>Method Selection</h2>
+                <div class="button-group">
+                    <strong>Analysis Method:</strong><br>
+                    <button id="decomp-btn" class="active" onclick="changeMethod('linear_decomposition')">Linear Decomposition (Recommended)</button>
+                    <button id="frontier-btn" onclick="changeMethod('frontier')">Frontier-Based (Legacy)</button>
+                </div>
+                
                 <div class="button-group">
                     <strong>Fee Type:</strong><br>
                     <button id="original-fee-btn" class="active" onclick="changeFeeType('original')">Original Fee</button>
@@ -258,8 +275,8 @@ def read_root():
                 <hr>
                 <h3>Endpoints</h3>
                 <ul>
-                    <li><code>POST /process</code>: Submit plan data (JSON list) to preprocess, rank using the Cost-Spec method, and generate a report.</li>
-                    <li><code>POST /test</code>: Echo back the request body (for debugging).</li>
+                    <li><code>POST /process</code>: Submit plan data to analyze using Enhanced Cost-Spec method</li>
+                    <li><code>POST /test</code>: Echo back the request body (for debugging)</li>
                 </ul>
                 <hr>
                 <p><i>Navigate to /docs for API documentation (Swagger UI).</i></p>
@@ -267,8 +284,21 @@ def read_root():
                 <script>
                 /* Current state */
                 let currentState = {
+                    method: "linear_decomposition",
                     feeType: "original"
                 };
+                
+                /* Change method */
+                function changeMethod(method) {
+                    /* Update buttons */
+                    document.getElementById('decomp-btn').classList.remove('active');
+                    document.getElementById('frontier-btn').classList.remove('active');
+                    document.getElementById(method === 'linear_decomposition' ? 'decomp-btn' : 'frontier-btn').classList.add('active');
+                    
+                    /* Update state */
+                    currentState.method = method;
+                    console.log("Method changed to: " + method);
+                }
                 
                 /* Change fee type */
                 function changeFeeType(type) {
@@ -436,14 +466,33 @@ def read_root():
 
 @app.post("/process")
 async def process_data(request: Request):
-    """Process plan data using the Cost-Spec ratio method."""
+    """
+    Main data processing endpoint - analyzes mobile plans using Cost-Spec enhanced analysis.
+    """
+    request_id = str(uuid.uuid4())[:8]
     start_time = time.time()
-    request_id = str(uuid.uuid4())
-    logger.info(f"[{request_id}] Received /process request")
+    
+    # Configure logging to ensure cleanup logs are visible
+    logging.getLogger().setLevel(logging.INFO)
+    
+    # Log memory usage before processing
+    process = psutil.Process()
+    initial_memory_mb = process.memory_info().rss / 1024 / 1024
+    logger.info(f"[{request_id}] Initial memory usage: {initial_memory_mb:.2f} MB")
     
     try:
-        # Step 1: Ensure directories exist
+        # Step 1: Ensure directories exist and cleanup old files
         ensure_directories()
+        
+        # Cleanup old datasets to prevent disk space issues
+        # Since pipeline recalculates everything from scratch, keep only 1 previous dataset
+        logger.info(f"[{request_id}] Cleaning up old dataset files...")
+        cleanup_stats = cleanup_all_datasets(max_files=1, max_age_days=1)
+        logger.info(f"[{request_id}] Cleanup completed: {cleanup_stats}")
+        if cleanup_stats['total'] > 0:
+            logger.info(f"[{request_id}] Successfully cleaned up {cleanup_stats['total']} old files")
+        else:
+            logger.info(f"[{request_id}] No old files found to clean up")
         
         # Step 2: Parse request data and options
         request_json = await request.json()
@@ -471,8 +520,11 @@ async def process_data(request: Request):
         # Extract options
         feature_set = options.get('featureSet', 'basic')
         fee_column = options.get('feeColumn', 'fee')  # Fee column to use for comparison
+        method = options.get('method', 'linear_decomposition')  # Default to linear decomposition
+        tolerance = options.get('tolerance', 500)  # Optimization tolerance
+        include_comparison = options.get('includeComparison', False)  # Include frontier comparison
         
-        logger.info(f"[{request_id}] Using Cost-Spec method with feature_set={feature_set}, fee_column={fee_column}")
+        logger.info(f"[{request_id}] Using Enhanced Cost-Spec method: {method}, feature_set={feature_set}, fee_column={fee_column}")
         
         # Step 3: Save raw data
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -498,11 +550,14 @@ async def process_data(request: Request):
         
         processed_df.to_csv(processed_data_path, index=False, encoding='utf-8')
         
-        # Step 6: Apply Cost-Spec ranking method with options
-        df_ranked = rank_plans_by_cs(
+        # Step 6: Apply Enhanced Cost-Spec ranking method with options
+        df_ranked = rank_plans_by_cs_enhanced(
             processed_df,
+            method=method,
             feature_set=feature_set,
-            fee_column=fee_column
+            fee_column=fee_column,
+            tolerance=tolerance,
+            include_comparison=include_comparison
         )
         
         logger.info(f"[{request_id}] Ranked DataFrame shape: {df_ranked.shape}")
@@ -511,8 +566,10 @@ async def process_data(request: Request):
         logger.info(f"Storing {len(df_ranked)} plans in global state for HTML report")
         
         # Log the top 10 plans by rank to verify all are included
-        top_10_by_rank = df_ranked.sort_values('rank_number').head(10)
-        logger.info(f"Top 10 plans by rank to be stored:\n{top_10_by_rank[['plan_name', 'CS', 'rank_number']].to_string()}")
+        rank_column = 'rank' if 'rank' in df_ranked.columns else 'rank_number'
+        if rank_column in df_ranked.columns:
+            top_10_by_rank = df_ranked.sort_values(rank_column).head(10)
+            logger.info(f"Top 10 plans by rank to be stored:\n{top_10_by_rank[['plan_name', 'CS', rank_column]].to_string()}")
         
         # Store the complete dataframe
         config.df_with_rankings = df_ranked.copy()
@@ -524,9 +581,19 @@ async def process_data(request: Request):
         df_for_response = df_for_response.replace([np.inf, -np.inf], np.finfo(np.float64).max)
         df_for_response = df_for_response.replace(np.nan, 0)
         
+        # Extract cost structure if available (linear decomposition)
+        cost_structure = {}
+        if hasattr(df_ranked, 'attrs') and 'cost_structure' in df_ranked.attrs:
+            cost_structure = df_ranked.attrs['cost_structure']
+            logger.info(f"[{request_id}] Cost structure discovered: {cost_structure}")
+        
         # Create all_ranked_plans for the response
-        columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", 
-                             "rank_number", "rank_display", "B", "CS"]
+        columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", "rank", "B", "CS"]
+        
+        # Include comparison columns if available
+        if include_comparison and 'B_frontier' in df_for_response.columns:
+            columns_to_include.extend(["B_frontier", "CS_frontier"])
+        
         available_columns = [col for col in columns_to_include if col in df_for_response.columns]
         
         # Sort by CS ratio (descending) and add value_ratio field for compatibility
@@ -548,20 +615,25 @@ async def process_data(request: Request):
         
         # Set up HTML report info
         timestamp_now = datetime.now()
-        report_filename = f"cs_ranking_{timestamp_now.strftime('%Y%m%d_%H%M%S')}.html"
+        method_suffix = "decomp" if method == "linear_decomposition" else "frontier"
+        report_filename = f"cs_ranking_{method_suffix}_{timestamp_now.strftime('%Y%m%d_%H%M%S')}.html"
         report_path = config.cs_report_dir / report_filename
         
         # Prepare response
         response = {
             "request_id": request_id,
-            "message": "Data processing complete using Cost-Spec method",
+            "message": f"Data processing complete using Enhanced Cost-Spec method ({method})",
             "status": "success",
             "processing_time_seconds": round(processing_time, 4),
             "options": {
+                "method": method,
                 "featureSet": feature_set,
-                "feeColumn": fee_column
+                "feeColumn": fee_column,
+                "tolerance": tolerance,
+                "includeComparison": include_comparison
             },
-            "ranking_method": "cs",
+            "ranking_method": "enhanced_cs",
+            "cost_structure": cost_structure,
             "results": {
                 "raw_data_path": str(raw_data_path),
                 "processed_data_path": str(processed_data_path),
@@ -574,9 +646,18 @@ async def process_data(request: Request):
         
         # Try to generate HTML report, but don't block API response if it fails
         try:
-            # Generate HTML content
-            # Pass is_cs=True to indicate this is a Cost-Spec report
-            html_report = generate_html_report(df_ranked, timestamp_now, is_cs=True, title="Cost-Spec Mobile Plan Rankings")
+            # Generate HTML content with method-specific title
+            method_name = "Linear Decomposition" if method == "linear_decomposition" else "Frontier-Based"
+            title = f"Enhanced Cost-Spec Rankings ({method_name})"
+            
+            html_report = generate_html_report(
+                df_ranked, 
+                timestamp_now, 
+                is_cs=True, 
+                title=title,
+                method=method,
+                cost_structure=cost_structure
+            )
             
             # Write HTML content to file
             with open(report_path, 'w', encoding='utf-8') as f:

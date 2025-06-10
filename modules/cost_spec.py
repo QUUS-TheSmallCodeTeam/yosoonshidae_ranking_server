@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Union, Tuple, Callable
 import logging
+from scipy.optimize import minimize
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -38,6 +39,201 @@ UNLIMITED_FLAGS = {
 
 # Use all features for frontier calculation, not just core ones
 CORE_FEATURES = FEATURE_SETS['basic']
+
+class LinearDecomposition:
+    """
+    Linear decomposition approach to extract true marginal costs for individual features.
+    
+    This class solves the double-counting problem in Cost-Spec ratios by decomposing
+    plan costs into constituent feature costs using constrained optimization:
+    
+    plan_cost = β₀ + β₁×data + β₂×voice + β₃×SMS + β₄×tethering + β₅×5G + ...
+    
+    Where β coefficients represent true marginal costs for each feature.
+    """
+    
+    def __init__(self, tolerance=500, features=None):
+        """
+        Initialize the linear decomposition analyzer.
+        
+        Args:
+            tolerance: Tolerance for constraint violations (KRW)
+            features: List of features to include in decomposition
+        """
+        self.tolerance = tolerance
+        self.features = features or ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb', 'is_5g']
+        self.coefficients = None
+        self.representative_plans = None
+        
+    def extract_representative_plans(self, df: pd.DataFrame, 
+                                   selection_method: str = 'diverse_segments') -> pd.DataFrame:
+        """
+        Extract representative plans that show diverse market strategies.
+        
+        Args:
+            df: DataFrame with plan data
+            selection_method: Method for selecting representative plans
+            
+        Returns:
+            DataFrame with selected representative plans
+        """
+        if selection_method == 'diverse_segments':
+            representatives = []
+            
+            # Budget segment (lowest cost plans)
+            budget_plans = df[df['fee'] <= df['fee'].quantile(0.3)].copy()
+            if not budget_plans.empty:
+                representatives.append(budget_plans.loc[budget_plans['fee'].idxmin()])
+            
+            # Entry level (low-mid cost with some features)
+            entry_plans = df[(df['fee'] > df['fee'].quantile(0.3)) & 
+                           (df['fee'] <= df['fee'].quantile(0.6))].copy()
+            if not entry_plans.empty:
+                representatives.append(entry_plans.loc[entry_plans['fee'].idxmin()])
+            
+            # Premium segment (high cost plans)
+            premium_plans = df[df['fee'] > df['fee'].quantile(0.7)].copy()
+            if not premium_plans.empty:
+                representatives.append(premium_plans.loc[premium_plans['fee'].idxmin()])
+            
+            # Data-heavy strategy (plans with high data allowances)
+            if 'basic_data_clean' in df.columns:
+                data_heavy = df.nlargest(min(3, len(df)), 'basic_data_clean')
+                if not data_heavy.empty:
+                    representatives.append(data_heavy.iloc[0])
+            
+            # Voice-heavy strategy (plans with high voice minutes)
+            if 'voice_clean' in df.columns:
+                voice_heavy = df.nlargest(min(3, len(df)), 'voice_clean')
+                if not voice_heavy.empty:
+                    representatives.append(voice_heavy.iloc[0])
+            
+            # Remove duplicates by index
+            unique_representatives = []
+            seen_indices = set()
+            for plan in representatives:
+                if plan.name not in seen_indices:
+                    unique_representatives.append(plan)
+                    seen_indices.add(plan.name)
+            
+            rep_df = pd.DataFrame(unique_representatives)
+            
+        else:
+            raise ValueError(f"Unknown selection method: {selection_method}")
+        
+        logger.info(f"Selected {len(rep_df)} representative plans using {selection_method} method")
+        self.representative_plans = rep_df
+        return rep_df
+    
+    def solve_coefficients(self, representative_plans: pd.DataFrame, 
+                          fee_column: str = 'fee') -> np.ndarray:
+        """
+        Solve for marginal cost coefficients using constrained optimization.
+        
+        Args:
+            representative_plans: DataFrame with selected representative plans
+            fee_column: Column containing plan fees
+            
+        Returns:
+            Array of solved coefficients [β₀, β₁, β₂, ...]
+        """
+        # Prepare feature matrix X and cost vector c
+        X = np.column_stack([
+            np.ones(len(representative_plans)),  # β₀ (base cost)
+            representative_plans[self.features].values  # β₁, β₂, β₃, ...
+        ])
+        
+        c = representative_plans[fee_column].values
+        
+        logger.info(f"Solving linear system with {len(representative_plans)} plans and {X.shape[1]} coefficients")
+        
+        # Objective function: minimize sum of squared residuals
+        def objective(beta):
+            residuals = X @ beta - c
+            return np.sum(residuals ** 2)
+        
+        # Constraint: frontier respect (solutions must be >= actual costs - tolerance)
+        def frontier_constraints(beta):
+            predicted_costs = X @ beta
+            return predicted_costs - (c - self.tolerance)
+        
+        # Setup constraints
+        constraints = [
+            {'type': 'ineq', 'fun': frontier_constraints}
+        ]
+        
+        # Calculate minimum base cost to ensure mathematical feasibility
+        max_features = np.max(X[:, 1:], axis=0)
+        min_cost = np.min(c)
+        min_base_cost = max(0, min_cost - np.sum(max_features) * 10)  # Conservative bound
+        
+        # Bounds: sample-data-driven only
+        bounds = [(min_base_cost, None)]  # β₀: base cost
+        bounds.extend([(0, None)] * len(self.features))  # β₁, β₂, ...: non-negative marginal costs
+        
+        # Initial guess using simple regression
+        try:
+            beta_ols = np.linalg.lstsq(X, c, rcond=None)[0]
+            initial_guess = np.maximum(beta_ols, 0)
+            initial_guess[0] = max(initial_guess[0], min_base_cost)
+        except:
+            avg_cost = np.mean(c)
+            initial_guess = [avg_cost * 0.4] + [avg_cost * 0.1] * len(self.features)
+        
+        # Solve optimization
+        result = minimize(
+            objective,
+            x0=initial_guess,
+            method='trust-constr',
+            constraints=constraints,
+            bounds=bounds,
+            options={'disp': False, 'maxiter': 1000}
+        )
+        
+        if not result.success:
+            logger.error(f"Linear decomposition optimization failed: {result.message}")
+            raise RuntimeError("Failed to solve linear decomposition")
+        
+        self.coefficients = result.x
+        
+        # Validation logging
+        predicted = X @ self.coefficients
+        actual = c
+        mae = np.mean(np.abs(predicted - actual))
+        max_error = np.max(np.abs(predicted - actual))
+        
+        logger.info(f"Linear decomposition solved successfully:")
+        logger.info(f"  Base cost (β₀): ₩{self.coefficients[0]:,.0f}")
+        for i, feature in enumerate(self.features):
+            logger.info(f"  {feature} cost: ₩{self.coefficients[i+1]:,.2f}")
+        logger.info(f"  Mean absolute error: ₩{mae:,.0f}")
+        logger.info(f"  Max absolute error: ₩{max_error:,.0f}")
+        
+        return self.coefficients
+    
+    def calculate_decomposed_baselines(self, df: pd.DataFrame) -> np.ndarray:
+        """
+        Calculate baselines using linear decomposition coefficients.
+        
+        Args:
+            df: DataFrame with plan data
+            
+        Returns:
+            Array of decomposed baseline costs
+        """
+        if self.coefficients is None:
+            raise ValueError("Must solve coefficients first using solve_coefficients()")
+        
+        # Calculate baselines: β₀ + Σ(βᵢ × featureᵢ)
+        baselines = np.full(len(df), self.coefficients[0])  # Start with base cost
+        
+        for i, feature in enumerate(self.features):
+            if feature in df.columns:
+                baselines += self.coefficients[i+1] * df[feature].values
+            else:
+                logger.warning(f"Feature {feature} not found in data, treating as 0")
+        
+        return baselines
 
 def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame, 
                                    feature_col: str, 
@@ -476,6 +672,111 @@ def rank_plans_by_cs(df: pd.DataFrame, feature_set: str = 'basic',
     """
     # Calculate CS ratio
     df_result = calculate_cs_ratio(df, feature_set, fee_column)
+    
+    # Sort by CS ratio (descending)
+    df_result = df_result.sort_values('CS', ascending=False)
+    
+    # Add rank number
+    df_result['rank_number'] = range(1, len(df_result) + 1)
+    
+    # Format rank display (with ties)
+    df_result['rank_display'] = df_result['rank_number'].astype(str)
+    
+    # Return top N if specified
+    if top_n is not None and top_n < len(df_result):
+        return df_result.head(top_n)
+    
+    return df_result
+
+def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
+                              feature_set: str = 'basic', fee_column: str = 'fee',
+                              **method_kwargs) -> pd.DataFrame:
+    """
+    Enhanced Cost-Spec ratio calculation supporting multiple methods.
+    
+    Args:
+        df: DataFrame with plan data
+        method: Calculation method ('frontier' or 'linear_decomposition')
+        feature_set: Name of the feature set to use
+        fee_column: Column containing the fee to use
+        **method_kwargs: Additional arguments passed to specific methods
+        
+    Returns:
+        DataFrame with added CS ratio calculations
+    """
+    if method == 'frontier':
+        # Use existing frontier-based method
+        return calculate_cs_ratio(df, feature_set, fee_column)
+    
+    elif method == 'linear_decomposition':
+        # Use linear decomposition method
+        df_result = df.copy()
+        
+        # Get features for this feature set
+        if feature_set in FEATURE_SETS:
+            features = [f for f in FEATURE_SETS[feature_set] if f not in UNLIMITED_FLAGS.values()]
+        else:
+            raise ValueError(f"Unknown feature set: {feature_set}")
+        
+        # Initialize linear decomposition
+        tolerance = method_kwargs.get('tolerance', 500)
+        decomp_features = method_kwargs.get('features', features[:5])  # Use first 5 features by default
+        
+        decomposer = LinearDecomposition(tolerance=tolerance, features=decomp_features)
+        
+        # Extract representative plans
+        selection_method = method_kwargs.get('selection_method', 'diverse_segments')
+        representative_plans = decomposer.extract_representative_plans(df, selection_method)
+        
+        # Solve for coefficients
+        coefficients = decomposer.solve_coefficients(representative_plans, fee_column)
+        
+        # Calculate decomposed baselines
+        baselines = decomposer.calculate_decomposed_baselines(df)
+        
+        # Add results to dataframe
+        df_result['B_decomposed'] = baselines
+        df_result['CS_decomposed'] = baselines / df_result[fee_column]
+        
+        # Also calculate traditional method for comparison
+        df_traditional = calculate_cs_ratio(df, feature_set, fee_column)
+        df_result['B_frontier'] = df_traditional['B']
+        df_result['CS_frontier'] = df_traditional['CS']
+        
+        # Set primary columns to decomposed values
+        df_result['B'] = df_result['B_decomposed']
+        df_result['CS'] = df_result['CS_decomposed']
+        
+        # Add coefficient information as metadata
+        df_result.attrs['decomposition_coefficients'] = {
+            'base_cost': coefficients[0],
+            'feature_costs': dict(zip(decomp_features, coefficients[1:]))
+        }
+        
+        return df_result
+    
+    else:
+        raise ValueError(f"Unknown method: {method}. Supported methods: 'frontier', 'linear_decomposition'")
+
+def rank_plans_by_cs_enhanced(df: pd.DataFrame, method: str = 'frontier',
+                            feature_set: str = 'basic', fee_column: str = 'fee',
+                            top_n: Optional[int] = None, **method_kwargs) -> pd.DataFrame:
+    """
+    Enhanced plan ranking supporting multiple CS calculation methods.
+    
+    Args:
+        df: DataFrame with plan data
+        method: Calculation method ('frontier' or 'linear_decomposition')
+        feature_set: Name of the feature set to use
+        fee_column: Column containing the fee to use
+        top_n: If provided, return only the top N plans
+        **method_kwargs: Additional arguments passed to specific methods
+        
+    Returns:
+        DataFrame with added CS ratio and rank
+    """
+    # Calculate CS ratio using specified method
+    df_result = calculate_cs_ratio_enhanced(df, method, feature_set, fee_column, **method_kwargs)
     
     # Sort by CS ratio (descending)
     df_result = df_result.sort_values('CS', ascending=False)
