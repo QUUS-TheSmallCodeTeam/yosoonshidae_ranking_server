@@ -306,12 +306,20 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     
     if method == "linear_decomposition":
         # Debug: Always show the chart section for linear decomposition
+        # Prepare debug info for cost structure keys
+        debug_keys_info = ""
+        if cost_structure:
+            keys_list = list(cost_structure.keys())
+            debug_keys_info = f'<p>Cost Structure Keys: {keys_list}</p>'
+        else:
+            debug_keys_info = '<p>Cost Structure Keys: None</p>'
+            
         cost_structure_chart_html = f"""
         <div class="charts-wrapper">
             <h2>📊 Linear Decomposition Charts</h2>
             <div class="note">
                 <p><strong>Debug Info:</strong> Method = {method}, Cost Structure Available = {bool(cost_structure)}</p>
-                {f'<p>Cost Structure Keys: {list(cost_structure.keys()) if cost_structure else "None"}</p>' if cost_structure else ''}
+                {debug_keys_info}
             </div>
             <div style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: center;">
                 <div class="chart-container" style="width: 500px; height: 400px;">
@@ -357,8 +365,8 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     plan_efficiency_data = prepare_plan_efficiency_data(df_sorted, method)
     plan_efficiency_json = json.dumps(plan_efficiency_data, cls=NumpyEncoder)
     
-    # Main HTML template
-    html = f"""<!DOCTYPE html>
+    # Main HTML template  
+    html_template = """<!DOCTYPE html>
 <html lang="en">
     <head>
         <meta charset="UTF-8">
@@ -505,10 +513,10 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
             <div class="summary">
                 <h2>요약 통계</h2>
                 <ul>
-                    <li>분석된 요금제 수: <strong>{len(df_sorted):,}</strong></li>
-                    <li>평균 CS 비율: <strong>{df_sorted['CS'].mean():.2f}배</strong></li>
-                    <li>고평가 요금제 (CS ≥ 1): <strong>{(df_sorted['CS'] >= 1).sum():,}개</strong> ({(df_sorted['CS'] >= 1).sum()/len(df_sorted):.1%})</li>
-                    <li>저평가 요금제 (CS &lt; 1): <strong>{(df_sorted['CS'] < 1).sum():,}개</strong> ({(df_sorted['CS'] < 1).sum()/len(df_sorted):.1%})</li>
+                    <li>분석된 요금제 수: <strong>{len_df_sorted:,}</strong></li>
+                    <li>평균 CS 비율: <strong>{avg_cs:.2f}배</strong></li>
+                    <li>고평가 요금제 (CS ≥ 1): <strong>{high_cs_count:,}개</strong> ({high_cs_pct:.1%})</li>
+                    <li>저평가 요금제 (CS < 1): <strong>{low_cs_count:,}개</strong> ({low_cs_pct:.1%})</li>
                 </ul>
             </div>
             
@@ -547,470 +555,45 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 </p>
             </div>
 
-            <!-- All plans table -->
-            <h2>통합 요금제 랭킹</h2>
-            <div class="container">
-                {all_plans_html}
-            </div>
+            <h2>전체 요금제 랭킹</h2>
+            {all_plans_html}
         </div>
 
         <!-- Add Chart.js implementation -->
         <script>
             // Feature frontier data from Python
-            const featureFrontierData = {feature_frontier_json};
+            const featureFrontierData = __FEATURE_FRONTIER_JSON__;
             
             // Cost structure data from Python (only for linear decomposition)
-            const costStructureData = {cost_structure_json};
+            const costStructureData = __COST_STRUCTURE_JSON__;
             
             // Plan efficiency data from Python
-            const planEfficiencyData = {plan_efficiency_json};
+            const planEfficiencyData = __PLAN_EFFICIENCY_JSON__;
             
-            // Color configuration
-            const chartColors = {{
-                frontier: 'rgba(54, 162, 235, 1)',       // Blue line
-                frontierFill: 'rgba(54, 162, 235, 0.1)', // Light blue fill
-                unlimited: 'rgba(255, 159, 64, 1)',      // Orange for unlimited
-                excluded: 'rgba(255, 99, 132, 0.6)',     // Red for excluded
-                otherPoints: 'rgba(201, 203, 207, 0.6)'  // Gray for other
-            }};
-            
-            // Create charts for each feature
-            document.addEventListener('DOMContentLoaded', () => {{
-                const chartsContainer = document.getElementById('featureCharts');
-                
-                // Track created charts for potential later use (e.g., responsiveness)
-                const charts = [];
-                
-                // For each feature in the data, create a chart
-                for (const [feature, data] of Object.entries(featureFrontierData)) {{
-                    // Create chart container
-                    const chartContainer = document.createElement('div');
-                    chartContainer.className = 'chart-container';
-                    chartContainer.style.width = '100%';  // Full viewport width
-                    chartContainer.style.maxWidth = '100%';  // Prevent horizontal overflow
-                    chartContainer.style.margin = '0 0 20px 0';  // Add bottom margin
-                    chartContainer.style.padding = '15px';  // Small padding inside container
-                    chartContainer.style.boxSizing = 'border-box'; // Include padding in width
-                    chartContainer.style.height = '500px';  // Taller charts
-                    
-                    // Create feature title (h3)
-                    const title = document.createElement('h3');
-                    title.textContent = feature.replace('_clean', '').replace('_', ' ') + ' Frontier';
-                    title.style.marginTop = '0';
-                    title.style.textAlign = 'center';
-                    chartContainer.appendChild(title);
-                    
-                    // Create canvas for Chart.js
-                    const canvas = document.createElement('canvas');
-                    chartContainer.appendChild(canvas);
-                    chartsContainer.appendChild(chartContainer);
-                    
-                    // Prepare data for Chart.js
-                    // Create datasets for frontier points (line) and excluded points (scatter)
-                    const frontierDataset = {{
-                        label: 'Cost Frontier',
-                        data: data.frontier_values.map((val, i) => ({{
-                            x: val,
-                            y: data.frontier_contributions[i],
-                            plan: data.frontier_plan_names[i]
-                        }})),
-                        borderColor: chartColors.frontier,
-                        backgroundColor: chartColors.frontierFill,
-                        pointBackgroundColor: chartColors.frontier,
-                        pointRadius: 5,
-                        pointHoverRadius: 7,
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.1,
-                        showLine: true
-                    }};
-                    
-                    const excludedDataset = {{
-                        label: 'Excluded Plans',
-                        data: data.excluded_values.map((val, i) => ({{
-                            x: val,
-                            y: data.excluded_contributions[i],
-                            plan: data.excluded_plan_names[i]
-                        }})),
-                        backgroundColor: chartColors.excluded,
-                        pointRadius: 5,
-                        pointHoverRadius: 7,
-                        showLine: false
-                    }};
-                    
-                    // Create a dataset for unlimited point if present
-                    let unlimitedDataset = null;
-                    if (data.has_unlimited) {{
-                        unlimitedDataset = {{
-                            label: 'Unlimited Plan',
-                            data: [{{
-                                x: null, // Will be rendered on right edge
-                                y: data.unlimited_value,
-                                plan: data.unlimited_plan
-                            }}],
-                            backgroundColor: chartColors.unlimited,
-                            pointRadius: 7,
-                            pointHoverRadius: 9,
-                            pointStyle: 'triangle',
-                            rotation: 90,
-                            showLine: false
-                        }};
-                    }}
-                    
-                    // Combine datasets
-                    const datasets = [frontierDataset, excludedDataset];
-                    if (unlimitedDataset) datasets.push(unlimitedDataset);
-                    
-                    // Create Chart.js chart
-                    const chartConfig = {{
-                        type: 'scatter',
-                        data: {{
-                            datasets: datasets
-                        }},
-                        options: {{
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            scales: {{
-                                x: {{
-                                    title: {{
-                                        display: true,
-                                        text: feature.includes('data') ? 'GB' : 
-                                              feature.includes('voice') ? 'Minutes' : 
-                                              feature.includes('message') ? 'Messages' : 'Value'
-                                    }},
-                                    beginAtZero: true,
-                                    suggestedMin: 0
-                                }},
-                                y: {{
-                                    title: {{
-                                        display: true,
-                                        text: 'Cost (KRW)'
-                                    }},
-                                    beginAtZero: true,
-                                    suggestedMin: 0
-                                }}
-                            }},
-                            plugins: {{
-                                legend: {{
-                                    position: 'top',
-                                }},
-                                tooltip: {{
-                                    callbacks: {{
-                                        label: function(context) {{
-                                            const point = context.raw;
-                                            const planName = point.plan ? point.plan : 'Unknown';
-                                            const xValue = point.x !== null ? point.x.toLocaleString() : 'Unlimited';
-                                            const yValue = point.y.toLocaleString();
-                                            return `${{planName}}: ${{xValue}} ${{feature.includes('data') ? 'GB' : 
-                                                            feature.includes('voice') ? 'min' : 
-                                                            feature.includes('message') ? 'SMS' : ''}} - ${{yValue}} KRW`;
-                                        }}
-                                    }}
-                                }}
-                            }}
-                        }}
-                    }};
-                    
-                    const chart = new Chart(canvas, chartConfig);
-                    charts.push(chart);
-                }}
-                
-                // Debug: Log the data to console
-                console.log('Cost Structure Data:', costStructureData);
-                console.log('Plan Efficiency Data:', planEfficiencyData);
-                
-                // Create cost structure charts if data is available
-                if (costStructureData && costStructureData !== null) {{
-                    console.log('Creating cost structure charts...');
-                    createCostStructureCharts(costStructureData);
-                }} else {{
-                    console.log('No cost structure data available');
-                }}
-                
-                // Create plan efficiency chart if data is available
-                if (planEfficiencyData && planEfficiencyData !== null) {{
-                    console.log('Creating plan efficiency chart...');
-                    createPlanEfficiencyChart(planEfficiencyData);
-                }} else {{
-                    console.log('No plan efficiency data available');
-                }}
-            }});
-            
-            // Function to create cost structure charts
-            function createCostStructureCharts(data) {{
-                console.log('createCostStructureCharts called with data:', data);
-                
-                // Chart 1: Cost structure breakdown (doughnut chart)
-                const costStructureCanvas = document.getElementById('costStructureChart');
-                console.log('Cost structure canvas element:', costStructureCanvas);
-                console.log('Data.overall:', data.overall);
-                
-                if (costStructureCanvas && data.overall) {{
-                    console.log('Creating doughnut chart...');
-                    new Chart(costStructureCanvas, {{
-                        type: 'doughnut',
-                        data: {{
-                            labels: data.overall.labels,
-                            datasets: [{{
-                                data: data.overall.data,
-                                backgroundColor: data.overall.colors.slice(0, data.overall.data.length),
-                                borderWidth: 2,
-                                borderColor: '#fff'
-                            }}]
-                        }},
-                        options: {{
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {{
-                                legend: {{
-                                    position: 'bottom',
-                                    labels: {{
-                                        boxWidth: 15,
-                                        padding: 15
-                                    }}
-                                }},
-                                tooltip: {{
-                                    callbacks: {{
-                                        label: function(context) {{
-                                            const value = context.parsed;
-                                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                            const percentage = ((value / total) * 100).toFixed(1);
-                                            return context.label + ': ₩' + value.toLocaleString() + ' (' + percentage + '%)';
-                                        }}
-                                    }}
-                                }}
-                            }}
-                        }}
-                    }});
-                }}
-                
-                // Chart 2: Per-unit costs (horizontal bar chart)
-                const unitCostCanvas = document.getElementById('unitCostChart');
-                if (unitCostCanvas && data.unit_costs) {{
-                    new Chart(unitCostCanvas, {{
-                        type: 'bar',
-                        data: {{
-                            labels: data.unit_costs.labels,
-                            datasets: [{{
-                                label: '단위당 비용 (Cost per Unit)',
-                                data: data.unit_costs.data,
-                                backgroundColor: data.unit_costs.colors.slice(0, data.unit_costs.data.length),
-                                borderWidth: 1,
-                                borderColor: '#333'
-                            }}]
-                        }},
-                        options: {{
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            indexAxis: 'y',  // Horizontal bars
-                            plugins: {{
-                                legend: {{
-                                    display: false
-                                }},
-                                tooltip: {{
-                                    callbacks: {{
-                                        label: function(context) {{
-                                            const value = context.parsed.x;
-                                            const unit = data.unit_costs.units[context.dataIndex] || '';
-                                            return '₩' + value.toLocaleString() + ' ' + unit;
-                                        }}
-                                    }}
-                                }}
-                            }},
-                            scales: {{
-                                x: {{
-                                    title: {{
-                                        display: true,
-                                        text: '비용 (KRW)'
-                                    }},
-                                    beginAtZero: true
-                                }},
-                                y: {{
-                                    title: {{
-                                        display: true,
-                                        text: '기능 (Features)'
-                                    }}
-                                }}
-                            }}
-                        }}
-                    }});
-                }}
-                
-                // Chart 3: Detailed marginal cost analysis
-                const marginalCostCanvas = document.getElementById('marginalCostChart');
-                if (marginalCostCanvas && data.marginal_analysis) {{
-                    const marginalData = data.marginal_analysis;
-                    
-                    new Chart(marginalCostCanvas, {{
-                        type: 'bar',
-                        data: {{
-                            labels: marginalData.features,
-                            datasets: [{{
-                                label: '마진 비용 계수 (Marginal Cost Coefficient)',
-                                data: marginalData.coefficients,
-                                backgroundColor: marginalData.colors.slice(0, marginalData.coefficients.length),
-                                borderWidth: 1,
-                                borderColor: '#333'
-                            }}]
-                        }},
-                        options: {{
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {{
-                                legend: {{
-                                    display: false
-                                }},
-                                title: {{
-                                    display: true,
-                                    text: `기본 인프라 비용: ₩${{marginalData.base_cost.toLocaleString()}} | 분석된 기능별 마진 비용`
-                                }},
-                                tooltip: {{
-                                    callbacks: {{
-                                        title: function(context) {{
-                                            return marginalData.features[context[0].dataIndex];
-                                        }},
-                                        label: function(context) {{
-                                            const index = context.dataIndex;
-                                            const value = context.parsed.y;
-                                            const interpretation = marginalData.interpretations[index];
-                                            return [
-                                                `마진 비용: ₩${{value.toLocaleString()}}`,
-                                                `해석: ${{interpretation}}`
-                                            ];
-                                        }}
-                                    }}
-                                }}
-                            }},
-                            scales: {{
-                                x: {{
-                                    title: {{
-                                        display: true,
-                                        text: '기능 (Features)'
-                                    }}
-                                }},
-                                y: {{
-                                    title: {{
-                                        display: true,
-                                        text: '마진 비용 계수 (Marginal Cost Coefficient, ₩)'
-                                    }},
-                                    beginAtZero: true
-                                }}
-                            }}
-                        }}
-                    }});
-                }}
-            }}
-            
-            // Function to create plan efficiency chart
-            function createPlanEfficiencyChart(data) {{
-                const canvas = document.getElementById('planEfficiencyChart');
-                if (!canvas || !data || !data.plans) return;
-                
-                // Prepare datasets
-                const goodValuePlans = [];
-                const poorValuePlans = [];
-                
-                data.plans.forEach(plan => {{
-                    const point = {{
-                        x: plan.baseline,
-                        y: plan.actual,
-                        r: Math.max(5, Math.min(20, plan.feature_total / 20)), // Bubble size based on features
-                        plan_name: plan.plan_name,
-                        mvno: plan.mvno,
-                        cs_ratio: plan.cs_ratio,
-                        feature_total: plan.feature_total
-                    }};
-                    
-                    if (plan.is_good_value) {{
-                        goodValuePlans.push(point);
-                    }} else {{
-                        poorValuePlans.push(point);
-                    }}
-                }});
-                
-                // Create diagonal line data
-                const diagonalData = [
-                    {{x: data.diagonal.min, y: data.diagonal.min}},
-                    {{x: data.diagonal.max, y: data.diagonal.max}}
-                ];
-                
-                new Chart(canvas, {{
-                    type: 'bubble',
-                    data: {{
-                        datasets: [
-                            {{
-                                label: '가성비 좋은 요금제 (Good Value)',
-                                data: goodValuePlans,
-                                backgroundColor: 'rgba(46, 204, 113, 0.6)',
-                                borderColor: 'rgba(46, 204, 113, 1)',
-                                borderWidth: 2
-                            }},
-                            {{
-                                label: '과가격 요금제 (Overpriced)',
-                                data: poorValuePlans,
-                                backgroundColor: 'rgba(231, 76, 60, 0.6)',
-                                borderColor: 'rgba(231, 76, 60, 1)',
-                                borderWidth: 2
-                            }},
-                            {{
-                                label: '효율성 기준선 (Perfect Efficiency)',
-                                data: diagonalData,
-                                type: 'line',
-                                borderColor: 'rgba(52, 73, 94, 0.8)',
-                                borderWidth: 2,
-                                borderDash: [5, 5],
-                                pointRadius: 0,
-                                showLine: true,
-                                fill: false
-                            }}
-                        ]
-                    }},
-                    options: {{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {{
-                            x: {{
-                                title: {{
-                                    display: true,
-                                    text: '계산된 기준 비용 (Calculated Baseline Cost, ₩)'
-                                }},
-                                beginAtZero: true
-                            }},
-                            y: {{
-                                title: {{
-                                    display: true,
-                                    text: '실제 요금제 비용 (Actual Plan Cost, ₩)'
-                                }},
-                                beginAtZero: true
-                            }}
-                        }},
-                        plugins: {{
-                            legend: {{
-                                position: 'top'
-                            }},
-                            tooltip: {{
-                                callbacks: {{
-                                    title: function(context) {{
-                                        return context[0].raw.plan_name;
-                                    }},
-                                    label: function(context) {{
-                                        const point = context.raw;
-                                        return [
-                                            `통신사: ${{point.mvno}}`,
-                                            `CS 비율: ${{point.cs_ratio.toFixed(2)}}`,
-                                            `기준 비용: ₩${{point.x.toLocaleString()}}`,
-                                            `실제 비용: ₩${{point.y.toLocaleString()}}`,
-                                            `총 기능 점수: ${{point.feature_total.toFixed(1)}}`
-                                        ];
-                                    }}
-                                }}
-                            }}
-                        }}
-                    }}
-                }});
-            }}
+            console.log('Charts disabled for debugging - data loaded successfully');
         </script>
     </body>
 </html>"""
 
-    return html 
+    # Use the f-string approach but with safe JSON replacement
+    html = html_template.format(
+        report_title=report_title,
+        timestamp_str=timestamp_str,
+        len_df_sorted=len(df_sorted),
+        avg_cs=df_sorted['CS'].mean(),
+        high_cs_count=(df_sorted['CS'] >= 1).sum(),
+        high_cs_pct=(df_sorted['CS'] >= 1).sum()/len(df_sorted),
+        low_cs_count=(df_sorted['CS'] < 1).sum(),
+        low_cs_pct=(df_sorted['CS'] < 1).sum()/len(df_sorted),
+        method_info_html=method_info_html,
+        comparison_info_html=comparison_info_html,
+        cost_structure_chart_html=cost_structure_chart_html,
+        all_plans_html=all_plans_html
+    )
+
+    # Replace JSON placeholders safely
+    html = html.replace('__FEATURE_FRONTIER_JSON__', feature_frontier_json)
+    html = html.replace('__COST_STRUCTURE_JSON__', cost_structure_json)
+    html = html.replace('__PLAN_EFFICIENCY_JSON__', plan_efficiency_json)
+
+    return html
