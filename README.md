@@ -7,8 +7,6 @@ sdk: docker
 pinned: false
 ---
 
-Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
-
 # Moyo Mobile Plan Ranking API
 
 This FastAPI application provides an API for preprocessing and ranking mobile phone plans based on various features using the Cost-Spec ratio method.
