@@ -15,8 +15,8 @@ echo "Monitoring server PID: $PID"
 echo "Filtering out GET / requests..."
 echo "Press Ctrl+C to stop"
 
-# Monitor and filter, appending to error.log
-cat /proc/$PID/fd/1 | grep -v -E "(GET / HTTP/1.1|GET /favicon)" | while read line; do
+# Monitor stderr for application logs and stdout for HTTP logs
+(cat /proc/$PID/fd/2 & cat /proc/$PID/fd/1 | grep -v -E "(GET / HTTP/1.1|GET /favicon)") | while read line; do
     echo "$line"
     echo "$(date '+%Y-%m-%d %H:%M:%S'): $line" >> error.log
     
