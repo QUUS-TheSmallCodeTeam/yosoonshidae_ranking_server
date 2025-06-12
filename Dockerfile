@@ -26,5 +26,8 @@ RUN mkdir -p /app/data/raw /app/data/processed /app/data/test /app/trained_model
 # Set environment variables
 ENV PYTHONPATH=/app
 
-# Run the application
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"] 
+# Make log monitor script executable
+RUN chmod +x /app/simple_log_monitor.sh
+
+# Start server first, then log monitoring
+CMD ["bash", "-c", "uvicorn app:app --host 0.0.0.0 --port 7860 & sleep 3 && ./simple_log_monitor.sh & wait"] 

@@ -1,13 +1,17 @@
 # 프로젝트 메모리
 
 ## 시스템 정보
-- 운영체제: Linux 5.10.236-228.935.amzn2.x86_64
-- 워크스페이스: vscode-remote://ssh-remote%2Bssh.hf.space/app
+- 운영체제: Linux 5.10.237-230.949.amzn2.x86_64
+- 워크스페이스: vscode-remote://ssh-remote%2Bssh.hf.space.mvno/app
 - 쉘: /bin/sh
 
 ## Hugging Face Dev Mode 환경 ⭐ 중요
 - **현재 환경**: Hugging Face Space에서 Dev Mode 활성화 상태
 - **서버 상태**: localhost:7860에서 상시 실행 중 (절대 종료 금지)
+- **로그 모니터링**: simple_log_monitor.sh 스크립트 정상 작동 중
+- **자동화 완료**: Dockerfile 수정으로 서버 시작 후 로그 모니터링 자동 실행
+- **실행 순서**: 서버 먼저 시작 → 3초 대기 → 로그 모니터링 시작 (PID 찾기 문제 해결)
+- **최근 상태**: 로그 모니터링 시스템 완전 복구 완료
 - **코드 반영**: 파일 수정 시 서버에 즉시 반영됨 (재시작 불필요)
 - **Git 상태**: Dev Mode에서의 변경사항은 자동으로 Git에 저장되지 않음
 - **중요사항**: 서버 종료 시 Dev Mode 비활성화될 위험 있음 → 절대 프로세스 kill 금지
