@@ -219,3 +219,47 @@ The entire system has been successfully refactored to include:
 - **브라우저 캐시**: 변경사항 확인 시 강제 새로고침 (Ctrl+F5) 권장
 - **대용량 데이터**: 처리 시 메모리 모니터링 필요  
 - **모델 검증**: piecewise 구현 시 기존 선형 모델과 성능 비교 필수 
+
+# Current Issues to Resolve
+
+## 🚨 Immediate Fixes Needed
+
+### HTML 보고서 포맷 오류
+- **문제**: `unsupported format string passed to dict.__format__` 오류 발생
+- **우선순위**: High
+- **위치**: HTML 보고서 생성 과정
+
+### 서버 로깅 시스템
+- **문제**: error.log 파일이 현재 업데이트되지 않음 (정적 상태)
+- **우선순위**: Medium
+- **현재 상태**: 과거 로그 내용만 포함, 실시간 로깅 안됨
+
+## 📋 Current System Status
+
+### 차트 시스템 (작동 중)
+1. **Feature Frontier Charts**: 각 feature별 비용 프론티어, frontier points/excluded points/unlimited plans 표시
+2. **Linear Decomposition Charts**: 비용 구성 요소 도넛 차트, 단위당 비용 막대 차트, 마진 비용 분석 차트 (linear_decomposition method에서만)  
+3. **Plan Value Efficiency Matrix**: 기준비용 vs 실제비용 버블 차트, 대각선 효율성 라인, 색상 코딩
+
+### 현재 설정
+- 기본 method: 'linear_decomposition'
+- 주요 엔드포인트: `/process`
+- Linear decomposition 실패 시 자동 frontier method 전환
+
+### Linear Decomposition 시스템 현황
+**대표 플랜 선택**: calculate_feature_frontiers() 로직 사용하여 프론티어 후보 플랜 선택
+**최적화 프로세스**: 프론티어 플랜에서 제약 최적화를 통한 마진 비용 계산
+**비용 구조 발견**: 기본 인프라 비용 + 기능별 프리미엄 분리
+
+### 한국 모바일 시장 비용 구조 (현재 분석 결과)
+- 기본 비용: ₩2,991 (네트워크 인프라)
+- 데이터: ~₩0/GB (기본 서비스에 포함)
+- 음성: ~₩0/100분 (기본 서비스에 포함)  
+- SMS: ₩8.70/100개 (소액 메시징 프리미엄)
+- 테더링: ₩554.83/GB (핫스팟 프리미엄)
+- 5G: ~₩0 (현대 요금제에 포함)
+
+### 사용자 요구사항 이해
+**설계 철학**: 공정한 가성비 순위를 위한 최적화된 기준선 생성
+**단조성 제외**: "더 많은 기능이 더 저렴"한 비현실적 데이터 포인트 의도적 제외
+**프론티어 선택**: 각 기능 레벨에서 최소 가격으로 최적화된 기준선
