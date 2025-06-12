@@ -5,6 +5,14 @@
 - 워크스페이스: vscode-remote://ssh-remote%2Bssh.hf.space/app
 - 쉘: /bin/sh
 
+## Hugging Face Dev Mode 환경 ⭐ 중요
+- **현재 환경**: Hugging Face Space에서 Dev Mode 활성화 상태
+- **서버 상태**: localhost:7860에서 상시 실행 중 (절대 종료 금지)
+- **코드 반영**: 파일 수정 시 서버에 즉시 반영됨 (재시작 불필요)
+- **Git 상태**: Dev Mode에서의 변경사항은 자동으로 Git에 저장되지 않음
+- **중요사항**: 서버 종료 시 Dev Mode 비활성화될 위험 있음 → 절대 프로세스 kill 금지
+- **참고**: [Hugging Face Dev Mode 문서](https://huggingface.co/docs/hub/spaces-dev-mode)
+
 ## 프로젝트 개요
 - **핵심 기능**: Enhanced Cost-Spec Ratio를 사용한 모바일 요금제 가성비 분석 및 순위 시스템
 - **주요 기술**: FastAPI, pandas, scikit-learn, Linear Decomposition
@@ -197,7 +205,58 @@
 - 상세한 서버 로깅으로 실행 과정 추적
 
 ## 다음 단계
-- 사용자의 실제 데이터로 테스트하여 로그 확인 및 linear decomposition이 실제 작동하는지 검증 
+- 사용자의 실제 데이터로 테스트하여 로그 확인 및 linear decomposition이 실제 작동하는지 검증
+
+# 테스트 워크플로 ⭐ 필수 절차
+
+## 코드 수정 후 표준 테스트 절차
+1. **코드 수정 완료**
+   - 파일 편집 후 자동으로 서버에 반영됨 (Dev Mode 환경)
+   - 별도 재시작 불필요
+
+2. **End-to-End 테스트 실행** (필수)
+   - **목적**: `/process` 엔드포인트가 전체 코드베이스의 핵심 기능
+   - **방법 1** (선호): `/data/raw` 폴더의 JSON 데이터 사용
+     ```bash
+     curl -X POST localhost:7860/process \
+          -H "Content-Type: application/json" \
+          -d @data/raw/[JSON_FILE_NAME].json
+     ```
+   - **방법 2** (백업): Supabase 함수 사용
+     ```bash
+     curl -X POST https://zqoybuhwasuppzjqnllm.supabase.co/functions/v1/submit-data \
+          -H "Content-Type: application/json" \
+          -d "{}"
+     ```
+     → 이 방법은 유사한 데이터셋으로 자동으로 서버의 `/process` 엔드포인트 호출
+
+3. **응답 검증**
+   - HTTP 상태 코드 확인 (200 OK 기대)
+   - 응답 JSON 구조 및 데이터 검증
+   - 로그 메시지 확인 (특히 linear decomposition 실행 여부)
+
+4. **웹 인터페이스 확인** (추가 검증)
+   - `http://localhost:7860/` 접속
+   - HTML 보고서 정상 생성 확인
+   - 차트 표시 상태 확인
+
+## 테스트 데이터 관리
+- **우선순위**: `/data/raw` 폴더 내 JSON 파일 사용
+- **백업 방법**: Supabase 외부 엔드포인트 (동일한 효과)
+- **데이터 구조**: 요금제 정보가 포함된 JSON 배열 형태
+
+## 문제 해결 체크리스트
+- [ ] 서버가 7860 포트에서 실행 중인가?
+- [ ] `/process` 엔드포인트 응답이 정상인가?
+- [ ] Linear decomposition이 실행되는가? (로그 확인)
+- [ ] HTML 보고서가 생성되는가?
+- [ ] 차트가 정상 표시되는가?
+- [ ] 메모리 사용량이 정상 범위인가?
+
+## 중요한 제약사항
+- ⚠️ **절대 서버 종료 금지**: Dev Mode 비활성화 위험
+- ⚠️ **Git 수동 커밋 필요**: 변경사항은 자동 저장되지 않음
+- ⚠️ **테스트 필수**: 코드 수정 후 반드시 `/process` 엔드포인트 테스트 
 
 ## Current Status: Marginal Cost System CORRECTED
 
