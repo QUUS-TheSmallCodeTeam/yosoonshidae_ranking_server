@@ -5,6 +5,14 @@
 - 워크스페이스: vscode-remote://ssh-remote%2Bssh.hf.space.mvno/app
 - 쉘: /bin/sh
 
+## Marginal Calculation 수학적 원리 ⭐ 명확화 완료
+- **프론티어 목적**: 트렌드 학습용, 각 feature 레벨에서 최저가만 선택하여 overpriced 요금제 제거
+- **구간별 beta**: 규모의 경제 반영 (첫 1GB ≠ 100GB에서 1GB)
+- **상호작용 제외**: 복잡성 방지, 해석 가능성 유지
+- **개선 방향**: 현재 단순 선형 회귀를 구간별 beta 추정으로 업그레이드 필요
+- **추천 방법**: 기울기 변화점 기반 구간 설정 + 1KRW/feature 제약 유지
+- **실행 계획**: 4단계 점진적 개선 (기존 시스템 보존하면서 새 방법 추가)
+
 ## Hugging Face Dev Mode 환경 ⭐ 중요
 - **현재 환경**: Hugging Face Space에서 Dev Mode 활성화 상태
 - **서버 상태**: localhost:7860에서 상시 실행 중 (절대 종료 금지)
@@ -16,6 +24,13 @@
 - **Git 상태**: Dev Mode에서의 변경사항은 자동으로 Git에 저장되지 않음
 - **중요사항**: 서버 종료 시 Dev Mode 비활성화될 위험 있음 → 절대 프로세스 kill 금지
 - **참고**: [Hugging Face Dev Mode 문서](https://huggingface.co/docs/hub/spaces-dev-mode)
+
+## 무한 루프 문제 해결 ⭐ 해결 완료
+- **문제 발생**: 2025-06-12 05:48:03~05:49:38 동안 modules.report_charts에서 무한 반복
+- **원인**: prepare_feature_frontier_data 함수의 이중 while 루프 (113-138번 줄)
+- **해결책**: 반복 횟수 제한, 0으로 나누기 방지, 안전장치 추가
+- **결과**: 05:49:43 이후 정상 작동, 무한 루프 완전 해결
+- **상태**: API 및 웹 인터페이스 정상 작동 확인
 
 ## 작업 원칙
 - **자율적 문제 해결**: 사용자 승인 없이 독립적 수행

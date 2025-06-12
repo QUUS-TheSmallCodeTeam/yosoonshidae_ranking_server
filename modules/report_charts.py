@@ -111,7 +111,10 @@ def prepare_feature_frontier_data(df, core_continuous_features):
             current_cost = candidate_plan_series[cost_metric_for_visualization]
 
             # Allow the addition of the candidate if it completely dominates the frontier so far
-            while actual_frontier_plans_series_list:
+            max_iterations_1 = len(candidate_points_details_series) + 10  # 안전장치
+            iteration_count_1 = 0
+            while actual_frontier_plans_series_list and iteration_count_1 < max_iterations_1:
+                iteration_count_1 += 1
                 last_frontier_plan_series = actual_frontier_plans_series_list[-1]
                 last_value = last_frontier_plan_series[feature]
                 last_cost = last_frontier_plan_series[cost_metric_for_visualization]
@@ -122,11 +125,17 @@ def prepare_feature_frontier_data(df, core_continuous_features):
                     should_add_zero_point = True  # We need to reconsider adding the (0,0) point
                 else:
                     break
+                    
+            if iteration_count_1 >= max_iterations_1:
+                logger.warning(f"Feature {feature}: First while loop reached maximum iterations ({max_iterations_1}), breaking to prevent infinite loop")
 
             # Check if the candidate can be added based on monotonic increase rule
             if actual_frontier_plans_series_list:
                 # Remove points from the end of the frontier that conflict with adding this candidate
-                while actual_frontier_plans_series_list:
+                max_iterations_2 = len(actual_frontier_plans_series_list) + 10  # 안전장치
+                iteration_count_2 = 0
+                while actual_frontier_plans_series_list and iteration_count_2 < max_iterations_2:
+                    iteration_count_2 += 1
                     last_frontier_plan_series = actual_frontier_plans_series_list[-1]
                     last_value = last_frontier_plan_series[feature]
                     last_cost = last_frontier_plan_series[cost_metric_for_visualization]
@@ -139,6 +148,11 @@ def prepare_feature_frontier_data(df, core_continuous_features):
                     if current_cost <= last_cost:
                         break  # Cannot add this candidate
                     
+                    # 안전한 cost_per_unit 계산
+                    if (current_value - last_value) == 0:
+                        logger.warning(f"Feature {feature}: Division by zero avoided in cost_per_unit calculation")
+                        break
+                        
                     cost_per_unit = (current_cost - last_cost) / (current_value - last_value)
                     if cost_per_unit >= 1.0:
                         # This candidate can be added - it meets all criteria
@@ -147,6 +161,9 @@ def prepare_feature_frontier_data(df, core_continuous_features):
                         # Remove the last point and try again with the previous point
                         actual_frontier_plans_series_list.pop()
                         should_add_zero_point = True  # Reconsider adding zero point
+                        
+                if iteration_count_2 >= max_iterations_2:
+                    logger.warning(f"Feature {feature}: Second while loop reached maximum iterations ({max_iterations_2}), breaking to prevent infinite loop")
                 
                 # If we still have points in the frontier, check one more time if we can add the candidate
                 if actual_frontier_plans_series_list:
