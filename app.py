@@ -79,143 +79,169 @@ async def startup_event():
 df_with_rankings = None  # Global variable to store the latest rankings
 latest_logical_test_results_cache = None  # For storing logical test results
 
-# Async chart calculation globals
-chart_calculation_status = {
-    'is_calculating': False,
-    'last_calculation_time': None,
-    'calculation_progress': 0,
-    'error_message': None
-}
-chart_calculation_task = None  # Store the background task
+# Individual chart calculation statuses with threading
+from concurrent.futures import ThreadPoolExecutor
+import threading
 
-def generate_basic_html_report(df):
-    """
-    Generate a basic HTML report without expensive chart calculations.
-    Used when chart calculation fails or is in progress.
-    """
-    timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Get top 10 plans
-    top_10 = df.head(10)
-    
-    # Create simple table HTML
-    table_rows = ""
-    for idx, row in top_10.iterrows():
-        table_rows += f"""
-        <tr>
-            <td>{row.get('rank_number', idx+1)}</td>
-            <td>{row.get('plan_name', 'N/A')}</td>
-            <td>{row.get('mvno', 'N/A')}</td>
-            <td>₩{row.get('original_fee', 0):,.0f}</td>
-            <td>{row.get('CS', 0):.2f}</td>
-        </tr>
-        """
-    
-    basic_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Mobile Plan Rankings - Basic View</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 40px; }}
-            table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
-            th, td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
-            th {{ background-color: #f2f2f2; }}
-            .note {{ background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0; }}
-        </style>
-    </head>
-    <body>
-        <h1>📱 Mobile Plan Rankings</h1>
-        <p><strong>Generated:</strong> {timestamp_str}</p>
+chart_types = [
+    'feature_frontier',
+    'marginal_cost_frontier', 
+    'multi_frontier_analysis',
+    'linear_decomposition',
+    'plan_efficiency'
+]
+
+chart_calculation_statuses = {
+    chart_type: {
+        'is_calculating': False,
+        'last_calculation_time': None,
+        'calculation_progress': 0,
+        'error_message': None,
+        'chart_data': None,
+        'status': 'idle'  # idle, calculating, ready, error
+    } for chart_type in chart_types
+}
+
+chart_calculation_lock = threading.Lock()
+chart_executor = ThreadPoolExecutor(max_workers=len(chart_types), thread_name_prefix="chart_worker")
+
+def update_chart_status(chart_type, status=None, progress=None, error=None, data=None):
+    """Thread-safe update of chart status"""
+    with chart_calculation_lock:
+        if status is not None:
+            chart_calculation_statuses[chart_type]['status'] = status
+            chart_calculation_statuses[chart_type]['is_calculating'] = (status == 'calculating')
+        if progress is not None:
+            chart_calculation_statuses[chart_type]['calculation_progress'] = progress
+        if error is not None:
+            chart_calculation_statuses[chart_type]['error_message'] = str(error)
+            chart_calculation_statuses[chart_type]['status'] = 'error'
+        if data is not None:
+            chart_calculation_statuses[chart_type]['chart_data'] = data
+        if status == 'ready':
+            chart_calculation_statuses[chart_type]['last_calculation_time'] = datetime.now()
+            chart_calculation_statuses[chart_type]['calculation_progress'] = 100
+
+def calculate_single_chart(chart_type, df_ranked, method, cost_structure, request_id):
+    """Calculate a single chart type in a separate thread"""
+    try:
+        update_chart_status(chart_type, status='calculating', progress=10)
+        logger.info(f"[{request_id}] Started calculating {chart_type} chart")
         
-        <div class="note">
-            <h3>⚠️ Basic View</h3>
-            <p>Advanced charts are being generated in the background. Refresh the page in a few moments to see the full report with visualizations.</p>
-        </div>
+        chart_data = None
         
-        <h2>Top 10 Plans by Cost-Spec Ratio</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Rank</th>
-                    <th>Plan Name</th>
-                    <th>Provider</th>
-                    <th>Price</th>
-                    <th>CS Ratio</th>
-                </tr>
-            </thead>
-            <tbody>
-                {table_rows}
-            </tbody>
-        </table>
+        if chart_type == 'feature_frontier':
+            update_chart_status(chart_type, progress=30)
+            from modules.report_charts import prepare_feature_frontier_data
+            core_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb']
+            chart_data = prepare_feature_frontier_data(df_ranked, core_features)
+            
+        elif chart_type == 'marginal_cost_frontier':
+            update_chart_status(chart_type, progress=30)
+            from modules.report_charts import prepare_marginal_cost_frontier_data
+            if hasattr(df_ranked, 'attrs') and 'multi_frontier_breakdown' in df_ranked.attrs:
+                multi_frontier_breakdown = df_ranked.attrs['multi_frontier_breakdown']
+                core_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb']
+                chart_data = prepare_marginal_cost_frontier_data(df_ranked, multi_frontier_breakdown, core_features)
+            else:
+                logger.warning(f"[{request_id}] No multi_frontier_breakdown found for {chart_type}")
+                
+        elif chart_type == 'multi_frontier_analysis':
+            update_chart_status(chart_type, progress=30)
+            from modules.report_charts import prepare_multi_frontier_chart_data
+            if hasattr(df_ranked, 'attrs') and 'multi_frontier_breakdown' in df_ranked.attrs:
+                multi_frontier_breakdown = df_ranked.attrs['multi_frontier_breakdown']
+                chart_data = prepare_multi_frontier_chart_data(df_ranked, multi_frontier_breakdown)
+            else:
+                logger.warning(f"[{request_id}] No multi_frontier_breakdown found for {chart_type}")
+                
+        elif chart_type == 'linear_decomposition':
+            update_chart_status(chart_type, progress=30)
+            from modules.report_html import prepare_cost_structure_chart_data
+            chart_data = prepare_cost_structure_chart_data(cost_structure)
+            
+        elif chart_type == 'plan_efficiency':
+            update_chart_status(chart_type, progress=30)
+            from modules.report_html import prepare_plan_efficiency_data
+            chart_data = prepare_plan_efficiency_data(df_ranked, method)
         
-        <hr>
-        <p><em>For the complete analysis with advanced charts, please refresh this page in a few moments.</em></p>
-    </body>
-    </html>
-    """
-    
-    return basic_html
+        update_chart_status(chart_type, progress=70)
+        
+        # Convert numpy types to ensure JSON serialization
+        def convert_numpy_types(obj):
+            """Recursively convert numpy types to Python native types"""
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.bool_):
+                return bool(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            else:
+                return obj
+        
+        if chart_data:
+            chart_data = convert_numpy_types(chart_data)
+            
+        update_chart_status(chart_type, status='ready', progress=100, data=chart_data)
+        logger.info(f"[{request_id}] Successfully calculated {chart_type} chart")
+        
+    except Exception as e:
+        logger.error(f"[{request_id}] Error calculating {chart_type} chart: {str(e)}")
+        update_chart_status(chart_type, error=str(e), progress=0)
 
 async def calculate_charts_async(df_ranked, method, cost_structure, request_id):
     """
-    Asynchronously calculate charts and generate HTML report.
-    This runs in the background after the API response is sent.
+    Calculate all charts asynchronously using thread pool.
+    Each chart type is calculated in parallel.
     """
-    global chart_calculation_status
-    
     try:
-        chart_calculation_status['is_calculating'] = True
-        chart_calculation_status['calculation_progress'] = 10
-        chart_calculation_status['error_message'] = None
+        logger.info(f"[{request_id}] Starting parallel chart calculation...")
         
-        logger.info(f"[{request_id}] Starting async chart calculation...")
+        # Reset all chart statuses
+        for chart_type in chart_types:
+            update_chart_status(chart_type, status='idle', progress=0, error=None, data=None)
         
-        # Set up HTML report info
-        timestamp_now = datetime.now()
-        method_suffix = "decomp" if method == "linear_decomposition" else "frontier"
-        report_filename = f"cs_ranking_{method_suffix}_{timestamp_now.strftime('%Y%m%d_%H%M%S')}.html"
-        report_path = config.cs_report_dir / report_filename
+        # Submit all chart calculations to thread pool
+        futures = []
+        for chart_type in chart_types:
+            future = chart_executor.submit(
+                calculate_single_chart, 
+                chart_type, 
+                df_ranked, 
+                method, 
+                cost_structure, 
+                request_id
+            )
+            futures.append((chart_type, future))
         
-        chart_calculation_status['calculation_progress'] = 30
+        # Wait for all calculations to complete (non-blocking for API response)
+        import asyncio
+        loop = asyncio.get_event_loop()
         
-        # Generate HTML content with method-specific title
-        method_name = {
-            "linear_decomposition": "Linear Decomposition",
-            "multi_frontier": "Multi-Feature Frontier Regression",
-            "frontier": "Frontier-Based"
-        }.get(method, "Enhanced Cost-Spec")
-        title = f"Enhanced Cost-Spec Rankings ({method_name})"
+        def wait_for_charts():
+            for chart_type, future in futures:
+                try:
+                    future.result(timeout=300)  # 5 minute timeout per chart
+                except Exception as e:
+                    logger.error(f"[{request_id}] Chart {chart_type} failed: {str(e)}")
+                    update_chart_status(chart_type, error=str(e))
         
-        chart_calculation_status['calculation_progress'] = 50
-        logger.info(f"[{request_id}] Generating HTML report with charts...")
+        # Run in background without blocking the API response
+        await loop.run_in_executor(None, wait_for_charts)
         
-        html_report = generate_html_report(
-            df_ranked, 
-            timestamp_now, 
-            is_cs=True, 
-            title=title,
-            method=method,
-            cost_structure=cost_structure
-        )
-        
-        chart_calculation_status['calculation_progress'] = 80
-        
-        # Write HTML content to file
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write(html_report)
-        
-        chart_calculation_status['calculation_progress'] = 100
-        chart_calculation_status['is_calculating'] = False
-        chart_calculation_status['last_calculation_time'] = timestamp_now
-        
-        logger.info(f"[{request_id}] Async chart calculation completed successfully. Report saved to {report_path}")
+        logger.info(f"[{request_id}] All chart calculations completed")
         
     except Exception as e:
-        chart_calculation_status['is_calculating'] = False
-        chart_calculation_status['error_message'] = str(e)
-        chart_calculation_status['calculation_progress'] = 0
-        logger.error(f"[{request_id}] Error in async chart calculation: {str(e)}")
+        logger.error(f"[{request_id}] Error in chart calculation orchestration: {str(e)}")
+        # Mark all charts as error if orchestration fails
+        for chart_type in chart_types:
+            update_chart_status(chart_type, error=str(e))
 
 # Data model for plan input 
 class PlanData(BaseModel):
@@ -301,7 +327,7 @@ async def root(basic: bool = False):
     2. Full HTML report if charts are ready
     3. Basic report if basic=true parameter is provided
     """
-    global df_with_rankings, chart_calculation_status
+    global df_with_rankings, chart_calculation_statuses
     
     try:
         # If basic report requested, generate simple HTML without charts
@@ -323,41 +349,123 @@ async def root(basic: bool = False):
         if df_with_rankings is None:
             return HTMLResponse(content="<h1>No data available. Please process data first via /process endpoint.</h1>")
         
-        # Check chart calculation status
-        if chart_calculation_status['is_calculating']:
-            # Show loading status
+        # Check chart calculation status - show individual chart progress
+        with chart_calculation_lock:
+            statuses = chart_calculation_statuses.copy()
+        
+        total_charts = len(chart_types)
+        ready_charts = sum(1 for status in statuses.values() if status['status'] == 'ready')
+        calculating_charts = sum(1 for status in statuses.values() if status['status'] == 'calculating')
+        
+        if calculating_charts > 0 or ready_charts < total_charts:
+            # Generate individual chart status HTML
+            chart_status_items = []
+            for chart_type, status in statuses.items():
+                chart_name = {
+                    'feature_frontier': 'Feature Frontier Charts',
+                    'marginal_cost_frontier': 'Marginal Cost Frontier Charts',
+                    'multi_frontier_analysis': 'Multi-Frontier Analysis',
+                    'linear_decomposition': 'Linear Decomposition Charts',
+                    'plan_efficiency': 'Plan Efficiency Matrix'
+                }.get(chart_type, chart_type.replace('_', ' ').title())
+                
+                if status['status'] == 'calculating':
+                    icon = '⚙️'
+                    text = f"Calculating... {status['calculation_progress']}%"
+                    color = '#007bff'
+                elif status['status'] == 'ready':
+                    icon = '✅'
+                    text = 'Ready'
+                    color = '#28a745'
+                elif status['status'] == 'error':
+                    icon = '❌'
+                    text = f"Error: {status['error_message'][:50]}..."
+                    color = '#dc3545'
+                else:
+                    icon = '⏳'
+                    text = 'Waiting...'
+                    color = '#6c757d'
+                
+                chart_status_items.append(f"""
+                    <div class="chart-status-item" style="border-left: 4px solid {color};">
+                        <span class="chart-icon">{icon}</span>
+                        <span class="chart-name">{chart_name}</span>
+                        <span class="chart-status" style="color: {color};">{text}</span>
+                    </div>
+                """)
+            
+            overall_progress = (ready_charts / total_charts) * 100 if total_charts > 0 else 0
+            
             progress_html = f"""
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Charts Calculating...</title>
+                <title>Charts Processing...</title>
+                <meta http-equiv="refresh" content="5">
                 <style>
-                    body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; }}
-                    .status-card {{ 
-                        background: #f0f8ff; 
-                        border: 2px solid #4CAF50; 
-                        border-radius: 10px; 
-                        padding: 30px; 
-                        margin: 20px auto; 
-                        max-width: 500px; 
+                    body {{ 
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                        margin: 0; padding: 20px; background: #f8f9fa; 
                     }}
-                    .loading-icon {{ font-size: 48px; margin-bottom: 20px; }}
-                    .progress {{ font-size: 18px; color: #666; }}
+                    .container {{ max-width: 800px; margin: 0 auto; }}
+                    .header {{ text-align: center; margin-bottom: 30px; }}
+                    .progress-bar {{ 
+                        width: 100%; height: 20px; background: #e9ecef; 
+                        border-radius: 10px; overflow: hidden; margin: 20px 0; 
+                    }}
+                    .progress-fill {{ 
+                        height: 100%; background: linear-gradient(90deg, #007bff, #28a745); 
+                        width: {overall_progress}%; transition: width 0.5s ease; 
+                    }}
+                    .chart-status-grid {{ 
+                        display: grid; gap: 15px; margin: 30px 0; 
+                    }}
+                    .chart-status-item {{ 
+                        background: white; padding: 20px; border-radius: 8px; 
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; 
+                        align-items: center; gap: 15px; 
+                    }}
+                    .chart-icon {{ font-size: 24px; }}
+                    .chart-name {{ flex: 1; font-weight: 600; }}
+                    .chart-status {{ font-size: 14px; }}
+                    .actions {{ text-align: center; margin-top: 30px; }}
+                    .btn {{ 
+                        display: inline-block; padding: 10px 20px; 
+                        background: #007bff; color: white; text-decoration: none; 
+                        border-radius: 5px; margin: 0 10px; 
+                    }}
+                    .btn:hover {{ background: #0056b3; }}
+                    .btn-secondary {{ background: #6c757d; }}
+                    .btn-secondary:hover {{ background: #5a6268; }}
                 </style>
             </head>
             <body>
-                <div class="status-card">
-                    <div class="loading-icon">⚙️</div>
-                    <h2>Multi-Feature Frontier Regression Analysis</h2>
-                    <p class="progress">Calculating charts... {chart_calculation_status['calculation_progress']}%</p>
-                    <p><a href="/">Refresh to check progress</a> | <a href="/?basic=true">View basic report</a></p>
+                <div class="container">
+                    <div class="header">
+                        <h1>📊 Chart Generation in Progress</h1>
+                        <p>Processing multi-threaded chart calculations...</p>
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                        <p><strong>{ready_charts}/{total_charts} charts ready</strong> ({overall_progress:.1f}%)</p>
+                    </div>
+                    
+                    <div class="chart-status-grid">
+                        {''.join(chart_status_items)}
+                    </div>
+                    
+                    <div class="actions">
+                        <a href="/" class="btn">🔄 Refresh Status</a>
+                        <a href="/?basic=true" class="btn btn-secondary">📄 View Basic Report</a>
+                        <a href="/chart-status" class="btn btn-secondary">🔍 API Status</a>
+                    </div>
                 </div>
             </body>
             </html>
             """
             return HTMLResponse(content=progress_html)
         
-        elif chart_calculation_status['error_message']:
+        elif any(status['error_message'] for status in chart_calculation_statuses.values()):
             # Show error status
             error_html = f"""
             <!DOCTYPE html>
@@ -383,7 +491,7 @@ async def root(basic: bool = False):
                     <div class="error-icon">❌</div>
                     <h2>Chart Generation Failed</h2>
                     <p>There was an error generating the charts.</p>
-                    <div class="error-msg">{chart_calculation_status['error_message']}</div>
+                    <div class="error-msg">{', '.join(status['error_message'] for status in chart_calculation_statuses.values() if status['error_message'])}</div>
                     <p><a href="/">Try again</a> | <a href="/?basic=true">View basic report</a></p>
                 </div>
             </body>
@@ -531,6 +639,21 @@ async def process_data(request: Request):
         global df_with_rankings
         df_with_rankings = df_ranked.copy()
         
+        # Extract cost structure from DataFrame attrs and store as object attributes
+        cost_structure = {}
+        if hasattr(df_ranked, 'attrs') and 'cost_structure' in df_ranked.attrs:
+            cost_structure = df_ranked.attrs['cost_structure']
+            logger.info(f"[{request_id}] Cost structure found in DataFrame attrs: {cost_structure}")
+        elif hasattr(df_ranked, 'attrs') and 'multi_frontier_breakdown' in df_ranked.attrs:
+            cost_structure = df_ranked.attrs['multi_frontier_breakdown']
+            logger.info(f"[{request_id}] Multi-frontier breakdown found in DataFrame attrs: {cost_structure}")
+        
+        # Set cost_structure as object attributes for HTML report access
+        df_with_rankings.cost_structure = cost_structure
+        df_with_rankings.method = method
+        config.df_with_rankings.cost_structure = cost_structure
+        config.df_with_rankings.method = method
+        
         # Step 7: Prepare response data first before HTML generation
         # First, ensure all float values are JSON-serializable
         # Replace inf, -inf, and NaN with appropriate values
@@ -659,42 +782,98 @@ async def process_data(request: Request):
 @app.get("/chart-status")
 def get_chart_status():
     """
-    Get the current status of chart calculation.
+    Get the current status of all individual chart calculations.
     """
-    global chart_calculation_status
+    with chart_calculation_lock:
+        statuses = chart_calculation_statuses.copy()
     
-    status = chart_calculation_status.copy()
+    # Add summary information
+    total_charts = len(chart_types)
+    ready_charts = sum(1 for status in statuses.values() if status['status'] == 'ready')
+    calculating_charts = sum(1 for status in statuses.values() if status['status'] == 'calculating')
+    error_charts = sum(1 for status in statuses.values() if status['status'] == 'error')
     
-    # Add human-readable status
-    if status['is_calculating']:
-        status['status_text'] = "Calculating charts..."
-    elif status['error_message']:
-        status['status_text'] = f"Error: {status['error_message']}"
-    elif status['last_calculation_time']:
-        status['status_text'] = "Charts ready"
+    overall_progress = (ready_charts / total_charts) * 100 if total_charts > 0 else 0
+    
+    return {
+        "individual_charts": statuses,
+        "summary": {
+            "total_charts": total_charts,
+            "ready_charts": ready_charts,
+            "calculating_charts": calculating_charts,
+            "error_charts": error_charts,
+            "overall_progress": round(overall_progress, 1),
+            "all_ready": ready_charts == total_charts,
+            "any_calculating": calculating_charts > 0,
+            "any_errors": error_charts > 0
+        }
+    }
+
+@app.get("/chart-status/{chart_type}")
+def get_single_chart_status(chart_type: str):
+    """
+    Get the status of a specific chart type.
+    """
+    if chart_type not in chart_types:
+        raise HTTPException(status_code=404, detail=f"Chart type '{chart_type}' not found")
+    
+    with chart_calculation_lock:
+        status = chart_calculation_statuses[chart_type].copy()
+    
+    # Add human-readable status text
+    if status['status'] == 'calculating':
+        status['status_text'] = f"Calculating {chart_type} chart... {status['calculation_progress']}%"
+    elif status['status'] == 'error':
+        status['status_text'] = f"Error in {chart_type}: {status['error_message']}"
+    elif status['status'] == 'ready':
+        status['status_text'] = f"{chart_type} chart ready"
     else:
-        status['status_text'] = "No calculations performed yet"
+        status['status_text'] = f"{chart_type} chart idle"
     
     return status
+
+@app.get("/chart-data/{chart_type}")
+def get_chart_data(chart_type: str):
+    """
+    Get the calculated data for a specific chart type.
+    """
+    if chart_type not in chart_types:
+        raise HTTPException(status_code=404, detail=f"Chart type '{chart_type}' not found")
+    
+    with chart_calculation_lock:
+        status = chart_calculation_statuses[chart_type].copy()
+    
+    if status['status'] != 'ready':
+        raise HTTPException(
+            status_code=409, 
+            detail=f"Chart '{chart_type}' is not ready. Current status: {status['status']}"
+        )
+    
+    return {
+        "chart_type": chart_type,
+        "status": status['status'],
+        "data": status['chart_data'],
+        "last_calculation_time": status['last_calculation_time']
+    }
 
 @app.get("/status", response_class=HTMLResponse)
 def get_status_page():
     """
     Get a simple HTML page showing the current system status.
     """
-    global chart_calculation_status
+    global chart_calculation_statuses
     
-    status = chart_calculation_status.copy()
+    status = {chart_type: status.copy() for chart_type, status in chart_calculation_statuses.items()}
     
-    if status['is_calculating']:
+    if any(status['is_calculating'] for status in status.values()):
         status_icon = "⚙️"
-        status_text = f"Calculating charts... {status['calculation_progress']}%"
+        status_text = f"Calculating charts... {sum(status['calculation_progress'] for status in status.values())}%"
         status_color = "#007bff"
-    elif status['error_message']:
+    elif any(status['error_message'] for status in status.values()):
         status_icon = "❌"
-        status_text = f"Error: {status['error_message']}"
+        status_text = f"Error: {', '.join(status['error_message'] for status in status.values() if status['error_message'])}"
         status_color = "#dc3545"
-    elif status['last_calculation_time']:
+    elif any(status['last_calculation_time'] for status in status.values()):
         status_icon = "✅"
         status_text = "Charts ready"
         status_color = "#28a745"

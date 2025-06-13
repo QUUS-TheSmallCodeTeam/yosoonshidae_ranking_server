@@ -804,7 +804,13 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
             # Add coefficient information as metadata (both formats for compatibility)
             cost_structure = {
                 'base_cost': float(coefficients[0]),
-                'feature_costs': {feature: float(coef) for feature, coef in zip(decomp_features, coefficients[1:])}
+                'feature_costs': {
+                    feature: {
+                        'coefficient': float(coef),
+                        'min_increment': 1,
+                        'cost_per_unit': float(coef)
+                    } for feature, coef in zip(decomp_features, coefficients[1:])
+                }
             }
             df_result.attrs['decomposition_coefficients'] = cost_structure
             df_result.attrs['cost_structure'] = cost_structure

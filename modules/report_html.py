@@ -445,19 +445,33 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     marginal_cost_frontier_data = {}
     if cost_structure and cost_structure.get('feature_costs'):
         # Create a mock multi_frontier_breakdown from cost_structure for compatibility
-        # Handle both flat and nested feature_costs structures
-        feature_costs = cost_structure.get('feature_costs', {})
+        # Handle both list and dict feature_costs structures
+        feature_costs_raw = cost_structure.get('feature_costs', {})
         
-        # Check if feature_costs has nested structure (from multi-frontier method)
-        if feature_costs and isinstance(list(feature_costs.values())[0], dict):
-            # Extract coefficients from nested structure
+        # Convert feature_costs to dictionary format expected by prepare_marginal_cost_frontier_data
+        if isinstance(feature_costs_raw, list):
+            # Convert list format to dict format
             simplified_feature_costs = {
-                feature: info.get('coefficient', 0) if isinstance(info, dict) else info
-                for feature, info in feature_costs.items()
+                item['feature']: {
+                    'coefficient': item.get('coefficient', 0),
+                    'display_name': item.get('display_name', item['feature']),
+                    'unit': item.get('unit', '')
+                }
+                for item in feature_costs_raw
             }
+        elif isinstance(feature_costs_raw, dict):
+            # Check if feature_costs has nested structure (from multi-frontier method)
+            if feature_costs_raw and isinstance(list(feature_costs_raw.values())[0], dict):
+                # Extract coefficients from nested structure
+                simplified_feature_costs = feature_costs_raw
+            else:
+                # Already flat structure (from linear decomposition)
+                simplified_feature_costs = {
+                    feature: {'coefficient': coeff}
+                    for feature, coeff in feature_costs_raw.items()
+                }
         else:
-            # Already flat structure (from linear decomposition)
-            simplified_feature_costs = feature_costs
+            simplified_feature_costs = {}
             
         mock_breakdown = {
             'feature_costs': simplified_feature_costs,
