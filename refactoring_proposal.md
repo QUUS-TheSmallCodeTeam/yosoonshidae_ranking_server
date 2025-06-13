@@ -18,263 +18,218 @@ Objective: Find β values that minimize prediction errors
 ### Current Implementation Status ✅
 
 **Already Working Correctly:**
-1. **Automatic minimum increment calculation** (modules/cost_spec.py:325-337)
+1. **Frontier point selection**: For each feature level, select the single plan with minimum price
+   - Data 10GB → cheapest 10GB plan (only one frontier point per level)
+   - Data 50GB → cheapest 50GB plan (only one frontier point per level)
+   - Removes overpriced plans efficiently
+
+2. **Automatic minimum increment calculation** (modules/cost_spec.py:325-337)
    ```python
    # Calculates smallest feature value differences from actual dataset
    min_feature_increment = min(feature_differences)
    # Ensures marginal costs are based on real data increments, not arbitrary units
    ```
 
-2. **Frontier-based data selection** (create_robust_monotonic_frontier())
-   ```python
-   # Step 1: For same cost, pick highest feature value (prefer high-spec)
-   # Step 2: For each feature level, pick lowest cost (remove overpriced)
-   # Result: Efficient price boundary learning
-   ```
-
-## ❌ Core Problem Identified: Frontier Point Price Contamination
+## ❌ Core Problem Identified: Cross-Feature Contamination in Frontier Regression
 
 ### The Real Issue
 ```
-Example: Data 10GB frontier points
-- Plan A: Data 10GB, Voice 200min, Messages ∞, Tethering 5GB, 5G → 30,000 KRW
-- Plan B: Data 10GB, Voice ∞, Messages ∞, Tethering ∞, 5G → 45,000 KRW
+Example: Data feature frontier points
+- 10GB frontier: Cheapest 10GB plan = [Data 10GB, Voice 200min, Messages 50, Tethering 5GB] → 30,000 KRW
+- 50GB frontier: Cheapest 50GB plan = [Data 50GB, Voice ∞, Messages ∞, Tethering ∞] → 60,000 KRW
 
-❌ Problem: Both are "Data 10GB frontier points" but have different prices
-→ 30,000 KRW contains: Data 10GB + other features' values mixed together
-→ Cannot extract pure "Data 10GB value"
+Current regression on data frontier:
+- (10GB, 30,000 KRW)
+- (50GB, 60,000 KRW)
+- Calculated data marginal cost = (60,000 - 30,000) / (50 - 10) = 750 KRW/GB
 
-Current System Limitation:
-1. Data frontier: [(10GB, 30,000), (50GB, 60,000), ...]
-2. Linear regression: "Data 1GB = 750 KRW"
-3. ❌ But 30,000 KRW includes voice+messages+tethering+5G values too!
+❌ Problem: The 30,000 KRW price difference isn't just from data!
+30,000 KRW difference = 40GB data + ∞voice + ∞messages + ∞tethering + other features
 
-✅ What We Want:
-- Pure Data 10GB value extraction
-- β₁ calculation with other features' influence removed
-- Independent marginal cost estimation for each feature
+✅ What we want: Pure data marginal cost = ∂Price/∂Data (with other features held constant)
+❌ What we get: Mixed marginal cost = ∂Price/∂(Data + Voice + Messages + Tethering + ...)
 ```
+
+### Why This Happens
+```
+Data Frontier Points:              Voice Frontier Points:
+10GB → Plan A (Voice 200min)      200min → Plan C (Data 5GB)
+50GB → Plan B (Voice ∞)           ∞min → Plan D (Data 100GB)
+
+When we calculate:
+- Data marginal cost using Plan A & B → includes voice cost difference (200min vs ∞)
+- Voice marginal cost using Plan C & D → includes data cost difference (5GB vs 100GB)
+
+Result: Each feature's "marginal cost" is contaminated by other features' costs!
+```
+
+### Current Frontier Method Limitations
+1. **Feature isolation**: Each feature frontier is calculated independently
+2. **Cross-contamination**: Frontier points have different values for other features
+3. **Regression bias**: Linear regression attributes all price differences to the target feature
+4. **Inaccurate coefficients**: β values don't represent pure marginal costs
 
 ## ✅ Solution: Multi-Feature Simultaneous Regression
 
 ### Problem-Solving Approach
 ```
-Current: Each feature → separate frontier → individual regression
-Improved: All features → frontier selection → combined multi-feature regression
+Current: Each feature → separate frontier → individual regression (contaminated)
+Improved: All features → collect frontier plans → multi-feature regression (pure)
 
-Key Insight: Use frontier selection for data quality, but perform regression on complete feature vectors
+Key Insight: 
+- Keep frontier selection for plan quality (remove overpriced plans)
+- But perform regression on complete feature vectors to separate effects
 ```
 
 ### New Methodology: Frontier-Based Multi-Feature Regression
 
-#### The Unit Scaling Challenge ⚠️
-```
-Problem: Different feature ranges bias regression
-- Data: 1-200 GB (range: 199)
-- Voice: 50-2000 minutes (range: 1950) 
-- Messages: 50-∞ count (range: massive)
-- Tethering: 0-50 GB (range: 50)
+#### Step 1: Collect All Frontier Plans
+```python
+# Instead of separate frontiers per feature, collect all plans that appear in ANY frontier
+frontier_plans = set()
 
-Without scaling: Voice coefficients appear more important due to larger numbers!
-```
+# Data frontiers: 10GB→Plan A, 50GB→Plan B, 100GB→Plan C
+frontier_plans.add(Plan A, Plan B, Plan C)
 
-#### Solution: Normalized Feature Units
-```
-Step 1: Identify frontier points for each feature (same as current)
-- Data frontier: [(10GB, Plan A), (50GB, Plan C), ...]
-- Voice frontier: [(200min, Plan B), (∞, Plan D), ...]
+# Voice frontiers: 200min→Plan D, ∞→Plan E  
+frontier_plans.add(Plan D, Plan E)
 
-Step 2: Convert to standardized incremental units (same as current system!)
-- Data: GB → number of min_data_increments
-- Voice: minutes → number of min_voice_increments  
-- Messages: count → number of min_message_increments
-- Tethering: GB → number of min_tethering_increments
+# Message frontiers: 50→Plan F, ∞→Plan G
+frontier_plans.add(Plan F, Plan G)
 
-Example conversion:
-Plan A: [10GB, 200min, ∞messages, 5GB_tethering, 5G] 
-→ [10/0.1, 200/50, ∞/100, 5/1, 1] (using min increments)
-→ [100, 4, ∞, 5, 1] standardized units
-
-Step 3: Perform multi-feature regression on standardized units
-30,000 = β₀ + β₁×100 + β₂×4 + β₃×∞ + β₄×5 + β₅×1
-60,000 = β₀ + β₁×500 + β₂×∞ + β₃×∞ + β₄×20 + β₅×1
-...
-
-Step 4: Convert coefficients back to real-world units
-β₁ = 50 KRW per standardized data unit 
-→ 50 × min_data_increment = 50 × 0.1GB = 5 KRW per 0.1GB = 50 KRW per GB
-
-Result: Pure independent value for each feature in meaningful units!
+# Result: {Plan A, Plan B, Plan C, Plan D, Plan E, Plan F, Plan G}
+# → High-quality plan subset with diverse feature combinations
 ```
 
-#### Key Insight: Current System Already Handles This! ✅
-The existing `min_feature_increment` calculation (modules/cost_spec.py:325-337) already solves the scaling problem by:
-1. **Finding the smallest real increment** for each feature in the dataset
-2. **Using these as base units** for coefficient calculation
-3. **Ensuring economic interpretability** (cost per actual data increment)
+#### Step 2: Multi-Feature Matrix Construction
+```
+Plan Matrix (selected frontier plans only):
+                Data   Voice   Messages  Tethering  Price
+Plan A:         10GB   200min  50        5GB        30,000
+Plan B:         50GB   ∞       ∞         ∞          60,000
+Plan C:         100GB  500min  100       20GB       85,000
+Plan D:         5GB    200min  ∞         2GB        25,000
+Plan E:         15GB   ∞       50        10GB       40,000
+Plan F:         20GB   300min  50        8GB        35,000
+Plan G:         30GB   1000min ∞         15GB       55,000
 
-We just need to apply this same normalization to the multi-feature regression!
+Multi-feature regression:
+Price = β₀ + β₁×Data + β₂×Voice + β₃×Messages + β₄×Tethering
+```
 
-## 🔧 Implementation Strategy
+#### Step 3: Pure Marginal Cost Extraction
+```
+Multi-regression result:
+β₀ = 10,000 KRW (base cost)
+β₁ = 400 KRW/GB (pure data cost)
+β₂ = 10 KRW/min (pure voice cost)  
+β₃ = 50 KRW/message (pure message cost)
+β₄ = 200 KRW/GB (pure tethering cost)
 
-### Phase 1: Multi-Feature Frontier Collection
+Now Plan A's cost breakdown:
+30,000 = 10,000 + 400×10 + 10×200 + 50×50 + 200×5
+30,000 = 10,000 + 4,000 + 2,000 + 2,500 + 1,000 + remaining_features
+✓ Each feature contributes its pure marginal value!
+```
+
+### Implementation: Enhanced Frontier Collection
 ```python
 class MultiFeatureFrontierRegression:
-    def __init__(self):
-        self.frontier_plans = set()  # Plans included in any frontier
-        self.min_increments = {}     # Store minimum increments for each feature
+    def collect_all_frontier_plans(self, df, features):
+        """Collect plans that appear in any feature frontier"""
+        frontier_plan_indices = set()
         
-    def collect_frontier_plans(self, df, features):
-        """Collect plans from all feature frontiers"""
         for feature in features:
+            # Get frontier for this feature (same as current system)
             frontier = create_robust_monotonic_frontier(df, feature, 'original_fee')
-            # Collect actual plans corresponding to frontier points
-            for feature_val, cost in frontier.items():
-                matching_plans = df[(df[feature] == feature_val) & 
-                                  (df['original_fee'] == cost)]
-                self.frontier_plans.update(matching_plans.index)
+            
+            # Find actual plans corresponding to frontier points
+            for feature_val, min_cost in frontier.items():
+                matching_plans = df[
+                    (df[feature] == feature_val) & 
+                    (df['original_fee'] == min_cost)
+                ]
+                frontier_plan_indices.update(matching_plans.index)
+        
+        return df.loc[list(frontier_plan_indices)]
     
-    def calculate_min_increments(self, df, features):
-        """Calculate minimum increments for feature normalization (same as current system)"""
-        for feature in features:
-            # Get unique feature values and calculate differences
-            unique_values = sorted(df[feature].dropna().unique())
-            if len(unique_values) > 1:
-                differences = [unique_values[i] - unique_values[i-1] 
-                             for i in range(1, len(unique_values)) 
-                             if unique_values[i] - unique_values[i-1] > 0]
-                self.min_increments[feature] = min(differences) if differences else 1
-            else:
-                self.min_increments[feature] = 1
-    
-    def normalize_features(self, df, features):
-        """Convert features to standardized incremental units"""
-        normalized_df = df.copy()
-        for feature in features:
-            if feature in self.min_increments:
-                normalized_df[f'{feature}_normalized'] = (
-                    normalized_df[feature] / self.min_increments[feature]
-                )
-        return normalized_df
-    
-    def solve_coefficients(self, df, features):
-        """Multi-feature regression on normalized frontier plans"""
-        # Step 1: Calculate minimum increments
-        self.calculate_min_increments(df, features)
+    def solve_multi_feature_coefficients(self, frontier_plans, features):
+        """Solve for pure marginal costs using multi-feature regression"""
+        # Build feature matrix
+        X = frontier_plans[features].values
+        y = frontier_plans['original_fee'].values
         
-        # Step 2: Normalize features
-        normalized_df = self.normalize_features(df, features)
+        # Add intercept column
+        X = np.column_stack([np.ones(len(X)), X])
         
-        # Step 3: Get frontier plans with normalized features
-        frontier_df = normalized_df.loc[list(self.frontier_plans)]
+        # Solve constrained regression (β ≥ 0)
+        bounds = [(0, None)] * len(X[0])  # All coefficients non-negative
+        result = minimize(
+            lambda beta: np.sum((X @ beta - y) ** 2),
+            x0=np.ones(len(X[0])),
+            bounds=bounds
+        )
         
-        # Step 4: Build X matrix with normalized features
-        normalized_features = [f'{f}_normalized' for f in features]
-        X = frontier_df[normalized_features].values
-        y = frontier_df['original_fee'].values
-        
-        # Step 5: Multi-linear regression on normalized data
-        beta_normalized = solve_constrained_regression(X, y)
-        
-        # Step 6: Convert coefficients back to real-world units
-        beta_real = {}
-        for i, feature in enumerate(features):
-            beta_real[feature] = beta_normalized[i] * self.min_increments[feature]
-        
-        return beta_real, self.min_increments
-```
-
-### Phase 2: Integration with Current System
-```python
-# Current approach
-calculate_cs_ratio_enhanced(method='frontier')
-
-# New approach
-calculate_cs_ratio_enhanced(method='multi_frontier', 
-                           features=['data', 'voice', 'message', 'tethering', '5g'])
-```
-
-### Phase 3: Advanced Improvements (Future)
-
-#### Piecewise Linear Modeling for Economies of Scale
-```
-Current: ∂C/∂data = β₁ = constant (same cost per GB regardless of volume)
-Reality: Different marginal costs by usage tiers
-
-Example: Data cost structure
-- 0-5GB: 1,000 KRW/GB (infrastructure setup costs)
-- 5-20GB: 100 KRW/GB (efficiency range)  
-- 20GB+: 10 KRW/GB (volume discounts)
-
-Implementation: Slope change point detection with 1KRW/feature constraint
+        return result.x  # [β₀, β₁, β₂, β₃, ...]
 ```
 
 ## 📊 Expected Benefits
 
 ### Immediate Improvements
-1. **Accurate marginal costs**: Pure feature values without contamination
-2. **Better CS ratios**: More reliable cost-spec comparisons
-3. **Cleaner insights**: Each feature's true market value
+1. **Pure marginal costs**: Each β represents true feature value without cross-contamination
+2. **Better CS ratios**: More accurate cost-spec comparisons
+3. **Economic interpretability**: Coefficients align with business understanding
+4. **Improved predictions**: Better fit to actual pricing patterns
 
-### Validation Approach
-1. **Consistency check**: Verify β values are economically reasonable
-2. **Prediction accuracy**: Compare MAE before/after improvement
-3. **Business logic**: Ensure results align with market understanding
+### Mathematical Validation
+```
+Before (contaminated):
+Data β₁ = 750 KRW/GB (includes voice, messages, tethering effects)
+
+After (pure):
+Data β₁ = 400 KRW/GB (pure data value only)
+Voice β₂ = 10 KRW/min (pure voice value only)
+Messages β₃ = 50 KRW/msg (pure message value only)
+
+Validation check:
+Mixed frontier prediction vs Multi-feature prediction accuracy
+→ Multi-feature should have lower MAE and better R²
+```
 
 ### Backward Compatibility
 - Keep existing 'frontier' method unchanged
 - Add new 'multi_frontier' option
 - Allow gradual migration and A/B testing
 
-## 🎯 Mathematical Foundation
-
-### Constraints (Same as Current)
-```
-1. Non-negativity: βⱼ ≥ 0 (adding features cannot reduce cost)
-2. Frontier selection: Use only efficient price boundary plans
-3. Minimum increment: Based on actual dataset feature differences
-```
-
-### Objective Function
-```
-Minimize: Σᵢ (actual_price_i - predicted_price_i)²
-
-Where:
-predicted_price_i = β₀ + β₁×data_i + β₂×voice_i + β₃×messages_i + β₄×tethering_i + β₅×5G_i
-
-Subject to: All βⱼ ≥ 0
-```
-
-This approach combines the **frontier advantages** (overpriced plan removal) with **multi-regression advantages** (feature separation) for optimal results!
-
 ## 🚀 Implementation Plan
 
 ### Phase 1: Core Multi-Feature Regression (Immediate)
-1. **Implement MultiFeatureFrontierRegression class**
-   - Collect plans from all feature frontiers
-   - Build complete feature matrix for regression
-   - Solve constrained multi-feature regression
+1. **Implement frontier plan collection**
+   - Extend existing frontier calculation to collect all frontier plans
+   - Build unified plan matrix with complete feature vectors
+   
+2. **Add multi-feature regression**
+   - Solve constrained optimization for pure coefficients
+   - Apply same constraints as current system (β ≥ 0)
 
-2. **Add new method option**
-   - `calculate_cs_ratio_enhanced(method='multi_frontier')`
-   - Keep existing 'frontier' method for compatibility
-   - Allow A/B testing between methods
+3. **Integration with existing system**
+   - Add `calculate_cs_ratio_enhanced(method='multi_frontier')`
+   - Maintain compatibility with current 'frontier' method
 
-3. **Validation and testing**
+### Phase 2: Validation and Testing
+1. **Mathematical validation**
    - Compare MAE between old and new methods
-   - Verify economic reasonableness of β coefficients
-   - Check for improved CS ratio consistency
+   - Verify economic reasonableness of coefficients
+   - Check prediction accuracy on held-out data
 
-### Phase 2: Advanced Improvements (Future)
-1. **Piecewise linear modeling** for economies of scale
-2. **Regularization techniques** for overfitting prevention
-3. **Cross-validation** for robust coefficient estimation
-4. **Interactive effects** (if data supports complexity)
+2. **Business logic validation**
+   - Ensure coefficients align with market understanding
+   - Validate coefficient relationships (data > tethering, etc.)
+   - Test edge cases and boundary conditions
 
-### Phase 3: Production Optimization
-1. **Performance optimization** for large datasets
-2. **Caching mechanisms** for repeated calculations
-3. **Error handling** and graceful fallbacks
-4. **Documentation** and user guides
+### Phase 3: Production Deployment
+1. **Performance optimization**
+2. **Error handling and graceful fallbacks**
+3. **Documentation and migration guides**
 
-This phased approach ensures stability while enabling systematic improvements to the cost-spec analysis system.
+This approach maintains the frontier advantages (quality plan selection) while solving the cross-contamination problem through proper multi-feature regression!
