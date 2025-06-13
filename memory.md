@@ -7,7 +7,7 @@
 - **Web interface**: Updated with new method selection buttons
 - **Data processing**: Successfully handling 1000+ mobile plans
 - **Performance**: No infinite loops, proper serialization, stable operation
-- **Server startup**: Dockerfile fixed to use correct module path (app:app)
+- **Server startup**: Dockerfile simplified to use direct uvicorn command (complex shell commands caused APP argument parsing issues)
 
 ## 🎯 Working Methods
 - **Multi-frontier regression**: Eliminates cross-contamination by using complete feature vectors
@@ -20,7 +20,7 @@
 - **Method integration**: New methods added to existing cost_spec.py structure
 - **Error handling**: Robust type conversion and safety measures
 - **Testing workflow**: Using raw data files from /data/raw/ directory
-- **Clean server startup**: Single uvicorn instance from Dockerfile, no conflicting startup code
+- **Clean server startup**: Direct uvicorn command in Dockerfile, log monitoring via app.py startup event
 
 ## 📈 Data Flow
 - Raw data → Multi-frontier regression → CS ratio calculation → HTML report generation
