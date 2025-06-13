@@ -684,10 +684,124 @@ def prepare_frontier_plan_matrix_data(multi_frontier_breakdown):
     
     return matrix_data
 
+def detect_change_points(feature_values, costs, min_segment_size=3):
+    """
+    Detect change points in cost structure using slope analysis.
+    
+    Args:
+        feature_values: Array of feature values (sorted)
+        costs: Array of corresponding costs
+        min_segment_size: Minimum points per segment
+        
+    Returns:
+        List of change point indices
+    """
+    if len(feature_values) < min_segment_size * 2:
+        return []
+    
+    # Calculate local slopes using moving windows
+    slopes = []
+    for i in range(len(feature_values) - 1):
+        if feature_values[i+1] != feature_values[i]:  # Avoid division by zero
+            slope = (costs[i+1] - costs[i]) / (feature_values[i+1] - feature_values[i])
+            slopes.append(slope)
+        else:
+            slopes.append(0)
+    
+    if len(slopes) < min_segment_size:
+        return []
+    
+    # Find significant slope changes
+    change_points = []
+    window_size = max(2, min_segment_size // 2)
+    
+    for i in range(window_size, len(slopes) - window_size):
+        # Calculate average slope before and after this point
+        before_slope = np.mean(slopes[i-window_size:i])
+        after_slope = np.mean(slopes[i:i+window_size])
+        
+        # Check if there's a significant change (>20% difference)
+        if abs(before_slope) > 0 and abs(after_slope - before_slope) / abs(before_slope) > 0.2:
+            change_points.append(i)
+    
+    # Merge nearby change points
+    if len(change_points) > 1:
+        filtered_points = [change_points[0]]
+        for cp in change_points[1:]:
+            if cp - filtered_points[-1] >= min_segment_size:
+                filtered_points.append(cp)
+        change_points = filtered_points
+    
+    return change_points
+
+def fit_piecewise_linear(feature_values, costs, change_points):
+    """
+    Fit piecewise linear model with detected change points.
+    
+    Args:
+        feature_values: Array of feature values
+        costs: Array of costs
+        change_points: List of change point indices
+        
+    Returns:
+        Dictionary with segment information
+    """
+    segments = []
+    
+    # Create segments based on change points
+    start_idx = 0
+    segment_boundaries = change_points + [len(feature_values)]
+    
+    for end_idx in segment_boundaries:
+        if end_idx <= start_idx:
+            continue
+            
+        # Extract segment data
+        seg_features = feature_values[start_idx:end_idx]
+        seg_costs = costs[start_idx:end_idx]
+        
+        if len(seg_features) < 2:
+            start_idx = end_idx
+            continue
+        
+        # Fit linear regression for this segment
+        try:
+            # Calculate slope and intercept
+            x_mean = np.mean(seg_features)
+            y_mean = np.mean(seg_costs)
+            
+            numerator = np.sum((seg_features - x_mean) * (seg_costs - y_mean))
+            denominator = np.sum((seg_features - x_mean) ** 2)
+            
+            if denominator > 0:
+                slope = numerator / denominator
+                intercept = y_mean - slope * x_mean
+            else:
+                slope = 0
+                intercept = y_mean
+            
+            segments.append({
+                'start_feature': float(seg_features[0]),
+                'end_feature': float(seg_features[-1]),
+                'start_idx': start_idx,
+                'end_idx': end_idx - 1,
+                'slope': float(slope),
+                'intercept': float(intercept),
+                'points': len(seg_features),
+                'marginal_cost': float(slope)  # Slope is the marginal cost
+            })
+            
+        except Exception as e:
+            logger.warning(f"Error fitting segment {start_idx}-{end_idx}: {e}")
+        
+        start_idx = end_idx
+    
+    return segments
+
 def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_continuous_features):
     """
-    Prepare feature frontier charts using pure marginal costs from multi-frontier regression.
-    This addresses the cross-contamination problem by showing feature trends with pure costs.
+    Prepare feature frontier charts using PIECEWISE LINEAR model for realistic marginal costs.
+    This shows economies of scale with different marginal costs across feature ranges.
     
     Args:
         df: DataFrame with plan data
@@ -695,13 +809,13 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
         core_continuous_features: List of features to visualize
         
     Returns:
-        Dictionary with marginal cost frontier data for visualization
+        Dictionary with piecewise marginal cost frontier data for visualization
     """
     if not multi_frontier_breakdown or not multi_frontier_breakdown.get('feature_costs'):
         logger.warning("No multi-frontier breakdown data available for marginal cost frontiers")
         return {}
-    
-    logger.info("Preparing marginal cost frontier charts using pure coefficients")
+
+    logger.info("Preparing PIECEWISE LINEAR marginal cost frontier charts with economies of scale")
     
     # Feature display configuration
     feature_display_names = {
@@ -729,7 +843,7 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
             logger.warning(f"Feature {feature} not available for marginal cost frontier")
             continue
             
-        # Get pure marginal cost coefficient
+        # Get pure marginal cost coefficient (as baseline)
         cost_info = feature_costs[feature]
         pure_coefficient = cost_info.get('coefficient', 0)
         
@@ -737,99 +851,214 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
             logger.warning(f"Invalid coefficient for {feature}: {pure_coefficient}")
             continue
             
-        logger.info(f"Creating marginal cost frontier for {feature} with pure coefficient: {pure_coefficient}")
+        logger.info(f"Creating PIECEWISE LINEAR frontier for {feature} with base coefficient: {pure_coefficient}")
         
-        # Get feature value range from actual data
+        # Get actual frontier data points using SAME METHODOLOGY as original frontier
         feature_values = df[feature].dropna()
         if feature_values.empty:
             continue
-            
-        min_val = feature_values.min()
-        max_val = feature_values.max()
         
-        # Create feature value points for the frontier
-        if max_val > min_val:
-            # Create evenly spaced points across the feature range
-            num_points = 20
-            feature_points = np.linspace(min_val, max_val, num_points)
+        from modules.cost_spec import create_robust_monotonic_frontier, UNLIMITED_FLAGS
+        
+        # Apply same unlimited handling as original system
+        unlimited_flag = UNLIMITED_FLAGS.get(feature)
+        
+        # Process non-unlimited plans with robust monotonic frontier
+        if unlimited_flag and unlimited_flag in df.columns:
+            df_non_unlimited = df[(df[unlimited_flag] == 0) & df['original_fee'].notna()].copy()
         else:
-            feature_points = [min_val]
+            df_non_unlimited = df[df['original_fee'].notna()].copy()
         
-        # Calculate pure marginal costs for each point
-        frontier_points = []
-        cumulative_costs = []
-        marginal_costs = []
+        if df_non_unlimited.empty:
+            logger.warning(f"No non-unlimited plans found for {feature}")
+            continue
         
-        for i, feature_val in enumerate(feature_points):
-            # Pure cost calculation: base_cost + (feature_value * pure_coefficient)
-            pure_cost = base_cost + (feature_val * pure_coefficient)
-            
-            # Marginal cost is the pure coefficient (constant for linear model)
-            marginal_cost = pure_coefficient
-            
-            # Cumulative cost from zero to this point
-            cumulative_cost = feature_val * pure_coefficient
-            
-            frontier_points.append({
-                'feature_value': float(feature_val),
-                'pure_cost': float(pure_cost),
-                'marginal_cost': float(marginal_cost),
-                'cumulative_cost': float(cumulative_cost)
-            })
-            
-            cumulative_costs.append(float(cumulative_cost))
-            marginal_costs.append(float(marginal_cost))
+        # Use SAME monotonic frontier logic with 1 KRW/feature rule
+        robust_frontier = create_robust_monotonic_frontier(df_non_unlimited, feature, 'original_fee')
         
-        # Find actual plans at key feature levels for comparison
+        if robust_frontier.empty:
+            logger.warning(f"No valid monotonic frontier for {feature}")
+            continue
+        
+        # Convert robust frontier to data points for piecewise analysis
+        frontier_data_points = [(val, cost) for val, cost in robust_frontier.items()]
+        
+        # Handle unlimited plans separately (same as original system)
+        unlimited_endpoint = None
+        if unlimited_flag and unlimited_flag in df.columns:
+            unlimited_plans = df[(df[unlimited_flag] == 1) & df['original_fee'].notna()]
+            if not unlimited_plans.empty:
+                min_unlimited_cost = unlimited_plans['original_fee'].min()
+                # Find max feature value for unlimited endpoint
+                max_feature_val = df[feature].max() if not df[feature].empty else 100
+                unlimited_endpoint = (max_feature_val * 2, min_unlimited_cost)  # Use 2x max as "unlimited"
+                logger.info(f"✅ Found unlimited {feature} plans: cheapest at ₩{min_unlimited_cost}")
+        
+        logger.info(f"✅ Applied monotonic filtering for {feature}: {len(frontier_data_points)} points (was {len(feature_values.unique())} raw points)")
+        
+        if len(frontier_data_points) < 3:
+            # Fallback to linear model if insufficient data
+            logger.warning(f"Insufficient frontier data for {feature}, using linear model")
+            min_val = feature_values.min()
+            max_val = feature_values.max()
+            feature_points = np.linspace(min_val, max_val, 20)
+            
+            frontier_points = []
+            for feature_val in feature_points:
+                pure_cost = base_cost + (feature_val * pure_coefficient)
+                frontier_points.append({
+                    'feature_value': float(feature_val),
+                    'pure_cost': float(pure_cost),
+                    'marginal_cost': float(pure_coefficient),
+                    'cumulative_cost': float(feature_val * pure_coefficient),
+                    'segment': 'linear'
+                })
+        else:
+            # PIECEWISE LINEAR ANALYSIS with monotonic + unlimited data
+            
+            # Add unlimited endpoint if available
+            if unlimited_endpoint:
+                frontier_data_points.append(unlimited_endpoint)
+                logger.info(f"✅ Added unlimited endpoint for {feature}: {unlimited_endpoint}")
+            
+            frontier_features = np.array([p[0] for p in frontier_data_points])
+            frontier_costs = np.array([p[1] for p in frontier_data_points])
+            
+            # Detect change points in the FILTERED monotonic frontier
+            change_points = detect_change_points(frontier_features, frontier_costs)
+            logger.info(f"Detected {len(change_points)} change points for {feature} (monotonic data)")
+            
+            # Fit piecewise linear segments on FILTERED data
+            segments = fit_piecewise_linear(frontier_features, frontier_costs, change_points)
+            logger.info(f"Fitted {len(segments)} segments for {feature} (with monotonicity + 1KRW rule)")
+            
+            # Generate smooth piecewise frontier points
+            frontier_points = []
+            min_val = frontier_features.min()
+            max_val = frontier_features.max()
+            
+            # Create detailed points for visualization
+            num_points_per_segment = 15
+            
+            for seg_idx, segment in enumerate(segments):
+                seg_start = segment['start_feature']
+                seg_end = segment['end_feature']
+                seg_slope = segment['marginal_cost']
+                seg_intercept = segment['intercept']
+                
+                # Generate points for this segment
+                if seg_idx == len(segments) - 1:  # Last segment
+                    seg_points = np.linspace(seg_start, seg_end, num_points_per_segment)
+                else:
+                    seg_points = np.linspace(seg_start, seg_end, num_points_per_segment)[:-1]  # Exclude end to avoid duplication
+                
+                for feature_val in seg_points:
+                    # Piecewise linear cost calculation
+                    segment_cost = seg_intercept + (feature_val * seg_slope)
+                    
+                    # Cumulative cost calculation (integral of piecewise function)
+                    cumulative_cost = 0
+                    for prev_seg in segments:
+                        if prev_seg['end_feature'] < feature_val:
+                            # Full segment contribution
+                            seg_length = prev_seg['end_feature'] - prev_seg['start_feature']
+                            avg_cost = prev_seg['marginal_cost']
+                            cumulative_cost += seg_length * avg_cost
+                        elif prev_seg['start_feature'] <= feature_val <= prev_seg['end_feature']:
+                            # Partial segment contribution
+                            seg_length = feature_val - prev_seg['start_feature']
+                            avg_cost = prev_seg['marginal_cost']
+                            cumulative_cost += seg_length * avg_cost
+                            break
+                    
+                    frontier_points.append({
+                        'feature_value': float(feature_val),
+                        'pure_cost': float(segment_cost),
+                        'marginal_cost': float(seg_slope),  # Marginal cost for this segment
+                        'cumulative_cost': float(cumulative_cost),
+                        'segment': f'segment_{seg_idx}',
+                        'segment_info': {
+                            'index': seg_idx,
+                            'start': float(seg_start),
+                            'end': float(seg_end),
+                            'slope': float(seg_slope),
+                            'range': f"{seg_start:.1f}-{seg_end:.1f}"
+                        }
+                    })
+        
+        # Find actual plans for comparison
         actual_plan_points = []
         unique_feature_vals = sorted(feature_values.unique())
         
-        # Sample some actual plans for comparison
         sample_points = []
         if len(unique_feature_vals) > 10:
-            # Take every nth point to avoid overcrowding
             step = len(unique_feature_vals) // 10
             sample_points = unique_feature_vals[::step]
         else:
             sample_points = unique_feature_vals
             
-        for feature_val in sample_points[:15]:  # Limit to 15 points
+        for feature_val in sample_points[:15]:
             matching_plans = df[df[feature] == feature_val]
             if not matching_plans.empty:
-                # Find cheapest plan at this feature level
                 cheapest_idx = matching_plans['original_fee'].idxmin()
                 cheapest_plan = matching_plans.loc[cheapest_idx]
+                
+                # Find which segment this point belongs to
+                segment_info = "linear"
+                if len(segments) > 1:
+                    for seg in segments:
+                        if seg['start_feature'] <= feature_val <= seg['end_feature']:
+                            segment_info = f"Segment {seg['start_feature']:.1f}-{seg['end_feature']:.1f} (₩{seg['marginal_cost']:.0f}/{feature_units.get(feature, 'unit').split('/')[-1]})"
+                            break
                 
                 actual_plan_points.append({
                     'feature_value': float(feature_val),
                     'actual_cost': float(cheapest_plan['original_fee']),
                     'plan_name': cheapest_plan.get('plan_name', 'Unknown'),
-                    'predicted_pure_cost': float(base_cost + feature_val * pure_coefficient)
+                    'segment_info': segment_info
                 })
         
-        # Store the frontier data
-        marginal_cost_frontier_data[feature] = {
-            'feature_name': feature,
-            'display_name': feature_display_names.get(feature, feature),
-            'unit': feature_units.get(feature, ''),
-            'pure_coefficient': float(pure_coefficient),
-            'base_cost': float(base_cost),
-            'frontier_points': frontier_points,
-            'actual_plan_points': actual_plan_points,
-            'feature_range': {
-                'min': float(min_val),
-                'max': float(max_val),
-                'unique_values': len(unique_feature_vals)
-            },
-            'cost_analysis': {
-                'min_marginal_cost': float(min(marginal_costs)) if marginal_costs else 0,
-                'max_marginal_cost': float(max(marginal_costs)) if marginal_costs else 0,
-                'avg_marginal_cost': float(np.mean(marginal_costs)) if marginal_costs else 0,
-                'total_cost_range': float(max(cumulative_costs) - min(cumulative_costs)) if cumulative_costs else 0
+        # Calculate comprehensive cost analysis
+        if frontier_points:
+            marginal_costs = [p['marginal_cost'] for p in frontier_points]
+            cumulative_costs = [p['cumulative_cost'] for p in frontier_points]
+            
+            marginal_cost_frontier_data[feature] = {
+                'feature_name': feature,
+                'display_name': feature_display_names.get(feature, feature),
+                'unit': feature_units.get(feature, ''),
+                'pure_coefficient': float(pure_coefficient),
+                'base_cost': float(base_cost),
+                'frontier_points': frontier_points,
+                'actual_plan_points': actual_plan_points,
+                'piecewise_info': {
+                    'is_piecewise': len(segments) > 1 if 'segments' in locals() else False,
+                    'num_segments': len(segments) if 'segments' in locals() else 1,
+                    'segments': segments if 'segments' in locals() else [],
+                    'change_points_detected': len(change_points) if 'change_points' in locals() else 0
+                },
+                'feature_range': {
+                    'min': float(feature_values.min()),
+                    'max': float(feature_values.max()),
+                    'unique_values': len(feature_values.unique()),
+                    'filtered_frontier_points': len(frontier_data_points)
+                },
+                'cost_analysis': {
+                    'min_marginal_cost': float(min(marginal_costs)),
+                    'max_marginal_cost': float(max(marginal_costs)),
+                    'avg_marginal_cost': float(np.mean(marginal_costs)),
+                    'marginal_cost_range': float(max(marginal_costs) - min(marginal_costs)),
+                    'economies_of_scale': float(max(marginal_costs) - min(marginal_costs)) > 0,
+                    'total_cost_range': float(max(cumulative_costs) - min(cumulative_costs)) if cumulative_costs else 0
+                }
             }
-        }
+            
+            if len(segments) > 1:
+                logger.info(f"✅ PIECEWISE model for {feature}: {len(segments)} segments, marginal cost range: ₩{min(marginal_costs):.0f}-₩{max(marginal_costs):.0f}")
+            else:
+                logger.info(f"📊 Linear model for {feature}: constant marginal cost ₩{pure_coefficient:.0f}")
         
-        logger.info(f"Prepared marginal cost frontier for {feature}: {len(frontier_points)} points, {len(actual_plan_points)} actual plans")
+        logger.info(f"Prepared piecewise frontier for {feature}: {len(frontier_points)} points, {len(actual_plan_points)} actual plans")
     
-    logger.info(f"Completed marginal cost frontier preparation for {len(marginal_cost_frontier_data)} features")
+    logger.info(f"✅ Completed PIECEWISE LINEAR frontier preparation for {len(marginal_cost_frontier_data)} features")
     return marginal_cost_frontier_data
