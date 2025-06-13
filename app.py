@@ -5,6 +5,8 @@ import json
 import uuid
 import gc
 import time
+import subprocess
+import threading
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
@@ -32,6 +34,46 @@ from modules import (
 
 # Initialize FastAPI
 app = FastAPI(title="Moyo Plan Ranking Model Server - Enhanced Cost-Spec Method")
+
+# Log monitoring functionality
+def start_log_monitoring():
+    """Start log monitoring in background if script exists"""
+    try:
+        script_path = Path("./simple_log_monitor.sh")
+        if script_path.exists():
+            # Check if monitoring is already running
+            result = subprocess.run(
+                ["ps", "aux"], 
+                capture_output=True, 
+                text=True
+            )
+            if "simple_log_monitor.sh" not in result.stdout:
+                # Start monitoring in background
+                subprocess.Popen(
+                    ["sh", str(script_path)], 
+                    stdout=subprocess.DEVNULL, 
+                    stderr=subprocess.DEVNULL
+                )
+                logger.info("Started log monitoring script")
+            else:
+                logger.info("Log monitoring already running")
+        else:
+            logger.warning("Log monitoring script not found")
+    except Exception as e:
+        logger.error(f"Failed to start log monitoring: {e}")
+
+# Start monitoring on app startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize monitoring on app startup"""
+    # Wait a moment for the server to fully start
+    def delayed_start():
+        time.sleep(3)  # Wait 3 seconds for server to be ready
+        start_log_monitoring()
+    
+    # Start in background thread
+    threading.Thread(target=delayed_start, daemon=True).start()
+    logger.info("FastAPI app started - log monitoring will start in 3 seconds")
 
 # Global variables for storing data
 df_with_rankings = None  # Global variable to store the latest rankings
@@ -259,7 +301,8 @@ def read_root():
                 <h2>Method Selection</h2>
                 <div class="button-group">
                     <strong>Analysis Method:</strong><br>
-                    <button id="decomp-btn" class="active" onclick="changeMethod('linear_decomposition')">Linear Decomposition (Recommended)</button>
+                    <button id="multi-frontier-btn" class="active" onclick="changeMethod('multi_frontier')">Multi-Frontier Regression (Recommended)</button>
+                    <button id="decomp-btn" onclick="changeMethod('linear_decomposition')">Linear Decomposition</button>
                     <button id="frontier-btn" onclick="changeMethod('frontier')">Frontier-Based (Legacy)</button>
                 </div>
                 
@@ -283,16 +326,24 @@ def read_root():
                 <script>
                 /* Current state */
                 let currentState = {
-                    method: "linear_decomposition",
+                    method: "multi_frontier",
                     feeType: "original"
                 };
                 
                 /* Change method */
                 function changeMethod(method) {
                     /* Update buttons */
+                    document.getElementById('multi-frontier-btn').classList.remove('active');
                     document.getElementById('decomp-btn').classList.remove('active');
                     document.getElementById('frontier-btn').classList.remove('active');
-                    document.getElementById(method === 'linear_decomposition' ? 'decomp-btn' : 'frontier-btn').classList.add('active');
+                    
+                    if (method === 'multi_frontier') {
+                        document.getElementById('multi-frontier-btn').classList.add('active');
+                    } else if (method === 'linear_decomposition') {
+                        document.getElementById('decomp-btn').classList.add('active');
+                    } else {
+                        document.getElementById('frontier-btn').classList.add('active');
+                    }
                     
                     /* Update state */
                     currentState.method = method;
@@ -515,7 +566,7 @@ async def process_data(request: Request):
         # Extract options
         feature_set = options.get('featureSet', 'basic')
         fee_column = options.get('feeColumn', 'fee')  # Fee column to use for comparison
-        method = options.get('method', 'linear_decomposition')  # Default to linear decomposition
+        method = options.get('method', 'multi_frontier')  # Default to multi-frontier method
         tolerance = options.get('tolerance', 500)  # Optimization tolerance
         include_comparison = options.get('includeComparison', False)  # Include frontier comparison
         
@@ -576,6 +627,33 @@ async def process_data(request: Request):
         df_for_response = df_for_response.replace([np.inf, -np.inf], np.finfo(np.float64).max)
         df_for_response = df_for_response.replace(np.nan, 0)
         
+        # Convert all numpy types to Python native types for JSON serialization
+        def convert_numpy_types(obj):
+            """Recursively convert numpy types to Python native types"""
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.bool_):
+                return bool(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            else:
+                return obj
+        
+        # Apply conversion to all DataFrame columns
+        for col in df_for_response.columns:
+            if df_for_response[col].dtype.kind in ['i', 'u']:  # integer types
+                df_for_response[col] = df_for_response[col].astype(int)
+            elif df_for_response[col].dtype.kind == 'f':  # float types
+                df_for_response[col] = df_for_response[col].astype(float)
+            elif df_for_response[col].dtype.kind == 'b':  # boolean types
+                df_for_response[col] = df_for_response[col].astype(bool)
+        
         # Extract cost structure if available (linear decomposition)
         cost_structure = {}
         logger.info(f"[{request_id}] Checking for cost_structure in DataFrame attrs...")
@@ -622,7 +700,7 @@ async def process_data(request: Request):
         report_filename = f"cs_ranking_{method_suffix}_{timestamp_now.strftime('%Y%m%d_%H%M%S')}.html"
         report_path = config.cs_report_dir / report_filename
         
-        # Prepare response
+        # Prepare response and convert all numpy types
         response = {
             "request_id": request_id,
             "message": f"Data processing complete using Enhanced Cost-Spec method ({method})",
@@ -636,21 +714,25 @@ async def process_data(request: Request):
                 "includeComparison": include_comparison
             },
             "ranking_method": "enhanced_cs",
-            "cost_structure": cost_structure,
+            "cost_structure": convert_numpy_types(cost_structure),
             "results": {
                 "raw_data_path": str(raw_data_path),
                 "processed_data_path": str(processed_data_path),
                 "report_path": str(report_path),
                 "report_url": f"/reports/cs_reports/{report_filename}"
             },
-            "top_10_plans": top_10_plans,
-            "all_ranked_plans": all_ranked_plans
+            "top_10_plans": convert_numpy_types(top_10_plans),
+            "all_ranked_plans": convert_numpy_types(all_ranked_plans)
         }
         
         # Try to generate HTML report, but don't block API response if it fails
         try:
             # Generate HTML content with method-specific title
-            method_name = "Linear Decomposition" if method == "linear_decomposition" else "Frontier-Based"
+            method_name = {
+                "linear_decomposition": "Linear Decomposition",
+                "multi_frontier": "Multi-Feature Frontier Regression",
+                "frontier": "Frontier-Based"
+            }.get(method, "Enhanced Cost-Spec")
             title = f"Enhanced Cost-Spec Rankings ({method_name})"
             
             html_report = generate_html_report(

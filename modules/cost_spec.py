@@ -820,8 +820,82 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
             logger.info("Falling back to frontier method")
             return calculate_cs_ratio(df, feature_set, fee_column)
     
+    elif method == 'multi_frontier':
+        # Use new multi-feature frontier regression method
+        logger.info("Starting multi-feature frontier regression method")
+        df_result = df.copy()
+        
+        # Get features for this feature set
+        if feature_set in FEATURE_SETS:
+            features = [f for f in FEATURE_SETS[feature_set] if f not in UNLIMITED_FLAGS.values()]
+        else:
+            raise ValueError(f"Unknown feature set: {feature_set}")
+        
+        # Use safe, commonly available features
+        safe_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb', 'is_5g']
+        analysis_features = [f for f in safe_features if f in df.columns]
+        analysis_features = method_kwargs.get('features', analysis_features)
+        
+        logger.info(f"Multi-frontier analysis features: {analysis_features}")
+        
+        try:
+            # Initialize multi-feature frontier regression
+            regressor = MultiFeatureFrontierRegression(features=analysis_features)
+            
+            # Solve for pure marginal costs
+            coefficients = regressor.solve_multi_feature_coefficients(df)
+            logger.info(f"Successfully solved multi-frontier coefficients: {coefficients}")
+            
+            # Calculate baselines using pure coefficients
+            baselines = np.full(len(df), coefficients[0])  # Start with base cost
+            
+            for i, feature in enumerate(analysis_features):
+                if feature in df.columns:
+                    # Handle unlimited features
+                    unlimited_flag = UNLIMITED_FLAGS.get(feature)
+                    if unlimited_flag and unlimited_flag in df.columns:
+                        # For unlimited plans, use large value
+                        feature_values = df[feature].copy()
+                        unlimited_mask = df[unlimited_flag] == 1
+                        max_value = df[feature].max() * 2
+                        feature_values.loc[unlimited_mask] = max_value
+                        baselines += coefficients[i+1] * feature_values.values
+                    else:
+                        baselines += coefficients[i+1] * df[feature].values
+                else:
+                    logger.warning(f"Feature {feature} not found in data, treating as 0")
+            
+            # Add results to dataframe
+            df_result['B_multi_frontier'] = baselines
+            df_result['CS_multi_frontier'] = baselines / df_result[fee_column]
+            
+            # Also calculate traditional method for comparison
+            df_traditional = calculate_cs_ratio(df, feature_set, fee_column)
+            df_result['B_frontier'] = df_traditional['B']
+            df_result['CS_frontier'] = df_traditional['CS']
+            
+            # Set primary columns to multi-frontier values
+            df_result['B'] = df_result['B_multi_frontier']
+            df_result['CS'] = df_result['CS_multi_frontier']
+            
+            # Add coefficient breakdown for visualization
+            coefficient_breakdown = regressor.get_coefficient_breakdown()
+            df_result.attrs['multi_frontier_breakdown'] = coefficient_breakdown
+            df_result.attrs['cost_structure'] = coefficient_breakdown  # For compatibility
+            
+            logger.info(f"Created multi-frontier breakdown: {coefficient_breakdown}")
+            
+            return df_result
+            
+        except Exception as e:
+            logger.error(f"Multi-feature frontier regression failed: {str(e)}")
+            logger.error(f"Error type: {type(e).__name__}")
+            # Fallback to frontier method
+            logger.info("Falling back to frontier method")
+            return calculate_cs_ratio(df, feature_set, fee_column)
+    
     else:
-        raise ValueError(f"Unknown method: {method}. Supported methods: 'frontier', 'linear_decomposition'")
+        raise ValueError(f"Unknown method: {method}. Supported methods: 'frontier', 'linear_decomposition', 'multi_frontier'")
 
 def rank_plans_by_cs_enhanced(df: pd.DataFrame, method: str = 'frontier',
                             feature_set: str = 'basic', fee_column: str = 'fee',
@@ -856,4 +930,239 @@ def rank_plans_by_cs_enhanced(df: pd.DataFrame, method: str = 'frontier',
     if top_n is not None and top_n < len(df_result):
         return df_result.head(top_n)
     
-    return df_result 
+    return df_result
+
+class MultiFeatureFrontierRegression:
+    """
+    Multi-Feature Frontier Regression implementation.
+    
+    Solves the cross-contamination problem by:
+    1. Collecting plans from all feature frontiers
+    2. Performing multi-feature regression on complete feature vectors
+    3. Extracting pure marginal costs for each feature
+    """
+    
+    def __init__(self, features=None):
+        """
+        Initialize the multi-feature frontier regression analyzer.
+        
+        Args:
+            features: List of features to analyze. If None, uses CORE_FEATURES.
+        """
+        self.features = features or CORE_FEATURES
+        self.frontier_plans = None
+        self.coefficients = None
+        self.min_increments = {}
+        self.feature_frontiers = {}
+        
+    def collect_all_frontier_plans(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Collect all plans that appear in any feature frontier.
+        
+        Args:
+            df: DataFrame with plan data
+            
+        Returns:
+            DataFrame containing only frontier plans from all features
+        """
+        frontier_plan_indices = set()
+        
+        # Calculate frontiers for each feature and collect plan indices
+        for feature in self.features:
+            if feature not in df.columns:
+                logger.warning(f"Feature {feature} not found in dataframe, skipping frontier collection")
+                continue
+                
+            if feature in UNLIMITED_FLAGS.values():
+                continue
+                
+            unlimited_flag = UNLIMITED_FLAGS.get(feature)
+            
+            # Process non-unlimited plans
+            if unlimited_flag and unlimited_flag in df.columns:
+                df_non_unlimited = df[(df[unlimited_flag] == 0) & df['original_fee'].notna()].copy()
+            else:
+                df_non_unlimited = df[df['original_fee'].notna()].copy()
+                
+            if not df_non_unlimited.empty:
+                frontier = create_robust_monotonic_frontier(df_non_unlimited, feature, 'original_fee')
+                self.feature_frontiers[feature] = frontier
+                
+                # Find actual plans corresponding to frontier points
+                for feature_val, min_cost in frontier.items():
+                    matching_plans = df_non_unlimited[
+                        (df_non_unlimited[feature] == feature_val) & 
+                        (df_non_unlimited['original_fee'] == min_cost)
+                    ]
+                    frontier_plan_indices.update(matching_plans.index)
+                    
+                logger.info(f"Feature {feature}: Added {len(frontier)} frontier points to collection")
+            
+            # Process unlimited plans
+            if unlimited_flag and unlimited_flag in df.columns:
+                unlimited_plans = df[(df[unlimited_flag] == 1) & df['original_fee'].notna()]
+                if not unlimited_plans.empty:
+                    min_cost_idx = unlimited_plans['original_fee'].idxmin()
+                    frontier_plan_indices.add(min_cost_idx)
+                    logger.info(f"Feature {feature}: Added unlimited plan to collection")
+        
+        self.frontier_plans = df.loc[list(frontier_plan_indices)].copy()
+        logger.info(f"Collected {len(self.frontier_plans)} unique frontier plans from all features")
+        
+        return self.frontier_plans
+    
+    def calculate_min_increments(self, df: pd.DataFrame):
+        """
+        Calculate minimum increments for feature normalization.
+        Same logic as current system for consistency.
+        
+        Args:
+            df: DataFrame with plan data
+        """
+        for feature in self.features:
+            if feature not in df.columns:
+                continue
+                
+            if feature in UNLIMITED_FLAGS.values():
+                continue
+                
+            # Get unique feature values and calculate differences
+            unique_values = sorted(df[feature].dropna().unique())
+            if len(unique_values) > 1:
+                differences = [
+                    unique_values[i] - unique_values[i-1] 
+                    for i in range(1, len(unique_values)) 
+                    if unique_values[i] - unique_values[i-1] > 0
+                ]
+                self.min_increments[feature] = min(differences) if differences else 1
+            else:
+                self.min_increments[feature] = 1
+                
+            logger.info(f"Feature {feature}: minimum increment = {self.min_increments[feature]}")
+    
+    def solve_multi_feature_coefficients(self, df: pd.DataFrame) -> np.ndarray:
+        """
+        Solve for pure marginal costs using multi-feature regression.
+        
+        Args:
+            df: DataFrame with plan data
+            
+        Returns:
+            Array of coefficients [β₀, β₁, β₂, ...]
+        """
+        # Step 1: Collect frontier plans
+        frontier_plans = self.collect_all_frontier_plans(df)
+        
+        if len(frontier_plans) < len(self.features) + 1:
+            raise ValueError(f"Insufficient frontier plans ({len(frontier_plans)}) for {len(self.features)} features")
+        
+        # Step 2: Calculate minimum increments
+        self.calculate_min_increments(df)
+        
+        # Step 3: Build feature matrix (exclude unlimited flags)
+        analysis_features = [f for f in self.features if f not in UNLIMITED_FLAGS.values()]
+        
+        # Handle unlimited features by converting to large values
+        X_data = []
+        y_data = []
+        
+        for _, plan in frontier_plans.iterrows():
+            feature_vector = []
+            
+            for feature in analysis_features:
+                if feature not in plan:
+                    feature_vector.append(0)
+                    continue
+                    
+                # Check if this feature is unlimited for this plan
+                unlimited_flag = UNLIMITED_FLAGS.get(feature)
+                if unlimited_flag and unlimited_flag in plan and plan[unlimited_flag] == 1:
+                    # Use a large value to represent unlimited
+                    max_value = df[feature].max() * 2
+                    feature_vector.append(max_value)
+                else:
+                    feature_vector.append(plan[feature])
+            
+            X_data.append(feature_vector)
+            y_data.append(plan['original_fee'])
+        
+        X = np.array(X_data)
+        y = np.array(y_data)
+        
+        # Add intercept column
+        X = np.column_stack([np.ones(len(X)), X])
+        
+        # Step 4: Solve constrained regression (all coefficients ≥ 0)
+        def objective(beta):
+            return np.sum((X @ beta - y) ** 2)
+        
+        # Bounds: all coefficients non-negative
+        bounds = [(0, None)] * len(X[0])
+        
+        # Initial guess
+        try:
+            beta_ols = np.linalg.lstsq(X, y, rcond=None)[0]
+            initial_guess = np.maximum(beta_ols, 0)
+        except:
+            avg_cost = np.mean(y)
+            initial_guess = [avg_cost * 0.4] + [avg_cost * 0.1] * len(analysis_features)
+        
+        # Solve optimization
+        from scipy.optimize import minimize
+        result = minimize(
+            objective,
+            x0=initial_guess,
+            method='trust-constr',
+            bounds=bounds,
+            options={'disp': False, 'maxiter': 1000}
+        )
+        
+        if not result.success:
+            logger.error(f"Multi-feature frontier regression failed: {result.message}")
+            raise RuntimeError("Failed to solve multi-feature frontier regression")
+        
+        self.coefficients = result.x
+        
+        # Validation logging
+        predicted = X @ self.coefficients
+        actual = y
+        mae = np.mean(np.abs(predicted - actual))
+        max_error = np.max(np.abs(predicted - actual))
+        
+        logger.info(f"Multi-feature frontier regression solved successfully:")
+        logger.info(f"  Base cost (β₀): ₩{self.coefficients[0]:,.0f}")
+        for i, feature in enumerate(analysis_features):
+            logger.info(f"  {feature} pure cost: ₩{self.coefficients[i+1]:,.2f}")
+        logger.info(f"  Mean absolute error: ₩{mae:,.0f}")
+        logger.info(f"  Max absolute error: ₩{max_error:,.0f}")
+        logger.info(f"  Used {len(frontier_plans)} frontier plans for regression")
+        
+        return self.coefficients
+    
+    def get_coefficient_breakdown(self) -> dict:
+        """
+        Get coefficient breakdown for visualization.
+        
+        Returns:
+            Dictionary with coefficient information
+        """
+        if self.coefficients is None:
+            raise ValueError("Must solve coefficients first")
+            
+        analysis_features = [f for f in self.features if f not in UNLIMITED_FLAGS.values()]
+        
+        breakdown = {
+            'base_cost': self.coefficients[0],
+            'feature_costs': {},
+            'total_frontier_plans': len(self.frontier_plans) if self.frontier_plans is not None else 0,
+            'features_analyzed': len(analysis_features)
+        }
+        
+        for i, feature in enumerate(analysis_features):
+            breakdown['feature_costs'][feature] = {
+                'coefficient': self.coefficients[i+1],
+                'min_increment': self.min_increments.get(feature, 1),
+                'cost_per_unit': self.coefficients[i+1]
+            }
+        
+        return breakdown 

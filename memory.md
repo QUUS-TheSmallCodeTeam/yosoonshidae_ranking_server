@@ -1,4 +1,30 @@
-# 프로젝트 메모리
+# 🧠 Memory & Context
+
+## 📊 Current System Status
+- **Multi-frontier regression methodology**: Successfully implemented and fully operational
+- **Chart visualization**: Three new charts replace old linear decomposition charts
+- **Default method**: Changed to `multi_frontier` for new analysis approach
+- **Web interface**: Updated with new method selection buttons
+- **Data processing**: Successfully handling 1000+ mobile plans
+- **Performance**: No infinite loops, proper serialization, stable operation
+
+## 🎯 Working Methods
+- **Multi-frontier regression**: Eliminates cross-contamination by using complete feature vectors
+- **Feature frontier charts**: Original logic maintained as requested
+- **Safety measures**: Infinite loop prevention implemented and working
+- **Numpy type conversion**: Comprehensive serialization fix for all data types
+
+## 🔧 Implementation Patterns
+- **Chart replacement strategy**: Complete removal of old charts, clean implementation of new ones
+- **Method integration**: New methods added to existing cost_spec.py structure
+- **Error handling**: Robust type conversion and safety measures
+- **Testing workflow**: Using raw data files from /data/raw/ directory
+
+## 📈 Data Flow
+- Raw data → Multi-frontier regression → CS ratio calculation → HTML report generation
+- Feature frontier analysis for each core feature (data, voice, messages, tethering, 5G)
+- Proper frontier point selection (single cheapest plan per feature level)
+- Cross-contamination eliminated through multi-feature regression approach
 
 ## 시스템 정보
 - 운영체제: Linux 5.10.237-230.949.amzn2.x86_64
@@ -9,7 +35,9 @@
 - **프론티어 목적**: 트렌드 학습용, 각 feature 레벨에서 최저가만 선택하여 overpriced 요금제 제거
 - **구간별 beta**: 규모의 경제 반영 (첫 1GB ≠ 100GB에서 1GB)
 - **상호작용 제외**: 복잡성 방지, 해석 가능성 유지
-- **개선 방향**: 현재 단순 선형 회귀를 구간별 beta 추정으로 업그레이드 필요
+- **핵심 문제 발견**: 프론티어 포인트 가격에 다른 feature들 가치가 혼재됨
+- **해결책**: 다중 Feature 동시 회귀 (프론티어 선택 + 전체 다중 회귀)
+- **개선 방향**: 순수한 각 feature의 독립적 가치 추정
 - **추천 방법**: 기울기 변화점 기반 구간 설정 + 1KRW/feature 제약 유지
 - **실행 계획**: 4단계 점진적 개선 (기존 시스템 보존하면서 새 방법 추가)
 
