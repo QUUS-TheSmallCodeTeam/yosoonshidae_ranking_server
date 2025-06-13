@@ -683,3 +683,153 @@ def prepare_frontier_plan_matrix_data(multi_frontier_breakdown):
     }
     
     return matrix_data
+
+def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_continuous_features):
+    """
+    Prepare feature frontier charts using pure marginal costs from multi-frontier regression.
+    This addresses the cross-contamination problem by showing feature trends with pure costs.
+    
+    Args:
+        df: DataFrame with plan data
+        multi_frontier_breakdown: Pure marginal costs from MultiFeatureFrontierRegression
+        core_continuous_features: List of features to visualize
+        
+    Returns:
+        Dictionary with marginal cost frontier data for visualization
+    """
+    if not multi_frontier_breakdown or not multi_frontier_breakdown.get('feature_costs'):
+        logger.warning("No multi-frontier breakdown data available for marginal cost frontiers")
+        return {}
+    
+    logger.info("Preparing marginal cost frontier charts using pure coefficients")
+    
+    # Feature display configuration
+    feature_display_names = {
+        'basic_data_clean': 'Data (GB)',
+        'voice_clean': 'Voice (min)', 
+        'message_clean': 'Messages',
+        'tethering_gb': 'Tethering (GB)',
+        'is_5g': '5G Support'
+    }
+    
+    feature_units = {
+        'basic_data_clean': 'KRW/GB',
+        'voice_clean': 'KRW/min',
+        'message_clean': 'KRW/msg', 
+        'tethering_gb': 'KRW/GB',
+        'is_5g': 'KRW/feature'
+    }
+    
+    marginal_cost_frontier_data = {}
+    feature_costs = multi_frontier_breakdown.get('feature_costs', {})
+    base_cost = multi_frontier_breakdown.get('base_cost', 0)
+    
+    for feature in core_continuous_features:
+        if feature not in df.columns or feature not in feature_costs:
+            logger.warning(f"Feature {feature} not available for marginal cost frontier")
+            continue
+            
+        # Get pure marginal cost coefficient
+        cost_info = feature_costs[feature]
+        pure_coefficient = cost_info.get('coefficient', 0)
+        
+        if pure_coefficient <= 0:
+            logger.warning(f"Invalid coefficient for {feature}: {pure_coefficient}")
+            continue
+            
+        logger.info(f"Creating marginal cost frontier for {feature} with pure coefficient: {pure_coefficient}")
+        
+        # Get feature value range from actual data
+        feature_values = df[feature].dropna()
+        if feature_values.empty:
+            continue
+            
+        min_val = feature_values.min()
+        max_val = feature_values.max()
+        
+        # Create feature value points for the frontier
+        if max_val > min_val:
+            # Create evenly spaced points across the feature range
+            num_points = 20
+            feature_points = np.linspace(min_val, max_val, num_points)
+        else:
+            feature_points = [min_val]
+        
+        # Calculate pure marginal costs for each point
+        frontier_points = []
+        cumulative_costs = []
+        marginal_costs = []
+        
+        for i, feature_val in enumerate(feature_points):
+            # Pure cost calculation: base_cost + (feature_value * pure_coefficient)
+            pure_cost = base_cost + (feature_val * pure_coefficient)
+            
+            # Marginal cost is the pure coefficient (constant for linear model)
+            marginal_cost = pure_coefficient
+            
+            # Cumulative cost from zero to this point
+            cumulative_cost = feature_val * pure_coefficient
+            
+            frontier_points.append({
+                'feature_value': float(feature_val),
+                'pure_cost': float(pure_cost),
+                'marginal_cost': float(marginal_cost),
+                'cumulative_cost': float(cumulative_cost)
+            })
+            
+            cumulative_costs.append(float(cumulative_cost))
+            marginal_costs.append(float(marginal_cost))
+        
+        # Find actual plans at key feature levels for comparison
+        actual_plan_points = []
+        unique_feature_vals = sorted(feature_values.unique())
+        
+        # Sample some actual plans for comparison
+        sample_points = []
+        if len(unique_feature_vals) > 10:
+            # Take every nth point to avoid overcrowding
+            step = len(unique_feature_vals) // 10
+            sample_points = unique_feature_vals[::step]
+        else:
+            sample_points = unique_feature_vals
+            
+        for feature_val in sample_points[:15]:  # Limit to 15 points
+            matching_plans = df[df[feature] == feature_val]
+            if not matching_plans.empty:
+                # Find cheapest plan at this feature level
+                cheapest_idx = matching_plans['original_fee'].idxmin()
+                cheapest_plan = matching_plans.loc[cheapest_idx]
+                
+                actual_plan_points.append({
+                    'feature_value': float(feature_val),
+                    'actual_cost': float(cheapest_plan['original_fee']),
+                    'plan_name': cheapest_plan.get('plan_name', 'Unknown'),
+                    'predicted_pure_cost': float(base_cost + feature_val * pure_coefficient)
+                })
+        
+        # Store the frontier data
+        marginal_cost_frontier_data[feature] = {
+            'feature_name': feature,
+            'display_name': feature_display_names.get(feature, feature),
+            'unit': feature_units.get(feature, ''),
+            'pure_coefficient': float(pure_coefficient),
+            'base_cost': float(base_cost),
+            'frontier_points': frontier_points,
+            'actual_plan_points': actual_plan_points,
+            'feature_range': {
+                'min': float(min_val),
+                'max': float(max_val),
+                'unique_values': len(unique_feature_vals)
+            },
+            'cost_analysis': {
+                'min_marginal_cost': float(min(marginal_costs)) if marginal_costs else 0,
+                'max_marginal_cost': float(max(marginal_costs)) if marginal_costs else 0,
+                'avg_marginal_cost': float(np.mean(marginal_costs)) if marginal_costs else 0,
+                'total_cost_range': float(max(cumulative_costs) - min(cumulative_costs)) if cumulative_costs else 0
+            }
+        }
+        
+        logger.info(f"Prepared marginal cost frontier for {feature}: {len(frontier_points)} points, {len(actual_plan_points)} actual plans")
+    
+    logger.info(f"Completed marginal cost frontier preparation for {len(marginal_cost_frontier_data)} features")
+    return marginal_cost_frontier_data
