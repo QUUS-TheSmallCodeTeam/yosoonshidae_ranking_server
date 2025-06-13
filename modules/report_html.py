@@ -1720,7 +1720,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     
                     // Create feature title
                     const title = document.createElement('h3');
-                    title.textContent = `${data.display_name} - Pure Marginal Cost Frontier`;
+                    title.textContent = `${data.display_name} - Total Marginal Cost by Market Plan`;
                     title.style.marginTop = '0';
                     title.style.textAlign = 'center';
                     title.style.color = '#2c3e50';
@@ -1728,7 +1728,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     
                     // Create subtitle with coefficient info
                     const subtitle = document.createElement('p');
-                    subtitle.textContent = `Pure Coefficient: ₩${data.pure_coefficient.toLocaleString()} ${data.unit}`;
+                    subtitle.textContent = `Each blue dot shows an actual market plan's pure feature cost - no base cost, you pay only for what you get`;
                     subtitle.style.textAlign = 'center';
                     subtitle.style.color = '#7f8c8d';
                     subtitle.style.fontSize = '0.9em';
@@ -1740,44 +1740,34 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     chartContainer.appendChild(canvas);
                     chartsContainer.appendChild(chartContainer);
                     
-                    // Prepare datasets
+                    // Prepare datasets - Blue dots are ACTUAL market plans transformed to marginal cost space
                     const frontierDataset = {
-                        label: 'Pure Marginal Cost Trend',
+                        label: 'Market Plans (Total Marginal Cost)',
                         data: data.frontier_points.map(point => ({
                             x: point.feature_value,
-                            y: point.pure_cost
+                            y: point.total_marginal_cost,  // Use pre-calculated total marginal cost
+                            marginal_rate: point.marginal_cost,  // Keep per-unit rate for tooltip
+                            actual_cost: point.actual_cost,
+                            predicted_cost: point.predicted_single_feature_cost,  // Base + this feature only
+                            segment_info: point.segment_info,
+                            is_actual_plan: point.is_actual_plan
                         })),
                         borderColor: 'rgba(52, 152, 219, 1)',      // Blue
-                        backgroundColor: 'rgba(52, 152, 219, 0.1)', // Light blue fill
+                        backgroundColor: 'rgba(52, 152, 219, 0.7)', // Blue dots
                         pointBackgroundColor: 'rgba(52, 152, 219, 1)',
-                        pointRadius: 3,
-                        pointHoverRadius: 6,
-                        borderWidth: 3,
-                        fill: true,
-                        tension: 0.1,
-                        showLine: true
+                        pointRadius: 6,
+                        pointHoverRadius: 9,
+                        borderWidth: 2,
+                        fill: false,  // No fill for scatter plot
+                        tension: 0,   // No smooth line between points
+                        showLine: false  // Don't connect the dots - they're actual market plans
                     };
                     
-                    const actualPlansDataset = {
-                        label: 'Actual Market Plans',
-                        data: data.actual_plan_points.map(point => ({
-                            x: point.feature_value,
-                            y: point.actual_cost,
-                            plan_name: point.plan_name,
-                            predicted_cost: point.predicted_pure_cost
-                        })),
-                        backgroundColor: 'rgba(231, 76, 60, 0.7)',  // Red
-                        borderColor: 'rgba(231, 76, 60, 1)',
-                        pointRadius: 5,
-                        pointHoverRadius: 8,
-                        showLine: false
-                    };
-                    
-                    // Create Chart.js chart
+                    // Create Chart.js chart - Only show marginal cost analysis (no red dots)
                     new Chart(canvas, {
                         type: 'scatter',
                         data: {
-                            datasets: [frontierDataset, actualPlansDataset]
+                            datasets: [frontierDataset]
                         },
                         options: {
                             responsive: true,
@@ -1793,9 +1783,10 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                                 y: {
                                     title: {
                                         display: true,
-                                        text: 'Cost (₩)'
+                                        text: 'Total Marginal Cost (₩)'
                                     },
-                                    beginAtZero: true
+                                    beginAtZero: false,  // Don't start from zero to better show variation
+                                    grace: '10%'  // Add some padding to see points clearly
                                 }
                             },
                             plugins: {
@@ -1806,25 +1797,22 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                                     callbacks: {
                                         title: function(context) {
                                             const point = context[0];
-                                            if (point.dataset.label === 'Actual Market Plans') {
-                                                return point.raw.plan_name || 'Market Plan';
-                                            }
-                                            return `${data.display_name}: ${point.parsed.x}`;
+                                            return `Market Plan (${point.raw.segment_info?.range || 'segment'})`;
                                         },
                                         label: function(context) {
                                             const point = context.raw;
-                                            if (context.dataset.label === 'Pure Marginal Cost Trend') {
-                                                return [
-                                                    `Pure Cost: ₩${context.parsed.y.toLocaleString()}`,
-                                                    `Marginal Rate: ₩${data.pure_coefficient.toLocaleString()} ${data.unit}`
-                                                ];
-                                            } else {
-                                                return [
-                                                    `Actual Cost: ₩${context.parsed.y.toLocaleString()}`,
-                                                    `Predicted Pure Cost: ₩${point.predicted_cost.toLocaleString()}`,
-                                                    `Difference: ₩${(context.parsed.y - point.predicted_cost).toLocaleString()}`
-                                                ];
-                                            }
+                                            const isInconsistent = context.parsed.y > point.actual_cost;
+                                            const inconsistentFlag = isInconsistent ? ' ⚠️ ISSUE!' : '';
+                                            
+                                            return [
+                                                `Total Marginal Cost: ₩${context.parsed.y.toLocaleString()}${inconsistentFlag}`,
+                                                `Actual Plan Cost: ₩${point.actual_cost.toLocaleString()}`,
+                                                `Pure Feature Cost: ₩${point.predicted_cost.toLocaleString()}`,
+                                                `Marginal Rate: ₩${point.marginal_rate.toLocaleString()} ${data.unit}`,
+                                                `Feature Value: ${point.x}`,
+                                                `Segment: ${point.segment_info?.range || 'N/A'}`,
+                                                isInconsistent ? '⚠️ Marginal > Actual (Model Issue)' : '✅ Consistent'
+                                            ];
                                         }
                                     }
                                 }

@@ -920,9 +920,51 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
                     'segment': 'linear'
                 })
         else:
-            # PIECEWISE LINEAR ANALYSIS for TRENDLINE (monotonicity applied only to trendline!)
+            # PIECEWISE LINEAR ANALYSIS - Calculate segments on RAW market data first!
             
-            # Step 1: Apply monotonicity filtering ONLY for trendline calculation
+            # Step 1: Sort raw market data and apply basic monotonicity (but keep more points than full filtering)
+            sorted_frontier_data = sorted(frontier_data_points, key=lambda x: x[0])
+            
+            # Apply LIGHT filtering: remove only extreme outliers, keep most points
+            # This removes obvious pricing errors while preserving market reality
+            filtered_data = []
+            for i, (feat_val, cost) in enumerate(sorted_frontier_data):
+                if i == 0:
+                    filtered_data.append((feat_val, cost))
+                    continue
+                
+                prev_feat, prev_cost = filtered_data[-1]
+                
+                # Only remove if it violates basic economics (cost decreases significantly with more features)
+                if feat_val > prev_feat and cost < prev_cost * 0.8:  # Allow 20% cost decrease max
+                    logger.debug(f"Skipping outlier for {feature}: {feat_val} units at ₩{cost} (previous: {prev_feat} units at ₩{prev_cost})")
+                    continue
+                    
+                # Only remove if marginal cost is extremely high (>10x the base coefficient)
+                if feat_val > prev_feat:
+                    implied_marginal = (cost - prev_cost) / (feat_val - prev_feat)
+                    if implied_marginal > pure_coefficient * 10:  # More than 10x base coefficient
+                        logger.debug(f"Skipping extreme marginal cost for {feature}: ₩{implied_marginal:.0f}/unit (>10x base: ₩{pure_coefficient:.0f})")
+                        continue
+                        
+                filtered_data.append((feat_val, cost))
+            
+            raw_features = np.array([point[0] for point in filtered_data])
+            raw_costs = np.array([point[1] for point in filtered_data])
+            
+            logger.info(f"✅ Light filtering for {feature}: kept {len(filtered_data)}/{len(sorted_frontier_data)} points (removed extreme outliers only)")
+            
+            logger.info(f"✅ Calculating piecewise segments on {len(filtered_data)} lightly-filtered market points for {feature}")
+            
+            # Step 2: Detect change points in sorted raw market data
+            change_points = detect_change_points(raw_features, raw_costs)
+            logger.info(f"Detected {len(change_points)} change points in sorted raw market data for {feature}")
+            
+            # Step 3: Fit piecewise linear segments on sorted raw market data
+            segments = fit_piecewise_linear(raw_features, raw_costs, change_points)
+            logger.info(f"Fitted {len(segments)} segments on sorted raw market data for {feature}")
+            
+            # Step 4: Create filtered trendline ONLY for visualization (after segments are calculated!)
             from modules.cost_spec import create_robust_monotonic_frontier
             
             # Create temporary dataframe for monotonic filtering
@@ -936,69 +978,70 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
             trendline_features = np.array(list(monotonic_frontier.index))
             trendline_costs = np.array(list(monotonic_frontier.values))
             
-            logger.info(f"✅ Trendline filtering for {feature}: {len(trendline_features)} points for smooth line (from {len(frontier_data_points)} raw market points)")
-            
-            # Step 2: Detect change points in the TRENDLINE (not raw market data!)
-            change_points = detect_change_points(trendline_features, trendline_costs)
-            logger.info(f"Detected {len(change_points)} change points for {feature} trendline")
-            
-            # Step 3: Fit piecewise linear segments on TRENDLINE
-            segments = fit_piecewise_linear(trendline_features, trendline_costs, change_points)
+            logger.info(f"✅ Created filtered trendline for {feature}: {len(trendline_features)} points for visualization (segments based on {len(frontier_data_points)} raw points)")
             logger.info(f"Fitted {len(segments)} segments for {feature} trendline (monotonicity applied to line only)")
             
-            # Generate smooth piecewise frontier points
+            # Transform ACTUAL market plans to marginal cost space (no theoretical points!)
             frontier_points = []
-            min_val = trendline_features.min()
-            max_val = trendline_features.max()
             
-            # Create detailed points for visualization
-            num_points_per_segment = 15
-            
-            for seg_idx, segment in enumerate(segments):
-                seg_start = segment['start_feature']
-                seg_end = segment['end_feature']
-                seg_slope = segment['marginal_cost']
-                seg_intercept = segment['intercept']
+            # For each actual market data point, calculate its marginal cost based on trendline segments
+            for feature_val, actual_cost in frontier_data_points:
+                # Find which segment this actual point belongs to
+                segment_marginal_cost = pure_coefficient  # fallback to original coefficient
+                segment_info = {'index': 0, 'range': 'linear'}
                 
-                # Generate points for this segment
-                if seg_idx == len(segments) - 1:  # Last segment
-                    seg_points = np.linspace(seg_start, seg_end, num_points_per_segment)
-                else:
-                    seg_points = np.linspace(seg_start, seg_end, num_points_per_segment)[:-1]  # Exclude end to avoid duplication
-                
-                for feature_val in seg_points:
-                    # Piecewise linear cost calculation
-                    segment_cost = seg_intercept + (feature_val * seg_slope)
-                    
-                    # Cumulative cost calculation (integral of piecewise function)
-                    cumulative_cost = 0
-                    for prev_seg in segments:
-                        if prev_seg['end_feature'] < feature_val:
-                            # Full segment contribution
-                            seg_length = prev_seg['end_feature'] - prev_seg['start_feature']
-                            avg_cost = prev_seg['marginal_cost']
-                            cumulative_cost += seg_length * avg_cost
-                        elif prev_seg['start_feature'] <= feature_val <= prev_seg['end_feature']:
-                            # Partial segment contribution
-                            seg_length = feature_val - prev_seg['start_feature']
-                            avg_cost = prev_seg['marginal_cost']
-                            cumulative_cost += seg_length * avg_cost
-                            break
-                    
-                    frontier_points.append({
-                        'feature_value': float(feature_val),
-                        'pure_cost': float(segment_cost),
-                        'marginal_cost': float(seg_slope),  # Marginal cost for this segment
-                        'cumulative_cost': float(cumulative_cost),
-                        'segment': f'segment_{seg_idx}',
-                        'segment_info': {
+                for seg_idx, segment in enumerate(segments):
+                    if segment['start_feature'] <= feature_val <= segment['end_feature']:
+                        segment_marginal_cost = segment['marginal_cost']
+                        segment_info = {
                             'index': seg_idx,
-                            'start': float(seg_start),
-                            'end': float(seg_end),
-                            'slope': float(seg_slope),
-                            'range': f"{seg_start:.1f}-{seg_end:.1f}"
+                            'start': float(segment['start_feature']),
+                            'end': float(segment['end_feature']),
+                            'slope': float(segment['marginal_cost']),
+                            'range': f"{segment['start_feature']:.1f}-{segment['end_feature']:.1f}"
                         }
-                    })
+                        break
+                
+                # Calculate cumulative cost up to this point (integral of piecewise function)
+                cumulative_cost = 0
+                for prev_seg in segments:
+                    if prev_seg['end_feature'] < feature_val:
+                        # Full segment contribution
+                        seg_length = prev_seg['end_feature'] - prev_seg['start_feature']
+                        avg_cost = prev_seg['marginal_cost']
+                        cumulative_cost += seg_length * avg_cost
+                    elif prev_seg['start_feature'] <= feature_val <= prev_seg['end_feature']:
+                        # Partial segment contribution
+                        seg_length = feature_val - prev_seg['start_feature']
+                        avg_cost = prev_seg['marginal_cost']
+                        cumulative_cost += seg_length * avg_cost
+                        break
+                
+                # Calculate total marginal cost for this feature
+                total_marginal_cost = feature_val * segment_marginal_cost
+                
+                # Debug: Check if marginal cost exceeds actual cost (mathematical inconsistency)
+                if total_marginal_cost > actual_cost:
+                    logger.warning(f"🚨 INCONSISTENCY: {feature} plan with {feature_val} units has total marginal cost ₩{total_marginal_cost:,.0f} > actual cost ₩{actual_cost:,.0f} (marginal rate: ₩{segment_marginal_cost:.0f}/unit)")
+                
+                # Calculate what the model predicts for this plan (features only, no base cost)
+                # Note: This is a single-feature analysis, so full model prediction would need all features
+                predicted_cost_single_feature = total_marginal_cost  # No base cost - you pay for what you get
+                
+                # Transform actual market point to marginal cost representation
+                frontier_points.append({
+                    'feature_value': float(feature_val),
+                    'actual_cost': float(actual_cost),  # Keep original actual cost for reference
+                    'marginal_cost': float(segment_marginal_cost),  # Marginal cost from trendline segment
+                    'total_marginal_cost': float(total_marginal_cost),  # This feature's total contribution
+                    'predicted_single_feature_cost': float(predicted_cost_single_feature),  # Base + this feature only
+                    'cumulative_cost': float(cumulative_cost),
+                    'segment': f'segment_{segment_info["index"]}',
+                    'segment_info': segment_info,
+                    'is_actual_plan': True  # Flag to show these are real market plans, not theoretical
+                })
+            
+            logger.info(f"✅ Transformed {len(frontier_points)} ACTUAL market plans to marginal cost space for {feature}")
         
         # Find actual plans for comparison (ALL cheapest points, not sampled!)
         actual_plan_points = []
