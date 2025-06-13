@@ -1379,7 +1379,10 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 if (!canvas || !data.feature_costs) return;
                 
                 const features = Object.keys(data.feature_costs);
-                const costs = Object.values(data.feature_costs);
+                const costs = Object.values(data.feature_costs).map(cost => {
+                    // Handle both nested object format and simple numeric format
+                    return typeof cost === 'object' ? cost.coefficient || cost.cost_per_unit || 0 : cost;
+                });
                 const labels = features.map(f => {
                     const displayNames = {
                         'basic_data_clean': 'Data (GB)',
@@ -1471,7 +1474,9 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                         'is_5g': '5G'
                     };
                     labels.push(displayNames[feature] || feature);
-                    values.push(cost);
+                    // Handle both nested object format and simple numeric format
+                    const costValue = typeof cost === 'object' ? cost.coefficient || cost.cost_per_unit || 0 : cost;
+                    values.push(Math.abs(costValue)); // Use absolute value for visualization
                     colors.push([
                         'rgba(52, 152, 219, 0.8)',
                         'rgba(46, 204, 113, 0.8)',

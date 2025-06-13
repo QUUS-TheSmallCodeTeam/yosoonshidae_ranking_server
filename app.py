@@ -78,8 +78,6 @@ async def startup_event():
 # Global variables for storing data
 df_with_rankings = None  # Global variable to store the latest rankings
 latest_logical_test_results_cache = None  # For storing logical test results
-cached_html_content = None  # Cache for HTML content to avoid regeneration
-cached_html_timestamp = None  # Timestamp of cached content
 
 # Async chart calculation globals
 chart_calculation_status = {
@@ -164,7 +162,7 @@ async def calculate_charts_async(df_ranked, method, cost_structure, request_id):
     Asynchronously calculate charts and generate HTML report.
     This runs in the background after the API response is sent.
     """
-    global cached_html_content, cached_html_timestamp, chart_calculation_status
+    global chart_calculation_status
     
     try:
         chart_calculation_status['is_calculating'] = True
@@ -206,10 +204,6 @@ async def calculate_charts_async(df_ranked, method, cost_structure, request_id):
         # Write HTML content to file
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(html_report)
-        
-        # Update cache
-        cached_html_content = html_report
-        cached_html_timestamp = timestamp_now
         
         chart_calculation_status['calculation_progress'] = 100
         chart_calculation_status['is_calculating'] = False
@@ -299,439 +293,129 @@ class PlanInput(BaseModel):
 # HTML report generation and saving is now handled by the modules.report module
 
 # Define FastAPI endpoints
-@app.get("/", response_class=HTMLResponse)
-def read_root(basic: bool = False):
+@app.get("/")
+async def root(basic: bool = False):
     """
-    Serve the latest ranking HTML report if available, or show calculation status.
+    Root endpoint that shows either:
+    1. Visual status indicators if charts are calculating or failed
+    2. Full HTML report if charts are ready
+    3. Basic report if basic=true parameter is provided
     """
-    global cached_html_content, cached_html_timestamp, chart_calculation_status
+    global df_with_rankings, chart_calculation_status
     
-    # If basic report is requested and we have data, show it
-    if basic and config.df_with_rankings is not None:
-        try:
-            df_for_html = config.df_with_rankings.copy()
-            is_cs = any(col for col in df_for_html.columns if col == 'CS')
-            
-            if is_cs:
-                df_for_html = df_for_html.sort_values('CS', ascending=False)
-                basic_html = generate_basic_html_report(df_for_html)
-                return HTMLResponse(content=basic_html)
-        except Exception as e:
-            logger.error(f"Error generating basic report: {e}")
-    
-    # Check if we have rankings in memory first
-    if config.df_with_rankings is not None:
-        # Check if we have cached content that's still fresh (less than 5 minutes old)
-        current_time = datetime.now()
-        if (cached_html_content is not None and 
-            cached_html_timestamp is not None and 
-            (current_time - cached_html_timestamp).total_seconds() < 300):  # 5 minutes
-            return HTMLResponse(content=cached_html_content)
+    try:
+        # If basic report requested, generate simple HTML without charts
+        if basic:
+            if df_with_rankings is not None:
+                html_report = generate_html_report(
+                    df_with_rankings, 
+                    datetime.now(), 
+                    is_cs=True, 
+                    title="Basic Cost-Spec Rankings (No Charts)",
+                    method="basic",
+                    cost_structure=None
+                )
+                return HTMLResponse(content=html_report)
+            else:
+                return HTMLResponse(content="<h1>No data available. Please process data first via /process endpoint.</h1>")
         
-        # If charts are currently being calculated, show status page
+        # Check if we have data
+        if df_with_rankings is None:
+            return HTMLResponse(content="<h1>No data available. Please process data first via /process endpoint.</h1>")
+        
+        # Check chart calculation status
         if chart_calculation_status['is_calculating']:
-            progress = chart_calculation_status['calculation_progress']
-            status_html = f"""
+            # Show loading status
+            progress_html = f"""
+            <!DOCTYPE html>
             <html>
-                <head>
-                    <title>Generating Charts - Moyo Plan Rankings</title>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; background-color: #f8f9fa; }}
-                        .status-container {{ max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-                        .progress-container {{ width: 100%; margin: 30px 0; background-color: #e9ecef; border-radius: 10px; overflow: hidden; }}
-                        .progress-bar {{ height: 20px; background: linear-gradient(90deg, #007bff, #0056b3); border-radius: 10px; transition: width 0.3s ease; }}
-                        .status {{ margin: 20px 0; font-size: 18px; color: #495057; }}
-                        .loading-icon {{ font-size: 48px; margin: 20px 0; animation: spin 2s linear infinite; }}
-                        .refresh-btn {{ background-color: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 20px; }}
-                        .refresh-btn:hover {{ background-color: #0056b3; }}
-                        @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
-                        .eta {{ font-size: 14px; color: #6c757d; margin-top: 10px; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="status-container">
-                        <h1>📊 Multi-Feature Frontier Regression Analysis</h1>
-                        <div class="loading-icon">⚙️</div>
-                        <div class="status">Processing advanced visualizations...</div>
-                        <div class="progress-container">
-                            <div class="progress-bar" style="width: {progress}%"></div>
-                        </div>
-                        <p><strong>{progress}% Complete</strong></p>
-                        <div class="eta">
-                            {'Estimated time remaining: 30-45 seconds' if progress < 50 else 'Almost done! 10-15 seconds remaining'}
-                        </div>
-                        <button class="refresh-btn" onclick="window.location.reload()">🔄 Check Progress</button>
-                        <hr style="margin: 30px 0;">
-                        <p style="font-size: 14px; color: #6c757d;">
-                            The system is generating advanced multi-frontier regression charts and cost structure analysis.<br>
-                            <strong>Manual refresh recommended</strong> - Click "Check Progress" or refresh the page to see updates.
-                        </p>
-                    </div>
-                </body>
+            <head>
+                <title>Charts Calculating...</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; }}
+                    .status-card {{ 
+                        background: #f0f8ff; 
+                        border: 2px solid #4CAF50; 
+                        border-radius: 10px; 
+                        padding: 30px; 
+                        margin: 20px auto; 
+                        max-width: 500px; 
+                    }}
+                    .loading-icon {{ font-size: 48px; margin-bottom: 20px; }}
+                    .progress {{ font-size: 18px; color: #666; }}
+                </style>
+            </head>
+            <body>
+                <div class="status-card">
+                    <div class="loading-icon">⚙️</div>
+                    <h2>Multi-Feature Frontier Regression Analysis</h2>
+                    <p class="progress">Calculating charts... {chart_calculation_status['calculation_progress']}%</p>
+                    <p><a href="/">Refresh to check progress</a> | <a href="/?basic=true">View basic report</a></p>
+                </div>
+            </body>
             </html>
             """
-            return HTMLResponse(content=status_html)
+            return HTMLResponse(content=progress_html)
         
-        # If there was an error in chart calculation, show error page
-        if chart_calculation_status['error_message']:
+        elif chart_calculation_status['error_message']:
+            # Show error status
             error_html = f"""
+            <!DOCTYPE html>
             <html>
-                <head>
-                    <title>Chart Generation Failed - Moyo Plan Rankings</title>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; background-color: #f8f9fa; }}
-                        .error-container {{ max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border-left: 5px solid #dc3545; }}
-                        .error-icon {{ font-size: 48px; margin: 20px 0; color: #dc3545; }}
-                        .error-title {{ color: #dc3545; margin-bottom: 20px; }}
-                        .error-message {{ background-color: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0; font-family: monospace; text-align: left; }}
-                        .retry-btn {{ background-color: #28a745; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 10px; }}
-                        .retry-btn:hover {{ background-color: #218838; }}
-                        .basic-btn {{ background-color: #6c757d; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 10px; }}
-                        .basic-btn:hover {{ background-color: #5a6268; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="error-container">
-                        <h1 class="error-title">❌ Chart Generation Failed</h1>
-                        <div class="error-icon">⚠️</div>
-                        <p>The advanced chart generation encountered an error:</p>
-                        <div class="error-message">{chart_calculation_status['error_message']}</div>
-                        <p>You can try the following options:</p>
-                        <button class="retry-btn" onclick="window.location.href='/process'">🔄 Process New Data</button>
-                        <button class="basic-btn" onclick="generateBasicReport()">📋 Show Basic Report</button>
-                        <hr style="margin: 30px 0;">
-                        <p style="font-size: 14px; color: #6c757d;">
-                            The ranking calculations completed successfully, but chart visualization failed.<br>
-                            You can still access the ranking data through the API or process new data.
-                        </p>
-                    </div>
-                    <script>
-                        function generateBasicReport() {{
-                            // Redirect to a basic report endpoint
-                            window.location.href = '/?basic=true';
-                        }}
-                    </script>
-                </body>
+            <head>
+                <title>Chart Generation Failed</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; }}
+                    .status-card {{ 
+                        background: #fff0f0; 
+                        border: 2px solid #f44336; 
+                        border-radius: 10px; 
+                        padding: 30px; 
+                        margin: 20px auto; 
+                        max-width: 500px; 
+                    }}
+                    .error-icon {{ font-size: 48px; margin-bottom: 20px; }}
+                    .error-msg {{ font-size: 14px; color: #666; background: #f5f5f5; padding: 10px; border-radius: 5px; }}
+                </style>
+            </head>
+            <body>
+                <div class="status-card">
+                    <div class="error-icon">❌</div>
+                    <h2>Chart Generation Failed</h2>
+                    <p>There was an error generating the charts.</p>
+                    <div class="error-msg">{chart_calculation_status['error_message']}</div>
+                    <p><a href="/">Try again</a> | <a href="/?basic=true">View basic report</a></p>
+                </div>
+            </body>
             </html>
             """
             return HTMLResponse(content=error_html)
         
-        # If there was an error in chart calculation, show basic report without charts
-        if chart_calculation_status['error_message']:
-            try:
-                # Generate a simple report without expensive chart calculations
-                df_for_html = config.df_with_rankings.copy()
-                is_cs = any(col for col in df_for_html.columns if col == 'CS')
-                
-                if is_cs:
-                    df_for_html = df_for_html.sort_values('CS', ascending=False)
-                    
-                    # Generate basic HTML without charts
-                    basic_html = generate_basic_html_report(df_for_html)
-                    return HTMLResponse(content=basic_html)
-                    
-            except Exception as e:
-                logger.error(f"Error generating basic report: {e}")
-                # Fall back to looking for files
-    
-    # Look for the latest HTML report in all potential directories
-    report_dirs = [
-        config.cs_report_dir,        # CS reports
-        Path("./reports"), 
-        Path("/tmp/reports"), 
-        Path("/tmp")
-    ]
-    
-    html_files = []
-    for reports_dir in report_dirs:
-        if reports_dir.exists():
-            # Look for all ranking reports
-            html_files.extend(list(reports_dir.glob("*ranking_*.html")))
-    
-    if not html_files:
-        # No reports found, return welcome message
-        return """
-        <html>
-            <head>
-                <title>Moyo Ranking Model API</title>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
-                    h1 { color: #2c3e50; }
-                    .method-info { background-color: #f8f9fa; padding: 15px; border-left: 4px solid #28a745; margin-bottom: 20px; }
-                    .button-group { margin-bottom: 15px; }
-                    button { padding: 10px 15px; background-color: #007bff; color: white; border: none; 
-                             border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px; }
-                    button:hover { background-color: #0056b3; }
-                    button.active { background-color: #28a745; }
-                    .hidden { display: none; }
-                </style>
-            </head>
-            <body>
-                <h1>Welcome to the Moyo Ranking Model API</h1>
-                
-                <div class="method-info">
-                    <h2>Enhanced Cost-Spec Ratio Method</h2>
-                    <p>This API offers advanced Cost-Spec analysis with two methods:</p>
-                    
-                    <h3>🔬 Linear Decomposition Method (Default, Recommended)</h3>
-                    <ul>
-                        <li><strong>Advanced Analysis</strong>: Extracts true marginal costs for individual features</li>
-                        <li><strong>Fair Baselines</strong>: Eliminates double-counting artifacts</li>
-                        <li><strong>Realistic Ratios</strong>: CS ratios typically 0.8-1.5x (realistic efficiency)</li>
-                        <li><strong>Cost Discovery</strong>: Reveals actual marginal costs for strategic insights</li>
-                        <li><strong>Mathematical Model</strong>: plan_cost = β₀ + β₁×data + β₂×voice + β₃×SMS + ...</li>
-                    </ul>
-                    
-                    <h3>📈 Frontier-Based Method (Legacy)</h3>
-                    <ul>
-                        <li><strong>Traditional Approach</strong>: Identifies minimum costs for each feature level</li>
-                        <li><strong>Simple Logic</strong>: Sums frontier costs to create baselines</li>
-                        <li><strong>Note</strong>: May show inflated CS ratios (4-7x) due to double-counting</li>
-                        <li><strong>Compatibility</strong>: Maintained for comparison and legacy support</li>
-                    </ul>
-                </div>
-                
-                <p>No ranking reports are available yet. Use the <code>/process</code> endpoint to analyze data and generate rankings.</p>
-                
-                <div class="method-info">
-                    <h3>API Usage</h3>
-                    <p>Submit plan data to generate rankings using the Enhanced Cost-Spec method:</p>
-                    <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto;">
-{
-  "options": {
-    "method": "linear_decomposition",  // or "frontier"
-    "featureSet": "basic",
-    "feeColumn": "fee",
-    "tolerance": 500,
-    "includeComparison": false
-  },
-  "data": [
-    { "id": 1, "plan_name": "Plan A", "fee": 10000, ... },
-    { "id": 2, "plan_name": "Plan B", "fee": 15000, ... }
-  ]
-}
-                    </pre>
-                    <p><strong>Options:</strong></p>
-                    <ul>
-                        <li><code>method</code>: "linear_decomposition" (default) or "frontier"</li>
-                        <li><code>tolerance</code>: Optimization tolerance for linear decomposition (default: 500)</li>
-                        <li><code>includeComparison</code>: Include both methods in results (default: false)</li>
-                        <li><code>featureSet</code>: Feature set to use (default: "basic")</li>
-                        <li><code>feeColumn</code>: Fee column for analysis (default: "fee")</li>
-                    </ul>
-                </div>
-
-                <h2>Method Selection</h2>
-                <div class="button-group">
-                    <strong>Analysis Method:</strong><br>
-                    <button id="multi-frontier-btn" class="active" onclick="changeMethod('multi_frontier')">Multi-Frontier Regression (Recommended)</button>
-                    <button id="decomp-btn" onclick="changeMethod('linear_decomposition')">Linear Decomposition</button>
-                    <button id="frontier-btn" onclick="changeMethod('frontier')">Frontier-Based (Legacy)</button>
-                </div>
-                
-                <div class="button-group">
-                    <strong>Fee Type:</strong><br>
-                    <button id="original-fee-btn" class="active" onclick="changeFeeType('original')">Original Fee</button>
-                    <button id="discounted-fee-btn" onclick="changeFeeType('discounted')">Discounted Fee</button>
-                </div>
-                
-                <p class="method-info">Note: These options will be applied when you generate a new report using the <code>/process</code> endpoint.</p>
-                
-                <hr>
-                <h3>Endpoints</h3>
-                <ul>
-                    <li><code>POST /process</code>: Submit plan data to analyze using Enhanced Cost-Spec method</li>
-                    <li><code>POST /test</code>: Echo back the request body (for debugging)</li>
-                </ul>
-                <hr>
-                <p><i>Navigate to /docs for API documentation (Swagger UI).</i></p>
-                
-                <script>
-                /* Current state */
-                let currentState = {
-                    method: "multi_frontier",
-                    feeType: "original"
-                };
-                
-                /* Change method */
-                function changeMethod(method) {
-                    /* Update buttons */
-                    document.getElementById('multi-frontier-btn').classList.remove('active');
-                    document.getElementById('decomp-btn').classList.remove('active');
-                    document.getElementById('frontier-btn').classList.remove('active');
-                    
-                    if (method === 'multi_frontier') {
-                        document.getElementById('multi-frontier-btn').classList.add('active');
-                    } else if (method === 'linear_decomposition') {
-                        document.getElementById('decomp-btn').classList.add('active');
-                    } else {
-                        document.getElementById('frontier-btn').classList.add('active');
-                    }
-                    
-                    /* Update state */
-                    currentState.method = method;
-                    console.log("Method changed to: " + method);
-                }
-                
-                /* Change fee type */
-                function changeFeeType(type) {
-                    /* Update buttons */
-                    document.getElementById('original-fee-btn').classList.remove('active');
-                    document.getElementById('discounted-fee-btn').classList.remove('active');
-                    document.getElementById(type + '-fee-btn').classList.add('active');
-                    
-                    /* Update state */
-                    currentState.feeType = type;
-                    console.log("Fee type changed to: " + type);
-                }
-                </script>
-            </body>
-        </html>
-        """
-    
-    # Get the latest report by modification time
-    latest_report = max(html_files, key=lambda x: x.stat().st_mtime)
-    
-    # Check if this is a CS report based on the filename
-    is_cs_report = 'cs' in latest_report.name.lower()
-    
-    # If it's a file from the CS reports directory, it's definitely a CS report
-    if latest_report.parent == config.cs_report_dir:
-        is_cs_report = True
-    
-    # Read the HTML file content
-    with open(latest_report, 'r', encoding='utf-8') as f:
-        html_content = f.read()
-    
-    # Set the latest_report_path variable for reference
-    latest_report_path = f"/reports/cs_reports/{latest_report.name}"
-    
-    # Read and return the HTML content
-    try:
-        # Insert additional UI controls before the closing </body> tag
-        if '</body>' in html_content:
-            interactive_controls = """
-            <hr>
-            <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #28a745; margin: 20px 0;">
-                <h3>Cost-Spec Ratio Method</h3>
-                <p>This report uses the Cost-Spec ratio method to evaluate plan value:</p>
-                <ol>
-                    <li>Calculate baseline costs for each feature value</li>
-                    <li>Sum baseline costs to get a theoretical baseline cost (B) for each plan</li>
-                    <li>Calculate Cost-Spec ratio (CS = B / fee)</li>
-                    <li>Rank plans by CS ratio (higher is better)</li>
-                </ol>
-                
-                <div style="margin-top: 20px;">
-                    <h3>Ranking Options</h3>
-                    <div style="margin-bottom: 15px;">
-                        <strong>Fee Type:</strong><br>
-                        <button id="original-fee-btn" class="active" style="padding: 10px 15px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px;" onclick="changeFeeType('original')">Original Fee</button>
-                        <button id="discounted-fee-btn" style="padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px;" onclick="changeFeeType('discounted')">Discounted Fee</button>
-                    </div>
-                </div>
-            </div>
+        else:
+            # Charts are ready - generate fresh HTML report
+            method = getattr(df_with_rankings, 'method', 'multi_frontier')
+            cost_structure = getattr(df_with_rankings, 'cost_structure', None) or getattr(df_with_rankings, 'multi_frontier_breakdown', None)
             
-            <script>
-            /* Current state */
-            let currentState = {
-                feeType: "original"
-            };
+            method_name = {
+                "linear_decomposition": "Linear Decomposition",
+                "multi_frontier": "Multi-Feature Frontier Regression",
+                "frontier": "Frontier-Based"
+            }.get(method, "Enhanced Cost-Spec")
+            title = f"Enhanced Cost-Spec Rankings ({method_name})"
             
-            /* Change fee type */
-            function changeFeeType(type) {
-                /* Update buttons */
-                document.getElementById('original-fee-btn').classList.remove('active');
-                document.getElementById('discounted-fee-btn').classList.remove('active');
-                document.getElementById(type + '-fee-btn').classList.add('active');
-                
-                /* Update button styles */
-                document.getElementById('original-fee-btn').style.backgroundColor = '#007bff';
-                document.getElementById('discounted-fee-btn').style.backgroundColor = '#007bff';
-                document.getElementById(type + '-fee-btn').style.backgroundColor = '#28a745';
-                
-                /* Update state */
-                currentState.feeType = type;
-                console.log("Fee type changed to: " + type);
-            }
-            </script>
-            """
-            insert_pos = html_content.find('</body>')
-            html_content = html_content[:insert_pos] + interactive_controls + html_content[insert_pos:]
+            html_report = generate_html_report(
+                df_with_rankings, 
+                datetime.now(), 
+                is_cs=True, 
+                title=title,
+                method=method,
+                cost_structure=cost_structure
+            )
+            return HTMLResponse(content=html_report)
             
-        return html_content
     except Exception as e:
-        logger.error(f"Error reading HTML report: {e}")
-        return f"""
-        <html>
-            <head>
-                <title>Moyo Ranking Model API - Error</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }}
-                    h1 {{ color: #e74c3c; }}
-                    .method-info {{ background-color: #f8f9fa; padding: 15px; border-left: 4px solid #28a745; margin-bottom: 20px; }}
-                    .button-group {{ margin-bottom: 15px; }}
-                    button {{ padding: 10px 15px; background-color: #007bff; color: white; border: none; 
-                             border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px; }}
-                    button:hover {{ background-color: #0056b3; }}
-                    button.active {{ background-color: #28a745; }}
-                    .hidden {{ display: none; }}
-                </style>
-            </head>
-            <body>
-                <h1>Error Reading Report</h1>
-                
-                <div class="method-info">
-                    <h2>Cost-Spec Ratio Method</h2>
-                    <p>This API uses the Cost-Spec method to evaluate plan value:</p>
-                    <ol>
-                        <li>Calculate baseline costs for each feature value</li>
-                        <li>Sum baseline costs to get a theoretical baseline cost (B) for each plan</li>
-                        <li>Calculate Cost-Spec ratio (CS = B / fee)</li>
-                        <li>Rank plans by CS ratio (higher is better)</li>
-                    </ol>
-                </div>
-                
-                <p>Error reading report: {str(e)}</p>
-                <p>Please try generating a new report using the <code>/process</code> endpoint.</p>
-                
-                <h2>Ranking Options</h2>
-                <div class="button-group">
-                    <strong>Fee Type:</strong><br>
-                    <button id="original-fee-btn" class="active" onclick="changeFeeType('original')">Original Fee</button>
-                    <button id="discounted-fee-btn" onclick="changeFeeType('discounted')">Discounted Fee</button>
-                </div>
-                
-                <p class="method-info">Note: These options will be applied when you generate a new report using the <code>/process</code> endpoint.</p>
-                
-            <hr>
-            <h3>Endpoints</h3>
-            <ul>
-                    <li><code>POST /process</code>: Submit plan data (JSON list) to preprocess, rank using the Cost-Spec method, and generate a report.</li>
-                    <li><code>POST /test</code>: Echo back the request body (for debugging).</li>
-            </ul>
-            
-            <script>
-            /* Current state */
-            let currentState = {{
-                feeType: "original"
-            }};
-            
-            /* Change fee type */
-            function changeFeeType(type) {{
-                /* Update buttons */
-                document.getElementById('original-fee-btn').classList.remove('active');
-                document.getElementById('discounted-fee-btn').classList.remove('active');
-                document.getElementById(type + '-fee-btn').classList.add('active');
-                
-                /* Update state */
-                currentState.feeType = type;
-                console.log("Fee type changed to: " + type);
-            }}
-            </script>
-        </body>
-    </html>
-    """
+        logger.error(f"Error in root endpoint: {str(e)}")
+        return HTMLResponse(content=f"<h1>Error: {str(e)}</h1>", status_code=500)
 
 @app.post("/process")
 async def process_data(request: Request):
@@ -843,10 +527,9 @@ async def process_data(request: Request):
         # Store the complete dataframe
         config.df_with_rankings = df_ranked.copy()
         
-        # Invalidate HTML cache when new data is processed
-        global cached_html_content, cached_html_timestamp
-        cached_html_content = None
-        cached_html_timestamp = None
+        # Store the global dataframe for the root endpoint
+        global df_with_rankings
+        df_with_rankings = df_ranked.copy()
         
         # Step 7: Prepare response data first before HTML generation
         # First, ensure all float values are JSON-serializable

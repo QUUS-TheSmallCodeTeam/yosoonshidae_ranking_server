@@ -4,17 +4,27 @@
 - **Async chart calculation**: Implemented to eliminate continuous calculations triggered by root endpoint
 - **Visual status indicators**: Loading icons (⚙️) for in-progress, error icons (❌) for failed calculations
 - **Manual refresh system**: No auto-polling, users manually refresh to check progress
+- **No caching**: All HTML content generated fresh on each request for immediate status updates
 - **Multi-frontier regression methodology**: Successfully implemented and fully operational
 - **Chart visualization**: Advanced charts now calculated asynchronously in background
 - **API response time**: Immediate response from /process endpoint, charts calculated separately
 - **Default method**: Changed to `multi_frontier` for new analysis approach
-- **Web interface**: Updated with progress indicators and status pages
-- **Data processing**: Successfully handling 1000+ mobile plans
-- **Performance**: No infinite loops, proper serialization, stable operation
-- **Server startup**: Dockerfile simplified to use direct uvicorn command
-- **Logging optimized**: Info logging disabled at "/" endpoint to prevent SSH remote polling spam
-- **HTML caching**: 5-minute cache implemented with async chart generation
-- **Continuous calculation issue**: RESOLVED - Charts now calculated only when new data is processed
+- **Chart data format**: Fixed JavaScript chart functions to handle nested cost structure objects
+- **Linear decomposition charts**: Now properly extracting coefficient values from nested data structures
+
+## 🎯 User Requirements & Preferences
+- **No auto-refresh**: Manual refresh only, no constant polling
+- **Visual feedback**: Clear status indicators for chart calculation progress
+- **Immediate API response**: /process endpoint returns instantly, charts calculated separately
+- **Fresh content**: No caching, all content generated on-demand
+- **Comprehensive analysis**: Both frontier and linear decomposition methods displayed together
+
+## 🔧 Technical Implementation Details
+- **Infinite loop fix**: Added safety counters and division-by-zero checks in `prepare_feature_frontier_data`
+- **Logging optimization**: Reduced verbose logging to prevent SSH polling spam
+- **Dual method display**: Shows both multi-frontier and linear decomposition results simultaneously
+- **Chart data handling**: JavaScript functions now properly parse nested coefficient objects
+- **Background processing**: Chart calculations run asynchronously without blocking API responses
 
 ## 🎯 Working Methods
 - **Multi-frontier regression**: Eliminates cross-contamination by using complete feature vectors
