@@ -29,5 +29,5 @@ ENV PYTHONPATH=/app
 # Make log monitor script executable
 RUN chmod +x /app/simple_log_monitor.sh
 
-# Start server first, then log monitoring
-CMD ["bash", "-c", "uvicorn app:app --host 0.0.0.0 --port 7860 & sleep 3 && ./simple_log_monitor.sh & wait"] 
+# Start server first, then log monitoring  
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 7860 & sleep 3 && ./simple_log_monitor.sh & wait"] 
