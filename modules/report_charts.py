@@ -853,17 +853,17 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
             
         logger.info(f"Creating PIECEWISE LINEAR frontier for {feature} with base coefficient: {pure_coefficient}")
         
-        # Get actual frontier data points using SAME METHODOLOGY as original frontier
+        # Get RAW MARKET DATA for actual plan points (same as traditional frontier)
         feature_values = df[feature].dropna()
         if feature_values.empty:
             continue
         
-        from modules.cost_spec import create_robust_monotonic_frontier, UNLIMITED_FLAGS
+        from modules.cost_spec import UNLIMITED_FLAGS
         
         # Apply same unlimited handling as original system
         unlimited_flag = UNLIMITED_FLAGS.get(feature)
         
-        # Process non-unlimited plans with robust monotonic frontier
+        # Process non-unlimited plans to get RAW cheapest points (no monotonic filtering yet!)
         if unlimited_flag and unlimited_flag in df.columns:
             df_non_unlimited = df[(df[unlimited_flag] == 0) & df['original_fee'].notna()].copy()
         else:
@@ -873,26 +873,32 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
             logger.warning(f"No non-unlimited plans found for {feature}")
             continue
         
-        # Use SAME monotonic frontier logic with 1 KRW/feature rule
-        robust_frontier = create_robust_monotonic_frontier(df_non_unlimited, feature, 'original_fee')
+        # Get ALL cheapest points at each feature level (same as traditional frontier!)
+        unique_vals = sorted(df_non_unlimited[feature].unique())
+        frontier_data_points = []
         
-        if robust_frontier.empty:
-            logger.warning(f"No valid monotonic frontier for {feature}")
-            continue
+        for val in unique_vals:
+            matching_plans = df_non_unlimited[df_non_unlimited[feature] == val]
+            if not matching_plans.empty:
+                min_cost = matching_plans['original_fee'].min()
+                frontier_data_points.append((val, min_cost))
         
-        # Convert robust frontier to data points for piecewise analysis
-        frontier_data_points = [(val, cost) for val, cost in robust_frontier.items()]
+        logger.info(f"✅ Collected RAW market data for {feature}: {len(frontier_data_points)} cheapest points at each level")
         
-        # Handle unlimited plans separately (same as original system)
-        unlimited_endpoint = None
+        # Handle unlimited plans SEPARATELY as FLAG (not continuous data)
+        unlimited_info = None
         if unlimited_flag and unlimited_flag in df.columns:
             unlimited_plans = df[(df[unlimited_flag] == 1) & df['original_fee'].notna()]
             if not unlimited_plans.empty:
                 min_unlimited_cost = unlimited_plans['original_fee'].min()
-                # Find max feature value for unlimited endpoint
-                max_feature_val = df[feature].max() if not df[feature].empty else 100
-                unlimited_endpoint = (max_feature_val * 2, min_unlimited_cost)  # Use 2x max as "unlimited"
-                logger.info(f"✅ Found unlimited {feature} plans: cheapest at ₩{min_unlimited_cost}")
+                unlimited_plan_name = unlimited_plans.loc[unlimited_plans['original_fee'].idxmin()].get('plan_name', 'Unknown')
+                unlimited_info = {
+                    'has_unlimited': True,
+                    'min_cost': float(min_unlimited_cost),
+                    'plan_name': unlimited_plan_name,
+                    'count': len(unlimited_plans)
+                }
+                logger.info(f"✅ Found unlimited {feature} plans: cheapest at ₩{min_unlimited_cost} (FLAG, not continuous data)")
         
         logger.info(f"✅ Applied monotonic filtering for {feature}: {len(frontier_data_points)} points (was {len(feature_values.unique())} raw points)")
         
@@ -914,28 +920,36 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
                     'segment': 'linear'
                 })
         else:
-            # PIECEWISE LINEAR ANALYSIS with monotonic + unlimited data
+            # PIECEWISE LINEAR ANALYSIS for TRENDLINE (monotonicity applied only to trendline!)
             
-            # Add unlimited endpoint if available
-            if unlimited_endpoint:
-                frontier_data_points.append(unlimited_endpoint)
-                logger.info(f"✅ Added unlimited endpoint for {feature}: {unlimited_endpoint}")
+            # Step 1: Apply monotonicity filtering ONLY for trendline calculation
+            from modules.cost_spec import create_robust_monotonic_frontier
             
-            frontier_features = np.array([p[0] for p in frontier_data_points])
-            frontier_costs = np.array([p[1] for p in frontier_data_points])
+            # Create temporary dataframe for monotonic filtering
+            temp_df = pd.DataFrame(frontier_data_points, columns=[feature, 'original_fee'])
+            monotonic_frontier = create_robust_monotonic_frontier(temp_df, feature, 'original_fee')
             
-            # Detect change points in the FILTERED monotonic frontier
-            change_points = detect_change_points(frontier_features, frontier_costs)
-            logger.info(f"Detected {len(change_points)} change points for {feature} (monotonic data)")
+            if monotonic_frontier.empty:
+                logger.warning(f"No valid monotonic trendline for {feature}")
+                continue
+                
+            trendline_features = np.array(list(monotonic_frontier.index))
+            trendline_costs = np.array(list(monotonic_frontier.values))
             
-            # Fit piecewise linear segments on FILTERED data
-            segments = fit_piecewise_linear(frontier_features, frontier_costs, change_points)
-            logger.info(f"Fitted {len(segments)} segments for {feature} (with monotonicity + 1KRW rule)")
+            logger.info(f"✅ Trendline filtering for {feature}: {len(trendline_features)} points for smooth line (from {len(frontier_data_points)} raw market points)")
+            
+            # Step 2: Detect change points in the TRENDLINE (not raw market data!)
+            change_points = detect_change_points(trendline_features, trendline_costs)
+            logger.info(f"Detected {len(change_points)} change points for {feature} trendline")
+            
+            # Step 3: Fit piecewise linear segments on TRENDLINE
+            segments = fit_piecewise_linear(trendline_features, trendline_costs, change_points)
+            logger.info(f"Fitted {len(segments)} segments for {feature} trendline (monotonicity applied to line only)")
             
             # Generate smooth piecewise frontier points
             frontier_points = []
-            min_val = frontier_features.min()
-            max_val = frontier_features.max()
+            min_val = trendline_features.min()
+            max_val = trendline_features.max()
             
             # Create detailed points for visualization
             num_points_per_segment = 15
@@ -986,37 +1000,36 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
                         }
                     })
         
-        # Find actual plans for comparison
+        # Find actual plans for comparison (ALL cheapest points, not sampled!)
         actual_plan_points = []
-        unique_feature_vals = sorted(feature_values.unique())
         
-        sample_points = []
-        if len(unique_feature_vals) > 10:
-            step = len(unique_feature_vals) // 10
-            sample_points = unique_feature_vals[::step]
-        else:
-            sample_points = unique_feature_vals
+        # Use ALL frontier data points as actual market plans (same as traditional frontier)
+        for feature_val, actual_cost in frontier_data_points:
+            # Find the actual plan for this point
+            matching_plans = df_non_unlimited[
+                (df_non_unlimited[feature] == feature_val) & 
+                (df_non_unlimited['original_fee'] == actual_cost)
+            ]
             
-        for feature_val in sample_points[:15]:
-            matching_plans = df[df[feature] == feature_val]
             if not matching_plans.empty:
-                cheapest_idx = matching_plans['original_fee'].idxmin()
-                cheapest_plan = matching_plans.loc[cheapest_idx]
+                plan_row = matching_plans.iloc[0]
                 
-                # Find which segment this point belongs to
-                segment_info = "linear"
-                if len(segments) > 1:
+                # Find which trendline segment this point belongs to (for info only)
+                segment_info = "market_point"
+                if 'segments' in locals() and len(segments) > 1:
                     for seg in segments:
                         if seg['start_feature'] <= feature_val <= seg['end_feature']:
-                            segment_info = f"Segment {seg['start_feature']:.1f}-{seg['end_feature']:.1f} (₩{seg['marginal_cost']:.0f}/{feature_units.get(feature, 'unit').split('/')[-1]})"
+                            segment_info = f"Trendline Segment {seg['start_feature']:.1f}-{seg['end_feature']:.1f}"
                             break
                 
                 actual_plan_points.append({
                     'feature_value': float(feature_val),
-                    'actual_cost': float(cheapest_plan['original_fee']),
-                    'plan_name': cheapest_plan.get('plan_name', 'Unknown'),
+                    'actual_cost': float(actual_cost),
+                    'plan_name': plan_row.get('plan_name', 'Unknown'),
                     'segment_info': segment_info
                 })
+        
+        logger.info(f"✅ Created {len(actual_plan_points)} actual market plan points for {feature} (same count as traditional frontier)")
         
         # Calculate comprehensive cost analysis
         if frontier_points:
@@ -1031,11 +1044,13 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
                 'base_cost': float(base_cost),
                 'frontier_points': frontier_points,
                 'actual_plan_points': actual_plan_points,
+                'unlimited_info': unlimited_info,  # 🔥 SEPARATE FLAG for unlimited
                 'piecewise_info': {
                     'is_piecewise': len(segments) > 1 if 'segments' in locals() else False,
                     'num_segments': len(segments) if 'segments' in locals() else 1,
                     'segments': segments if 'segments' in locals() else [],
-                    'change_points_detected': len(change_points) if 'change_points' in locals() else 0
+                    'change_points_detected': len(change_points) if 'change_points' in locals() else 0,
+                    'continuous_data_only': True  # 🔥 CONFIRM: no unlimited mixed in trendline
                 },
                 'feature_range': {
                     'min': float(feature_values.min()),

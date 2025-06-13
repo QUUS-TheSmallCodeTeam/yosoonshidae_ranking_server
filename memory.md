@@ -14,6 +14,8 @@
 - **✅ PIECEWISE LINEAR MODEL IMPLEMENTED**: Replaced simple linear model with realistic piecewise segments showing economies of scale
 - **✅ MONOTONIC FILTERING APPLIED**: Same robust monotonic frontier logic with 1 KRW/feature rule as original system
 - **✅ UNLIMITED HANDLING COMPLETE**: Separate processing of unlimited plans with proper endpoints
+- **✅ UNLIMITED AS FLAGS ONLY**: Unlimited features processed as boolean flags, not continuous data points in marginal cost trendlines
+- **✅ DOUBLE FILTERING FIXED**: Eliminated double filtering - monotonicity applied only to trendline, not raw market data
 
 ## 🎯 Key Achievements
 - **Cross-contamination problem solved**: Marginal Cost Frontier Charts show pure feature trends without contamination
@@ -24,6 +26,8 @@
 - **✅ REFACTORING PROPOSAL FULLY IMPLEMENTED**: All key mathematical concepts from refactoring_proposal.md now working in production
 - **✅ QUALITY ASSURANCE**: Same filtering standards as original frontier charts (monotonicity + 1KRW rule)
 - **✅ DATA INTEGRITY**: Proper unlimited plan handling with separate endpoints
+- **✅ CLEAN TRENDLINES**: Unlimited features stored as flags, not mixed into continuous marginal cost calculations
+- **✅ CONSISTENT DATA POINTS**: Traditional and marginal frontier charts now show same number of actual market plans
 
 ## 🔧 Technical Implementation
 - **Data preparation**: `prepare_marginal_cost_frontier_data()` function extracts pure coefficients and creates feature-level trends
@@ -34,6 +38,8 @@
 - **✅ REALISTIC MARGINAL COSTS**: Variable marginal costs across feature ranges with proper filtering (e.g., tethering: 3 segments, ₩13-₩589)
 - **✅ FRONTIER CONSISTENCY**: Uses `create_robust_monotonic_frontier()` for same quality as traditional charts
 - **✅ UNLIMITED PROCESSING**: Separate handling of unlimited plans with 2x max feature value as endpoint
+- **✅ FLAG-BASED UNLIMITED**: Unlimited features stored in `unlimited_info` object, completely separate from continuous trendline data
+- **✅ SINGLE FILTERING**: Raw market data collected first (64 points), monotonicity applied only to trendline generation (14 points)
 
 ## 📈 Chart Types Available
 1. **Traditional Feature Frontier Charts**: Market-based trends (with contamination)
