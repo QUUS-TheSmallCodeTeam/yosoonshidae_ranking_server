@@ -34,25 +34,28 @@ os.environ["PYTHONPATH"] = str(APP_DIR)
 # Configuration class
 from dataclasses import dataclass
 
-@dataclass
 class Config:
     """Application configuration."""
-    # Base paths
-    app_dir: Path = APP_DIR
-    data_dir: Path = DATA_DIR
-    report_dir: Path = REPORT_DIR_BASE
+    def __init__(self):
+        # Base paths
+        self.app_dir: Path = APP_DIR
+        self.data_dir: Path = DATA_DIR
+        self.report_dir: Path = REPORT_DIR_BASE
+        
+        # CS-specific paths
+        self.cs_input_dir: Path = DATA_DIR / "cs_input"
+        self.cs_raw_dir: Path = DATA_DIR / "raw"
+        self.cs_processed_dir: Path = DATA_DIR / "processed"
+        self.cs_report_dir: Path = REPORT_DIR_BASE / "cs_reports"
+        
+        # Global state - initialize as None but allow assignment
+        self.df_with_rankings: Optional[pd.DataFrame] = None
+        self.latest_logical_test_results: Optional[Dict[str, Any]] = None
+        
+        # Call post-init setup
+        self._post_init()
     
-    # CS-specific paths
-    cs_input_dir: Path = DATA_DIR / "cs_input"
-    cs_raw_dir: Path = DATA_DIR / "raw"
-    cs_processed_dir: Path = DATA_DIR / "processed"
-    cs_report_dir: Path = REPORT_DIR_BASE / "cs_reports"
-    
-    # Global state
-    df_with_rankings: Optional[pd.DataFrame] = None
-    latest_logical_test_results: Optional[Dict[str, Any]] = None
-    
-    def __post_init__(self):
+    def _post_init(self):
         """Initialize configuration after dataclass creation."""
         # Ensure all directories exist
         for path in [

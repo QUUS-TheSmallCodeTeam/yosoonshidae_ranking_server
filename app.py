@@ -78,6 +78,150 @@ async def startup_event():
 # Global variables for storing data
 df_with_rankings = None  # Global variable to store the latest rankings
 latest_logical_test_results_cache = None  # For storing logical test results
+cached_html_content = None  # Cache for HTML content to avoid regeneration
+cached_html_timestamp = None  # Timestamp of cached content
+
+# Async chart calculation globals
+chart_calculation_status = {
+    'is_calculating': False,
+    'last_calculation_time': None,
+    'calculation_progress': 0,
+    'error_message': None
+}
+chart_calculation_task = None  # Store the background task
+
+def generate_basic_html_report(df):
+    """
+    Generate a basic HTML report without expensive chart calculations.
+    Used when chart calculation fails or is in progress.
+    """
+    timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Get top 10 plans
+    top_10 = df.head(10)
+    
+    # Create simple table HTML
+    table_rows = ""
+    for idx, row in top_10.iterrows():
+        table_rows += f"""
+        <tr>
+            <td>{row.get('rank_number', idx+1)}</td>
+            <td>{row.get('plan_name', 'N/A')}</td>
+            <td>{row.get('mvno', 'N/A')}</td>
+            <td>₩{row.get('original_fee', 0):,.0f}</td>
+            <td>{row.get('CS', 0):.2f}</td>
+        </tr>
+        """
+    
+    basic_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Mobile Plan Rankings - Basic View</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; }}
+            table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
+            th, td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
+            th {{ background-color: #f2f2f2; }}
+            .note {{ background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0; }}
+        </style>
+    </head>
+    <body>
+        <h1>📱 Mobile Plan Rankings</h1>
+        <p><strong>Generated:</strong> {timestamp_str}</p>
+        
+        <div class="note">
+            <h3>⚠️ Basic View</h3>
+            <p>Advanced charts are being generated in the background. Refresh the page in a few moments to see the full report with visualizations.</p>
+        </div>
+        
+        <h2>Top 10 Plans by Cost-Spec Ratio</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Plan Name</th>
+                    <th>Provider</th>
+                    <th>Price</th>
+                    <th>CS Ratio</th>
+                </tr>
+            </thead>
+            <tbody>
+                {table_rows}
+            </tbody>
+        </table>
+        
+        <hr>
+        <p><em>For the complete analysis with advanced charts, please refresh this page in a few moments.</em></p>
+    </body>
+    </html>
+    """
+    
+    return basic_html
+
+async def calculate_charts_async(df_ranked, method, cost_structure, request_id):
+    """
+    Asynchronously calculate charts and generate HTML report.
+    This runs in the background after the API response is sent.
+    """
+    global cached_html_content, cached_html_timestamp, chart_calculation_status
+    
+    try:
+        chart_calculation_status['is_calculating'] = True
+        chart_calculation_status['calculation_progress'] = 10
+        chart_calculation_status['error_message'] = None
+        
+        logger.info(f"[{request_id}] Starting async chart calculation...")
+        
+        # Set up HTML report info
+        timestamp_now = datetime.now()
+        method_suffix = "decomp" if method == "linear_decomposition" else "frontier"
+        report_filename = f"cs_ranking_{method_suffix}_{timestamp_now.strftime('%Y%m%d_%H%M%S')}.html"
+        report_path = config.cs_report_dir / report_filename
+        
+        chart_calculation_status['calculation_progress'] = 30
+        
+        # Generate HTML content with method-specific title
+        method_name = {
+            "linear_decomposition": "Linear Decomposition",
+            "multi_frontier": "Multi-Feature Frontier Regression",
+            "frontier": "Frontier-Based"
+        }.get(method, "Enhanced Cost-Spec")
+        title = f"Enhanced Cost-Spec Rankings ({method_name})"
+        
+        chart_calculation_status['calculation_progress'] = 50
+        logger.info(f"[{request_id}] Generating HTML report with charts...")
+        
+        html_report = generate_html_report(
+            df_ranked, 
+            timestamp_now, 
+            is_cs=True, 
+            title=title,
+            method=method,
+            cost_structure=cost_structure
+        )
+        
+        chart_calculation_status['calculation_progress'] = 80
+        
+        # Write HTML content to file
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write(html_report)
+        
+        # Update cache
+        cached_html_content = html_report
+        cached_html_timestamp = timestamp_now
+        
+        chart_calculation_status['calculation_progress'] = 100
+        chart_calculation_status['is_calculating'] = False
+        chart_calculation_status['last_calculation_time'] = timestamp_now
+        
+        logger.info(f"[{request_id}] Async chart calculation completed successfully. Report saved to {report_path}")
+        
+    except Exception as e:
+        chart_calculation_status['is_calculating'] = False
+        chart_calculation_status['error_message'] = str(e)
+        chart_calculation_status['calculation_progress'] = 0
+        logger.error(f"[{request_id}] Error in async chart calculation: {str(e)}")
 
 # Data model for plan input 
 class PlanData(BaseModel):
@@ -158,58 +302,69 @@ class PlanInput(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 def read_root():
     """
-    Serve the latest ranking HTML report if available.
+    Serve the latest ranking HTML report if available, or show calculation status.
     """
+    global cached_html_content, cached_html_timestamp, chart_calculation_status
+    
     # Check if we have rankings in memory first
     if config.df_with_rankings is not None:
-        # Generate HTML report from the in-memory rankings
-        try:
-            # Check if this is a CS ranking based on column names
-            is_cs = any(col for col in config.df_with_rankings.columns if col == 'CS')
-            
-            # Create a copy to avoid modifying the original
-            df_for_html = config.df_with_rankings.copy()
-            
-            if is_cs:
-                # Sort by CS ratio descending to get the correct order
-                df_for_html = df_for_html.sort_values('CS', ascending=False)
+        # Check if we have cached content that's still fresh (less than 5 minutes old)
+        current_time = datetime.now()
+        if (cached_html_content is not None and 
+            cached_html_timestamp is not None and 
+            (current_time - cached_html_timestamp).total_seconds() < 300):  # 5 minutes
+            return HTMLResponse(content=cached_html_content)
+        
+        # If charts are currently being calculated, show status page
+        if chart_calculation_status['is_calculating']:
+            progress = chart_calculation_status['calculation_progress']
+            status_html = f"""
+            <html>
+                <head>
+                    <title>Generating Charts - Moyo Plan Rankings</title>
+                    <meta http-equiv="refresh" content="5">
+                    <style>
+                        body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; }}
+                        .progress-container {{ width: 80%; margin: 20px auto; background-color: #f0f0f0; border-radius: 10px; }}
+                        .progress-bar {{ height: 30px; background-color: #007bff; border-radius: 10px; transition: width 0.3s; }}
+                        .status {{ margin: 20px 0; font-size: 18px; }}
+                        .spinner {{ border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 2s linear infinite; margin: 20px auto; }}
+                        @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+                    </style>
+                </head>
+                <body>
+                    <h1>📊 Generating Enhanced Charts</h1>
+                    <div class="spinner"></div>
+                    <div class="status">Processing advanced visualizations...</div>
+                    <div class="progress-container">
+                        <div class="progress-bar" style="width: {progress}%"></div>
+                    </div>
+                    <p>{progress}% Complete</p>
+                    <p><em>This page will automatically refresh every 5 seconds</em></p>
+                    <hr>
+                    <p>The system is generating advanced multi-frontier regression charts and cost structure analysis. This typically takes 30-60 seconds.</p>
+                </body>
+            </html>
+            """
+            return HTMLResponse(content=status_html)
+        
+        # If there was an error in chart calculation, show basic report without charts
+        if chart_calculation_status['error_message']:
+            try:
+                # Generate a simple report without expensive chart calculations
+                df_for_html = config.df_with_rankings.copy()
+                is_cs = any(col for col in df_for_html.columns if col == 'CS')
                 
-                # Check if rank 1 exists for error detection
-                if 'rank_number' in df_for_html.columns:
-                    has_rank_one = 1 in df_for_html['rank_number'].values
-                    if not has_rank_one:
-                        logger.warning("No rank 1 found in original dataframe! This is unexpected.")
-                
-                # Extract method and cost_structure from the stored data
-                method = "linear_decomposition"  # Default
-                cost_structure = {}
-                
-                # Try to get method and cost_structure from DataFrame attrs
-                if hasattr(df_for_html, 'attrs'):
-                    if 'cost_structure' in df_for_html.attrs:
-                        cost_structure = df_for_html.attrs['cost_structure']
-                        method = "linear_decomposition"
-                    else:
-                        method = "frontier"
-                else:
-                    method = "frontier"
-                
-                # Generate report with CS method
-                html_content = generate_html_report(
-                    df_for_html, 
-                    datetime.now(), 
-                    is_cs=True, 
-                    title="Cost-Spec Mobile Plan Rankings",
-                    method=method,
-                    cost_structure=cost_structure
-                )
-            else:
-                html_content = generate_html_report(config.df_with_rankings, datetime.now())
-                
-            return HTMLResponse(content=html_content)
-        except Exception as e:
-            logger.error(f"Error generating report from in-memory rankings: {e}")
-            # Fall back to looking for files
+                if is_cs:
+                    df_for_html = df_for_html.sort_values('CS', ascending=False)
+                    
+                    # Generate basic HTML without charts
+                    basic_html = generate_basic_html_report(df_for_html)
+                    return HTMLResponse(content=basic_html)
+                    
+            except Exception as e:
+                logger.error(f"Error generating basic report: {e}")
+                # Fall back to looking for files
     
     # Look for the latest HTML report in all potential directories
     report_dirs = [
@@ -620,6 +775,11 @@ async def process_data(request: Request):
         # Store the complete dataframe
         config.df_with_rankings = df_ranked.copy()
         
+        # Invalidate HTML cache when new data is processed
+        global cached_html_content, cached_html_timestamp
+        cached_html_content = None
+        cached_html_timestamp = None
+        
         # Step 7: Prepare response data first before HTML generation
         # First, ensure all float values are JSON-serializable
         # Replace inf, -inf, and NaN with appropriate values
@@ -725,41 +885,46 @@ async def process_data(request: Request):
             "all_ranked_plans": convert_numpy_types(all_ranked_plans)
         }
         
-        # Try to generate HTML report, but don't block API response if it fails
+        # Start chart calculation in the background (non-blocking)
+        import asyncio
         try:
-            # Generate HTML content with method-specific title
-            method_name = {
-                "linear_decomposition": "Linear Decomposition",
-                "multi_frontier": "Multi-Feature Frontier Regression",
-                "frontier": "Frontier-Based"
-            }.get(method, "Enhanced Cost-Spec")
-            title = f"Enhanced Cost-Spec Rankings ({method_name})"
-            
-            html_report = generate_html_report(
-                df_ranked, 
-                timestamp_now, 
-                is_cs=True, 
-                title=title,
-                method=method,
-                cost_structure=cost_structure
+            # Create background task for chart calculation
+            loop = asyncio.get_event_loop()
+            chart_calculation_task = loop.create_task(
+                calculate_charts_async(df_ranked, method, cost_structure, request_id)
             )
-            
-            # Write HTML content to file
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write(html_report)
-            
-            logger.info(f"[{request_id}] HTML report successfully generated and saved to {report_path}")
+            logger.info(f"[{request_id}] Started background chart calculation task")
+            response["chart_status"] = "calculating"
         except Exception as e:
-            logger.error(f"[{request_id}] Error generating HTML report: {str(e)}")
-            response["message"] = "Data processing complete, but HTML report generation failed"
-            response["status"] = "partial_success"
-            response["error"] = f"HTML report generation failed: {str(e)}"
-            # We still return the ranking data even if HTML generation fails
+            logger.error(f"[{request_id}] Failed to start background chart calculation: {str(e)}")
+            response["chart_status"] = "failed_to_start"
+            response["chart_error"] = str(e)
         
         return response
     except Exception as e:
         logger.exception(f"[{request_id}] Error in /process: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing data: {str(e)}")
+
+@app.get("/chart-status")
+def get_chart_status():
+    """
+    Get the current status of chart calculation.
+    """
+    global chart_calculation_status
+    
+    status = chart_calculation_status.copy()
+    
+    # Add human-readable status
+    if status['is_calculating']:
+        status['status_text'] = "Calculating charts..."
+    elif status['error_message']:
+        status['status_text'] = f"Error: {status['error_message']}"
+    elif status['last_calculation_time']:
+        status['status_text'] = "Charts ready"
+    else:
+        status['status_text'] = "No calculations performed yet"
+    
+    return status
 
 @app.post("/test")
 def test(request: dict = Body(...)):

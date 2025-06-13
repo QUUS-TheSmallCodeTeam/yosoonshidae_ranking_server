@@ -42,7 +42,8 @@ def prepare_feature_frontier_data(df, core_continuous_features):
             logger.warning(f"'{cost_metric_for_visualization}' not found in dataframe, skipping visualization for {feature}")
             continue
 
-        logger.info(f"Preparing frontier chart data for feature: {feature} using '{cost_metric_for_visualization}'")
+        # Verbose logging disabled to prevent spam from frequent polling
+    # logger.info(f"Preparing frontier chart data for feature: {feature} using '{cost_metric_for_visualization}'")
 
         # Check if this feature has an unlimited flag
         unlimited_flag = UNLIMITED_FLAGS.get(feature)
@@ -100,7 +101,8 @@ def prepare_feature_frontier_data(df, core_continuous_features):
             for feature_val, cost_info in sorted_candidates:
                 candidate_points_details_series.append(cost_info['row'])
 
-            logger.info(f"Found {len(candidate_points_details_series)} minimum-cost candidate points for feature {feature}")
+            # Verbose logging disabled to prevent spam from frequent polling
+    # logger.info(f"Found {len(candidate_points_details_series)} minimum-cost candidate points for feature {feature}")
 
         # Step 2: Build the true monotonic frontier
         actual_frontier_plans_series_list = []
@@ -225,7 +227,8 @@ def prepare_feature_frontier_data(df, core_continuous_features):
                         actual_frontier_plans_series_list.append(max_value_min_cost_row)
                         logger.info(f"Added maximum value point ({max_feature_value}) with minimum cost to feature {feature} frontier")
 
-        logger.info(f"Built monotonic frontier with {len(actual_frontier_plans_series_list)} points for feature {feature}")
+        # Verbose logging disabled to prevent spam from frequent polling
+        # logger.info(f"Built monotonic frontier with {len(actual_frontier_plans_series_list)} points for feature {feature}")
 
         # Populate visual_frontiers_for_residual_table with (value, original_fee) tuples from these Series
         current_feature_visual_frontier_tuples = [(p[feature], p[cost_metric_for_visualization]) for p in actual_frontier_plans_series_list]
@@ -285,7 +288,8 @@ def prepare_feature_frontier_data(df, core_continuous_features):
         other_points_count = len(other_feature_values)
         unlimited_count = 1 if has_unlimited_data else 0
 
-        logger.info(f"Feature {feature}: Found {frontier_points_count} frontier, {excluded_points_count} excluded, {unlimited_count} unlimited points")
+        # Verbose logging disabled to prevent spam from frequent polling
+        # logger.info(f"Feature {feature}: Found {frontier_points_count} frontier, {excluded_points_count} excluded, {unlimited_count} unlimited points")
 
         # For the JS chart, we will pass frontier and excluded points
         js_chart_values = []

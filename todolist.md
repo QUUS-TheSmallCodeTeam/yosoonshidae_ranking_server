@@ -10,6 +10,15 @@
 - **✅ COMPLETED**: Dockerfile 수정으로 로그 모니터링 자동 시작 구현
 - **✅ COMPLETED**: 실행 순서 문제 해결 (서버 먼저 시작 → 로그 모니터링)
 
+### 🔧 연속 계산 문제 해결 완료 ⭐ NEW
+- **✅ COMPLETED**: 비동기 차트 계산 시스템 구현
+- **✅ COMPLETED**: /process 엔드포인트 즉시 응답 구조 변경
+- **✅ COMPLETED**: 백그라운드 차트 생성 태스크 분리
+- **✅ COMPLETED**: 진행 상태 표시 페이지 구현
+- **✅ COMPLETED**: /chart-status 엔드포인트 추가
+- **✅ COMPLETED**: 기본 HTML 보고서 fallback 구현
+- **✅ COMPLETED**: SSH 폴링으로 인한 연속 계산 문제 완전 해결
+
 ### 🔧 MAJOR FIX: Frontier-Based Linear Decomposition 
 - **✅ FIXED**: Changed from arbitrary "market segments" to frontier-based representative plan selection
 - **✅ FIXED**: Now uses same optimal candidate point logic as original frontier method  
@@ -29,6 +38,13 @@
 - **✅ CORRECTED**: Understanding of monotonicity exclusion (BY DESIGN, not bug)
 
 ## 🧪 IMMEDIATE TESTING NEEDED
+
+### Test Async Chart Calculation System ⭐ NEW PRIORITY
+- **TODO**: Test /process endpoint for immediate response with chart_status="calculating"
+- **TODO**: Verify /chart-status endpoint shows progress (0→10→30→50→80→100)
+- **TODO**: Confirm root endpoint shows progress page during calculation
+- **TODO**: Validate cached HTML is served after chart completion
+- **TODO**: Ensure no more continuous calculation logs from SSH polling
 
 ### Test Updated Linear Decomposition
 - **TODO**: Run `/process` endpoint to test frontier-based selection
@@ -54,11 +70,11 @@
 
 ---
 **Priority Order:**
-1. **URGENT**: Test frontier-based linear decomposition implementation
+1. **URGENT**: Test async chart calculation system implementation
 2. **HIGH**: Validate chart functionality with corrected data  
 3. **MEDIUM**: Future enhancements and documentation
 
-*Last Updated: After critical frontier-based selection fix*
+*Last Updated: After async chart calculation system implementation*
 
 # Cost-Spec Linear Decomposition Implementation Tasks
 

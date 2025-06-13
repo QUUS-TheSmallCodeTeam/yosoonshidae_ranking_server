@@ -1,29 +1,38 @@
 # 🧠 Memory & Context
 
 ## 📊 Current System Status
+- **Async chart calculation**: Implemented to eliminate continuous calculations triggered by root endpoint
 - **Multi-frontier regression methodology**: Successfully implemented and fully operational
-- **Chart visualization**: Three new charts replace old linear decomposition charts
+- **Chart visualization**: Advanced charts now calculated asynchronously in background
+- **API response time**: Immediate response from /process endpoint, charts calculated separately
 - **Default method**: Changed to `multi_frontier` for new analysis approach
-- **Web interface**: Updated with new method selection buttons
+- **Web interface**: Updated with progress indicators and status pages
 - **Data processing**: Successfully handling 1000+ mobile plans
 - **Performance**: No infinite loops, proper serialization, stable operation
-- **Server startup**: Dockerfile simplified to use direct uvicorn command (complex shell commands caused APP argument parsing issues)
+- **Server startup**: Dockerfile simplified to use direct uvicorn command
+- **Logging optimized**: Info logging disabled at "/" endpoint to prevent SSH remote polling spam
+- **HTML caching**: 5-minute cache implemented with async chart generation
+- **Continuous calculation issue**: RESOLVED - Charts now calculated only when new data is processed
 
 ## 🎯 Working Methods
 - **Multi-frontier regression**: Eliminates cross-contamination by using complete feature vectors
 - **Feature frontier charts**: Original logic maintained as requested
 - **Safety measures**: Infinite loop prevention implemented and working
 - **Numpy type conversion**: Comprehensive serialization fix for all data types
+- **Async processing**: Chart calculations run in background, API responds immediately
 
 ## 🔧 Implementation Patterns
-- **Chart replacement strategy**: Complete removal of old charts, clean implementation of new ones
+- **Async chart calculation**: Background tasks for expensive visualizations
+- **Progressive status display**: Real-time progress indicators for chart generation
+- **Fallback mechanisms**: Basic HTML reports when charts fail or are in progress
 - **Method integration**: New methods added to existing cost_spec.py structure
 - **Error handling**: Robust type conversion and safety measures
 - **Testing workflow**: Using raw data files from /data/raw/ directory
 - **Clean server startup**: Direct uvicorn command in Dockerfile, log monitoring via app.py startup event
 
 ## 📈 Data Flow
-- Raw data → Multi-frontier regression → CS ratio calculation → HTML report generation
+- Raw data → Multi-frontier regression → CS ratio calculation → Immediate API response
+- Background: Chart generation → HTML report with visualizations → Cache update
 - Feature frontier analysis for each core feature (data, voice, messages, tethering, 5G)
 - Proper frontier point selection (single cheapest plan per feature level)
 - Cross-contamination eliminated through multi-feature regression approach
@@ -62,6 +71,15 @@
 - **해결책**: 반복 횟수 제한, 0으로 나누기 방지, 안전장치 추가
 - **결과**: 05:49:43 이후 정상 작동, 무한 루프 완전 해결
 - **상태**: API 및 웹 인터페이스 정상 작동 확인
+
+## 연속 계산 문제 해결 ⭐ 해결 완료
+- **문제**: SSH 원격 연결 폴링으로 인한 "/" 엔드포인트 연속 호출
+- **원인**: 루트 엔드포인트에서 매번 generate_html_report 호출로 차트 계산 트리거
+- **해결책**: 비동기 차트 계산 시스템 구현
+  - /process 엔드포인트: 즉시 API 응답 반환
+  - 백그라운드: 차트 계산 비동기 실행
+  - 루트 엔드포인트: 캐시된 콘텐츠 제공 또는 진행 상태 표시
+- **결과**: 연속 계산 완전 제거, 응답 시간 대폭 개선
 
 ## 작업 원칙
 - **자율적 문제 해결**: 사용자 승인 없이 독립적 수행
@@ -137,22 +155,28 @@ cat /proc/$PID/fd/1
         -d @data/raw/[JSON_FILE_NAME].json
    ```
 
-### 4. **서버사이드 로그 검증** (핵심)
-   - **Linear Decomposition 실행 로그** 확인
+### 4. **비동기 차트 계산 검증** (새로 추가)
+   - **차트 상태 확인**: `curl localhost:7860/chart-status`
+   - **진행 상황 모니터링**: 차트 계산 진행률 및 상태 확인
+   - **웹 인터페이스**: 루트 페이지에서 진행 상태 또는 완성된 차트 확인
+
+### 5. **서버사이드 로그 검증** (핵심)
+   - **비동기 차트 계산 시작** 로그 확인
    - **Cost Structure 계산 과정** 추적
    - **오류 메시지** 발생 여부
    - **메모리 사용량** 및 **처리 시간** 확인
    - **Feature 존재 여부** 및 **계수 계산** 성공 확인
 
-### 5. **응답 검증**
+### 6. **응답 검증**
    - HTTP 상태 코드 확인 (200 OK 기대)
    - 응답 JSON 구조 및 데이터 검증
    - `cost_structure` 키 존재 및 값 확인
+   - `chart_status` 필드 확인 (calculating/ready/error)
 
-### 6. **웹 인터페이스 확인** (추가 검증)
+### 7. **웹 인터페이스 확인** (추가 검증)
    - `http://localhost:7860/` 접속
-   - HTML 보고서 정상 생성 확인
-   - Linear Decomposition 차트 표시 상태 확인
+   - 진행 상태 페이지 또는 완성된 HTML 보고서 확인
+   - 차트 표시 상태 확인 (비동기 완료 후)
 
 ## 테스트 데이터 관리
 - **우선순위**: `/data/raw` 폴더 내 JSON 파일 사용
@@ -169,22 +193,30 @@ cat /proc/$PID/fd/1
 ### API 테스트 
 - [ ] `/process` 엔드포인트 응답이 정상인가? (HTTP 200)
 - [ ] 응답 JSON에 `cost_structure` 키가 존재하는가?
+- [ ] `chart_status` 필드가 "calculating"으로 설정되는가?
 - [ ] Supabase 외부 엔드포인트 테스트가 성공하는가?
 
+### 비동기 차트 계산 검증 ⭐ 새로 추가
+- [ ] `/chart-status` 엔드포인트가 정상 응답하는가?
+- [ ] 차트 계산 진행률이 0→10→30→50→80→100으로 진행되는가?
+- [ ] 차트 계산 완료 후 캐시된 HTML이 제공되는가?
+- [ ] 차트 계산 중 루트 페이지에서 진행 상태가 표시되는가?
+
 ### 서버사이드 로그 검증 ⭐ 핵심
-- [ ] Linear decomposition 실행 로그가 나타나는가?
+- [ ] 비동기 차트 계산 시작 로그가 나타나는가?
 - [ ] Cost structure 계산 과정이 로그에 기록되는가?
 - [ ] Feature 존재 확인 메시지가 있는가?
 - [ ] 오류나 예외 메시지가 발생하지 않는가?
-- [ ] Fallback to frontier method 메시지가 없는가?
+- [ ] 연속 계산 로그가 더 이상 발생하지 않는가?
 
 ### 웹 인터페이스 확인
-- [ ] HTML 보고서가 생성되는가?
-- [ ] Linear Decomposition 차트가 정상 표시되는가?
-- [ ] Cost Structure 도넛 차트가 보이는가?
+- [ ] 진행 상태 페이지가 정상 표시되는가?
+- [ ] 차트 계산 완료 후 HTML 보고서가 생성되는가?
+- [ ] 차트가 정상 표시되는가?
 - [ ] 메모리 사용량이 정상 범위인가?
 
 ## 중요한 제약사항
 - ⚠️ **절대 서버 종료 금지**: Dev Mode 비활성화 위험
 - ⚠️ **Git 수동 커밋 필요**: 변경사항은 자동 저장되지 않음
 - ⚠️ **테스트 필수**: 코드 수정 후 반드시 `/process` 엔드포인트 테스트
+- ⚠️ **비동기 검증**: 차트 계산 상태 및 완료 여부 확인 필수

@@ -220,7 +220,8 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
         method_name = "Linear Decomposition" if method == "linear_decomposition" else "Frontier-Based"
         report_title = f"{report_title} ({method_name})"
         
-    logger.info(f"Generating HTML report with title: {report_title}")
+    # Info logging disabled for frequent polling requests
+    # logger.info(f"Generating HTML report with title: {report_title}")
     
     # Set timestamp if not provided
     if timestamp is None:
@@ -278,9 +279,15 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 for feature, cost in feature_costs.items():
                     if feature in feature_interpretations:
                         interpretation = feature_interpretations.get(feature, 'Feature-specific cost')
-                        # Safely handle cost formatting to avoid dict format error
+                        # Handle both simple float and nested dictionary cost structures
                         try:
-                            cost_str = f"₩{float(cost):.2f}"
+                            if isinstance(cost, dict):
+                                # Multi-frontier method returns nested structure
+                                coefficient = cost.get('coefficient', cost.get('cost_per_unit', 0))
+                                cost_str = f"₩{float(coefficient):.2f}"
+                            else:
+                                # Simple float value
+                                cost_str = f"₩{float(cost):.2f}"
                         except (ValueError, TypeError):
                             cost_str = str(cost)
                         method_info_html += f"<tr><td>{feature}</td><td>{cost_str}</td><td>{interpretation}</td></tr>"
@@ -320,14 +327,16 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
         </div>
         """
     
-    # Generate advanced analysis charts (for multi_frontier method)
+    # Generate advanced analysis charts (show both methods when data is available)
     advanced_analysis_chart_html = ""
     advanced_analysis_json = "null"  # Default value
     
     # Check if we have multi-frontier breakdown data
-    multi_frontier_breakdown = getattr(df, 'attrs', {}).get('multi_frontier_breakdown') or getattr(df, 'attrs', {}).get('cost_structure')
+    multi_frontier_breakdown = getattr(df, 'attrs', {}).get('multi_frontier_breakdown')
+    linear_decomp_cost_structure = getattr(df, 'attrs', {}).get('cost_structure')
     
-    if method == "multi_frontier" and multi_frontier_breakdown:
+    # Show multi-frontier charts if data is available (regardless of method parameter)
+    if multi_frontier_breakdown:
         from .report_charts import prepare_multi_frontier_chart_data
         
         # Prepare debug info
@@ -371,6 +380,37 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
         # Prepare chart data
         advanced_analysis_data = prepare_multi_frontier_chart_data(df, multi_frontier_breakdown)
         advanced_analysis_json = json.dumps(advanced_analysis_data, cls=NumpyEncoder)
+    
+    # Generate linear decomposition charts if data is available
+    linear_decomp_chart_html = ""
+    linear_decomp_json = "null"
+    
+    if linear_decomp_cost_structure:
+        linear_decomp_chart_html = """
+        <div class="charts-wrapper">
+            <h2>📊 Linear Decomposition Analysis</h2>
+            <div class="note">
+                <p><strong>Method:</strong> Linear Decomposition - Extracts marginal costs through regression analysis</p>
+                <p><strong>Mathematical Model:</strong> plan_cost = β₀ + β₁×data + β₂×voice + β₃×SMS + β₄×tethering + β₅×5G</p>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: center;">
+                <div class="chart-container" style="width: 500px; height: 400px;">
+                    <h3 style="text-align: center; margin-top: 0;">💰 Marginal Costs</h3>
+                    <p style="text-align: center; font-size: 0.9em; color: #666;">Cost per unit of each feature</p>
+                    <canvas id="linearMarginalCostChart" style="max-height: 300px;"></canvas>
+                </div>
+                <div class="chart-container" style="width: 500px; height: 400px;">
+                    <h3 style="text-align: center; margin-top: 0;">🏗️ Cost Structure</h3>
+                    <p style="text-align: center; font-size: 0.9em; color: #666;">Base cost + feature contributions</p>
+                    <canvas id="linearCostBreakdownChart" style="max-height: 300px;"></canvas>
+                </div>
+            </div>
+        </div>
+        """
+        
+        # Prepare linear decomposition chart data
+        linear_decomp_data = prepare_cost_structure_chart_data(linear_decomp_cost_structure)
+        linear_decomp_json = json.dumps(linear_decomp_data, cls=NumpyEncoder)
     
     # Define continuous features for visualization (5 most important)
     core_continuous_features = [
@@ -552,8 +592,11 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
             {method_info_html}
             {comparison_info_html}
         
-            <!-- Cost Structure Decomposition Chart (only for linear decomposition) -->
-            {advanced_analysis_chart_html}
+            <!-- Multi-Frontier Analysis Charts -->
+            {multi_frontier_chart_html}
+            
+            <!-- Linear Decomposition Analysis Charts -->
+            {linear_decomp_chart_html}
         
             <div class="note">
                 <p>이 보고서는 Cost-Spec Ratio 방법론을 기반으로 한 모바일 플랜 랭킹을 보여줍니다. CS 비율이 높을수록 사양 대비 더 좋은 가치를 제공합니다.</p>
@@ -603,8 +646,11 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
             // Feature frontier data from Python
             const featureFrontierData = __FEATURE_FRONTIER_JSON__;
             
-            // Cost structure data from Python (only for linear decomposition)
+            // Cost structure data from Python (multi-frontier method)
             const advancedAnalysisData = __ADVANCED_ANALYSIS_JSON__;
+            
+            // Linear decomposition data from Python
+            const linearDecompData = __LINEAR_DECOMP_JSON__;
             
             // Plan efficiency data from Python
             const planEfficiencyData = __PLAN_EFFICIENCY_JSON__;
@@ -1082,6 +1128,12 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 createFrontierAnalysisChart(advancedAnalysisData);
             }
             
+            // Create linear decomposition charts if data is available
+            if (linearDecompData && linearDecompData !== null) {
+                createLinearMarginalCostChart(linearDecompData);
+                createLinearCostBreakdownChart(linearDecompData);
+            }
+            
             // Chart 1: Pure Marginal Costs Bar Chart
             function createPureMarginalCostChart(data) {
                 const canvas = document.getElementById('pureMarginalCostChart');
@@ -1303,6 +1355,151 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     }
                 });
             }
+            
+            // Linear Decomposition Chart Functions
+            function createLinearMarginalCostChart(data) {
+                const canvas = document.getElementById('linearMarginalCostChart');
+                if (!canvas || !data.feature_costs) return;
+                
+                const features = Object.keys(data.feature_costs);
+                const costs = Object.values(data.feature_costs);
+                const labels = features.map(f => {
+                    const displayNames = {
+                        'basic_data_clean': 'Data (GB)',
+                        'voice_clean': 'Voice (min)',
+                        'message_clean': 'Messages',
+                        'tethering_gb': 'Tethering (GB)',
+                        'is_5g': '5G Access'
+                    };
+                    return displayNames[f] || f;
+                });
+                
+                new Chart(canvas, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Marginal Cost (₩)',
+                            data: costs,
+                            backgroundColor: [
+                                'rgba(52, 152, 219, 0.8)',   // Data - Blue
+                                'rgba(46, 204, 113, 0.8)',   // Voice - Green  
+                                'rgba(155, 89, 182, 0.8)',   // Messages - Purple
+                                'rgba(241, 196, 15, 0.8)',   // Tethering - Yellow
+                                'rgba(231, 76, 60, 0.8)'     // 5G - Red
+                            ],
+                            borderColor: [
+                                'rgba(52, 152, 219, 1)',
+                                'rgba(46, 204, 113, 1)',
+                                'rgba(155, 89, 182, 1)',
+                                'rgba(241, 196, 15, 1)',
+                                'rgba(231, 76, 60, 1)'
+                            ],
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            title: {
+                                display: true,
+                                text: 'Linear Regression: Feature Coefficients'
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const value = context.parsed.y;
+                                        return `Marginal Cost: ₩${value.toLocaleString()}`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Features'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Marginal Cost (₩)'
+                                },
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            }
+            
+            function createLinearCostBreakdownChart(data) {
+                const canvas = document.getElementById('linearCostBreakdownChart');
+                if (!canvas || !data.feature_costs) return;
+                
+                const labels = ['Base Cost'];
+                const values = [data.base_cost || 0];
+                const colors = ['rgba(149, 165, 166, 0.8)'];
+                
+                Object.entries(data.feature_costs).forEach(([feature, cost], index) => {
+                    const displayNames = {
+                        'basic_data_clean': 'Data',
+                        'voice_clean': 'Voice',
+                        'message_clean': 'Messages',
+                        'tethering_gb': 'Tethering',
+                        'is_5g': '5G'
+                    };
+                    labels.push(displayNames[feature] || feature);
+                    values.push(cost);
+                    colors.push([
+                        'rgba(52, 152, 219, 0.8)',
+                        'rgba(46, 204, 113, 0.8)',
+                        'rgba(155, 89, 182, 0.8)',
+                        'rgba(241, 196, 15, 0.8)',
+                        'rgba(231, 76, 60, 0.8)'
+                    ][index % 5]);
+                });
+                
+                new Chart(canvas, {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: values,
+                            backgroundColor: colors,
+                            borderWidth: 2,
+                            borderColor: '#fff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Linear Decomposition: Cost Structure'
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const value = context.parsed;
+                                        const total = values.reduce((a, b) => a + b, 0);
+                                        const percentage = ((value / total) * 100).toFixed(1);
+                                        return `₩${value.toLocaleString()} (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
 
         </script>
     </body>
@@ -1319,12 +1516,14 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     html = html.replace('{low_cs_pct:.1%}', f"{(df_sorted['CS'] < 1).sum()/len(df_sorted):.1%}")
     html = html.replace('{method_info_html}', method_info_html)
     html = html.replace('{comparison_info_html}', comparison_info_html)
-    html = html.replace('{advanced_analysis_chart_html}', advanced_analysis_chart_html)
+    html = html.replace('{multi_frontier_chart_html}', advanced_analysis_chart_html)
+    html = html.replace('{linear_decomp_chart_html}', linear_decomp_chart_html)
     html = html.replace('{all_plans_html}', all_plans_html)
 
     # Replace JSON placeholders safely
     html = html.replace('__FEATURE_FRONTIER_JSON__', feature_frontier_json)
     html = html.replace('__ADVANCED_ANALYSIS_JSON__', advanced_analysis_json)
+    html = html.replace('__LINEAR_DECOMP_JSON__', linear_decomp_json)
     html = html.replace('__PLAN_EFFICIENCY_JSON__', plan_efficiency_json)
 
     return html

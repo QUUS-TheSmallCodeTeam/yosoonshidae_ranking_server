@@ -1,0 +1,548 @@
+2025-06-13 04:57:14: 2025-06-13 04:57:14,895 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for basic_data_clean with 14 points using 'original_fee'
+2025-06-13 04:57:14: 2025-06-13 04:57:14,895 - modules.cost_spec - INFO - Added unlimited case for basic_data_clean (as basic_data_unlimited) with 'original_fee' 59000
+2025-06-13 04:57:14: 2025-06-13 04:57:14,997 - modules.cost_spec - INFO - Smallest feature increment for daily_data_clean: 2.0
+2025-06-13 04:57:15: 2025-06-13 04:57:14,998 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for daily_data_clean with 3 points using 'original_fee'
+2025-06-13 04:57:15: 2025-06-13 04:57:14,998 - modules.cost_spec - INFO - Added unlimited case for daily_data_clean (as daily_data_unlimited) with 'original_fee' 59000
+2025-06-13 04:57:15: 2025-06-13 04:57:15,054 - modules.cost_spec - INFO - Smallest feature increment for voice_clean: 10
+2025-06-13 04:57:15: 2025-06-13 04:57:15,105 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for message_clean with 4 points using 'original_fee'
+2025-06-13 04:57:15: 2025-06-13 04:57:15,106 - modules.cost_spec - INFO - Added unlimited case for message_clean (as message_unlimited) with 'original_fee' 4900
+2025-06-13 04:57:15: 2025-06-13 04:57:15,207 - modules.cost_spec - INFO - Smallest feature increment for additional_call: 3.0
+2025-06-13 04:57:15: 2025-06-13 04:57:15,208 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for additional_call (no unlimited option, using 'original_fee') with 6 points
+2025-06-13 04:57:15: 2025-06-13 04:57:15,303 - modules.cost_spec - INFO - Smallest feature increment for is_5g: 1
+2025-06-13 04:57:15: 2025-06-13 04:57:15,304 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for is_5g (no unlimited option, using 'original_fee') with 2 points
+2025-06-13 04:57:15: 2025-06-13 04:57:15,404 - modules.cost_spec - INFO - Smallest feature increment for tethering_gb: 0.02400000000000002
+2025-06-13 04:57:15: 2025-06-13 04:57:15,406 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for tethering_gb (no unlimited option, using 'original_fee') with 11 points
+2025-06-13 04:57:15: 2025-06-13 04:57:15,501 - modules.cost_spec - INFO - Smallest feature increment for has_throttled_data: 1
+2025-06-13 04:57:15: 2025-06-13 04:57:15,501 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for has_throttled_data (no unlimited option, using 'original_fee') with 2 points
+2025-06-13 04:57:15: 2025-06-13 04:57:15,596 - modules.cost_spec - INFO - Smallest feature increment for speed_when_exhausted: 1.0
+2025-06-13 04:57:15: 2025-06-13 04:57:15,597 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for speed_when_exhausted with 5 points using 'original_fee'
+2025-06-13 04:57:15: 2025-06-13 04:57:15,598 - modules.cost_spec - INFO - Added unlimited case for speed_when_exhausted (as has_unlimited_speed) with 'original_fee' 59000
+2025-06-13 04:57:15: 2025-06-13 04:57:15,645 - modules.cost_spec - INFO - Added contribution column for basic_data_clean: min=1700.0, max=59000.0
+2025-06-13 04:57:15: 2025-06-13 04:57:15,674 - modules.cost_spec - INFO - Added contribution column for daily_data_clean: min=1700, max=59000
+2025-06-13 04:57:15: 2025-06-13 04:57:15,706 - modules.cost_spec - INFO - Added contribution column for voice_clean: min=1700.0, max=12500.0
+2025-06-13 04:57:15: 2025-06-13 04:57:15,751 - modules.cost_spec - INFO - Added contribution column for message_clean: min=1760.0, max=6080.0
+2025-06-13 04:57:15: 2025-06-13 04:57:15,777 - modules.cost_spec - INFO - Added contribution column for additional_call: min=1700.0, max=8800.0
+2025-06-13 04:57:15: 2025-06-13 04:57:15,802 - modules.cost_spec - INFO - Added contribution column for is_5g: min=1700, max=3300
+2025-06-13 04:57:15: 2025-06-13 04:57:15,845 - modules.cost_spec - INFO - Added contribution column for tethering_gb: min=1700.0, max=38200.0
+2025-06-13 04:57:15: 2025-06-13 04:57:15,870 - modules.cost_spec - INFO - Added contribution column for has_throttled_data: min=1700, max=5500
+2025-06-13 04:57:15: 2025-06-13 04:57:15,900 - modules.cost_spec - INFO - Added contribution column for speed_when_exhausted: min=1700, max=59000
+2025-06-13 04:57:16: 2025-06-13 04:57:16,131 - modules.cost_spec - INFO - Created multi-frontier breakdown: {'base_cost': 1426.993988408542, 'feature_costs': {'basic_data_clean': {'coefficient': 46.297620048633895, 'min_increment': 0.04999999999999999, 'cost_per_unit': 46.297620048633895}, 'voice_clean': {'coefficient': 1.9521763807004762, 'min_increment': 10, 'cost_per_unit': 1.9521763807004762}, 'message_clean': {'coefficient': 1.8304063086419287, 'min_increment': 10, 'cost_per_unit': 1.8304063086419287}, 'tethering_gb': {'coefficient': 138.89938502079158, 'min_increment': 0.02400000000000002, 'cost_per_unit': 138.89938502079158}, 'is_5g': {'coefficient': 8898.531781728307, 'min_increment': 1, 'cost_per_unit': 8898.531781728307}}, 'total_frontier_plans': 33, 'features_analyzed': 5}
+2025-06-13 04:57:16: 2025-06-13 04:57:16,133 - modules.config - INFO - [a6809bb8] Ranked DataFrame shape: (2288, 85)
+2025-06-13 04:57:16: 2025-06-13 04:57:16,136 - modules.config - INFO - Top 10 plans by rank to be stored:
+2025-06-13 04:57:16: plan_name         CS  rank_number
+2025-06-13 04:57:16: 27       5G 티플 5GB(5GB/300분)  37.752358            1
+2025-06-13 04:57:16: 29            A 스페셜 4.5GB+ 7  37.581849            2
+2025-06-13 04:57:16: 21            이마트24 6GB/300분  30.062451            3
+2025-06-13 04:57:16: 31          티플 5GB(5GB/300분)  28.378841            4
+2025-06-13 04:57:16: 209              [S] 300분5GB  27.932569            5
+2025-06-13 04:57:16: 52           티플 드림(3GB/200분)  27.391015            6
+2025-06-13 04:57:16: 26         가성비플러스(10GB/350분)  25.057023            7
+2025-06-13 04:57:16: 11   [일반] 실속 (5GB/100분)_12개월  24.829430            8
+2025-06-13 04:57:16: 56             티플포유(5G/100분)  24.829430            9
+2025-06-13 04:57:16: 15          가성비플러스(6GB/350분)  23.373473           10
+2025-06-13 04:57:16: /app/app.py:652: FutureWarning: Downcasting behavior in `replace` is deprecated and will be removed in a future version. To retain the old behavior, explicitly call `result.infer_objects(copy=False)`. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+2025-06-13 04:57:16: 
+2025-06-13 04:57:16: 2025-06-13 04:57:16,162 - modules.config - INFO - [a6809bb8] Cost structure discovered: {'base_cost': 1426.993988408542, 'feature_costs': {'basic_data_clean': {'coefficient': 46.297620048633895, 'min_increment': 0.04999999999999999, 'cost_per_unit': 46.297620048633895}, 'voice_clean': {'coefficient': 1.9521763807004762, 'min_increment': 10, 'cost_per_unit': 1.9521763807004762}, 'message_clean': {'coefficient': 1.8304063086419287, 'min_increment': 10, 'cost_per_unit': 1.8304063086419287}, 'tethering_gb': {'coefficient': 138.89938502079158, 'min_increment': 0.02400000000000002, 'cost_per_unit': 138.89938502079158}, 'is_5g': {'coefficient': 8898.531781728307, 'min_increment': 1, 'cost_per_unit': 8898.531781728307}}, 'total_frontier_plans': 33, 'features_analyzed': 5}
+2025-06-13 04:57:16: 2025-06-13 04:57:16,170 - modules.config - INFO - [a6809bb8] Prepared all_ranked_plans with 2288 plans
+2025-06-13 04:57:16: 2025-06-13 04:57:16,182 - modules.report_charts - INFO - Found unlimited basic_data_clean with minimum 'original_fee' 59000 from plan '(삼성팩) 너겟 59'
+2025-06-13 04:57:16: 2025-06-13 04:57:16,492 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:57:16: 2025-06-13 04:57:16,492 - modules.report_charts - INFO - Found unlimited daily_data_clean with minimum 'original_fee' 59000 from plan '(삼성팩) 너겟 59'
+2025-06-13 04:57:16: 2025-06-13 04:57:16,807 - modules.report_charts - INFO - Found unlimited voice_clean with minimum 'original_fee' 4900 from plan '데이터차단 (0GB/통화기본)'
+2025-06-13 04:57:16: 2025-06-13 04:57:16,950 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:57:16: 2025-06-13 04:57:16,951 - modules.report_charts - INFO - Found unlimited message_clean with minimum 'original_fee' 4900 from plan '데이터차단 (0GB/통화기본)'
+2025-06-13 04:57:17: 2025-06-13 04:57:17,100 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:57:17: 2025-06-13 04:57:17,423 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:57:17: 2025-06-13 04:57:17,973 - modules.config - INFO - [a6809bb8] HTML report successfully generated and saved to /tmp/reports/cs_reports/cs_ranking_frontier_20250613_045716.html
+2025-06-13 04:57:18: 200 OK
+2025-06-13 04:57:18: Successfully created directory: data/raw
+2025-06-13 04:57:18: Successfully created directory: data/processed
+2025-06-13 04:57:18: Successfully created directory: results
+2025-06-13 04:57:18: Successfully created directory: reports
+2025-06-13 04:57:18: Data types before conversion:
+2025-06-13 04:57:18: id                   int64
+2025-06-13 04:57:18: plan_name           object
+2025-06-13 04:57:18: network             object
+2025-06-13 04:57:18: mvno                object
+2025-06-13 04:57:18: mno                 object
+2025-06-13 04:57:18: basic_data         float64
+2025-06-13 04:57:18: daily_data         float64
+2025-06-13 04:57:18: data_exhaustion     object
+2025-06-13 04:57:18: voice                int64
+2025-06-13 04:57:18: message              int64
+2025-06-13 04:57:18: dtype: object
+2025-06-13 04:57:18: Skipping tethering unit conversion - already handled in SQL query
+2025-06-13 04:57:18: Data types after conversion:
+2025-06-13 04:57:18: id                   int64
+2025-06-13 04:57:18: plan_name           object
+2025-06-13 04:57:18: network             object
+2025-06-13 04:57:18: mvno                object
+2025-06-13 04:57:18: mno                 object
+2025-06-13 04:57:18: basic_data         float64
+2025-06-13 04:57:18: daily_data         float64
+2025-06-13 04:57:18: data_exhaustion     object
+2025-06-13 04:57:18: voice                int64
+2025-06-13 04:57:18: message              int64
+2025-06-13 04:57:18: dtype: object
+2025-06-13 04:57:18: 
+2025-06-13 04:57:18: === HF SERVER PREPROCESSING DETAILS ===
+2025-06-13 04:57:18: Input DataFrame shape: (2288, 40)
+2025-06-13 04:57:18: Initial columns: ['id', 'plan_name', 'network', 'mvno', 'mno', 'basic_data', 'daily_data', 'data_exhaustion', 'voice', 'message', 'additional_call', 'data_sharing', 'roaming_support', 'micro_payment', 'is_esim', 'signup_minor', 'signup_foreigner', 'has_usim', 'has_nfc_usim', 'tethering_gb', 'tethering_status', 'tethering_data_unit', 'esim_fee', 'esim_fee_status', 'usim_delivery_fee', 'nfc_usim_delivery_fee', 'usim_delivery_fee_status', 'nfc_usim_delivery_fee_status', 'fee', 'original_fee', 'discount_fee', 'discount_period', 'post_discount_fee', 'agreement', 'agreement_period', 'agreement_type', 'num_of_signup', 'mvno_rating', 'monthly_review_score', 'discount_percentage']
+2025-06-13 04:57:18: Created is_5g feature: 430 5G plans found
+2025-06-13 04:57:18: Found 1452 plans with throttled data
+2025-06-13 04:57:18: Found 20 plans with unlimited basic data
+2025-06-13 04:57:18: Found 3 plans with unlimited daily data
+2025-06-13 04:57:18: Maximum values: basic_data=300.0, daily_data=5.0
+2025-06-13 04:57:18: NaN values imputed: 5381 -> 0
+2025-06-13 04:57:18: 
+2025-06-13 04:57:18: === FINAL PREPROCESSING STATS ===
+2025-06-13 04:57:18: Output DataFrame shape: (2288, 77)
+2025-06-13 04:57:18: Features generated: 77
+2025-06-13 04:57:18: 
+2025-06-13 04:57:18: Basic features available (13/13):
+2025-06-13 04:57:18: ✓ is_5g
+2025-06-13 04:57:18: ✓ basic_data_clean
+2025-06-13 04:57:18: ✓ basic_data_unlimited
+2025-06-13 04:57:18: ✓ daily_data_clean
+2025-06-13 04:57:18: ✓ daily_data_unlimited
+2025-06-13 04:57:18: ✓ voice_clean
+2025-06-13 04:57:18: ✓ voice_unlimited
+2025-06-13 04:57:18: ✓ message_clean
+2025-06-13 04:57:18: ✓ message_unlimited
+2025-06-13 04:57:18: ✓ throttle_speed_normalized
+2025-06-13 04:57:18: ✓ tethering_gb
+2025-06-13 04:57:18: ✓ unlimited_type_numeric
+2025-06-13 04:57:18: ✓ additional_call
+2025-06-13 04:57:18: 
+2025-06-13 04:57:18: Key feature statistics:
+2025-06-13 04:57:18: basic_data_clean: min=0.00, max=300.00, mean=25.09, median=10.00
+2025-06-13 04:57:18: daily_data_clean: min=0.00, max=5.00, mean=0.37, median=0.00
+2025-06-13 04:57:18: voice_clean: min=0.00, max=3000.00, mean=1773.89, median=3000.00
+2025-06-13 04:57:18: message_clean: min=0.00, max=2000.00, mean=1149.73, median=2000.00
+2025-06-13 04:57:18: throttle_speed_normalized: min=0.00, max=1.00, mean=0.17, median=0.10
+2025-06-13 04:57:18: unlimited_type_numeric: min=0.00, max=3.00, mean=1.30, median=2.00
+2025-06-13 04:57:18: original_fee: min=1700.00, max=77000.00, mean=26998.05, median=25300.00
+2025-06-13 04:57:18: INFO:     127.0.0.1:48814 - "POST /process HTTP/1.1" 200 OK
+2025-06-13 04:57:18: Successfully created directory: data/raw
+2025-06-13 04:57:18: Successfully created directory: data/processed
+2025-06-13 04:57:18: Successfully created directory: results
+2025-06-13 04:57:18: Successfully created directory: reports
+2025-06-13 04:57:18: Data types before conversion:
+2025-06-13 04:57:18: id                   int64
+2025-06-13 04:57:18: plan_name           object
+2025-06-13 04:57:18: network             object
+2025-06-13 04:57:18: mvno                object
+2025-06-13 04:57:18: mno                 object
+2025-06-13 04:57:18: basic_data         float64
+2025-06-13 04:57:18: daily_data         float64
+2025-06-13 04:57:18: data_exhaustion     object
+2025-06-13 04:57:18: voice                int64
+2025-06-13 04:57:18: message              int64
+2025-06-13 04:57:18: dtype: object
+2025-06-13 04:57:18: Skipping tethering unit conversion - already handled in SQL query
+2025-06-13 04:57:18: Data types after conversion:
+2025-06-13 04:57:18: id                   int64
+2025-06-13 04:57:18: plan_name           object
+2025-06-13 04:57:18: network             object
+2025-06-13 04:57:18: mvno                object
+2025-06-13 04:57:18: mno                 object
+2025-06-13 04:57:18: basic_data         float64
+2025-06-13 04:57:18: daily_data         float64
+2025-06-13 04:57:18: data_exhaustion     object
+2025-06-13 04:57:18: voice                int64
+2025-06-13 04:57:18: message              int64
+2025-06-13 04:57:18: dtype: object
+2025-06-13 04:57:18: 
+2025-06-13 04:57:18: === HF SERVER PREPROCESSING DETAILS ===
+2025-06-13 04:57:18: Input DataFrame shape: (2288, 40)
+2025-06-13 04:57:18: Initial columns: ['id', 'plan_name', 'network', 'mvno', 'mno', 'basic_data', 'daily_data', 'data_exhaustion', 'voice', 'message', 'additional_call', 'data_sharing', 'roaming_support', 'micro_payment', 'is_esim', 'signup_minor', 'signup_foreigner', 'has_usim', 'has_nfc_usim', 'tethering_gb', 'tethering_st2025-06-13 04:57:18,028 - modules.report_charts - INFO - Found unlimited basic_data_clean with minimum 'original_fee' 59000 from plan '(삼성팩) 너겟 59'
+2025-06-13 04:57:18: 2025-06-13 04:57:18,356 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:57:18: 2025-06-13 04:57:18,357 - modules.report_charts - INFO - Found unlimited daily_data_clean with minimum 'original_fee' 59000 from plan '(삼성팩) 너겟 59'
+2025-06-13 04:57:18: 2025-06-13 04:57:18,674 - modules.report_charts - INFO - Found unlimited voice_clean with minimum 'original_fee' 4900 from plan '데이터차단 (0GB/통화기본)'
+2025-06-13 04:57:18: 2025-06-13 04:57:18,820 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:57:18: 2025-06-13 04:57:18,821 - modules.report_charts - INFO - Found unlimited message_clean with minimum 'original_fee' 4900 from plan '데이터차단 (0GB/통화기본)'
+2025-06-13 04:57:18: 2025-06-13 04:57:18,972 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:57:19: 2025-06-13 04:57:19,328 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:57:19: 2025-06-13 04:57:19,328 - modules.report_charts - INFO - Finished populating chart data.
+2025-06-13 04:58:45: 2025-06-13 04:58:45,529 - modules.config - INFO - [1f997508] Initial memory usage: 200.75 MB
+2025-06-13 04:58:45: 2025-06-13 04:58:45,529 - modules.config - INFO - [1f997508] Cleaning up old dataset files...
+2025-06-13 04:58:45: 2025-06-13 04:58:45,529 - modules.utils - INFO - Deleted old file: raw_data_20250613_045523.json (beyond limit (2/1))
+2025-06-13 04:58:45: 2025-06-13 04:58:45,530 - modules.utils - INFO - Deleted old file: processed_data_20250613_044832.csv (beyond limit (2/1))
+2025-06-13 04:58:45: 2025-06-13 04:58:45,530 - modules.utils - INFO - Deleted old file: cs_ranking_frontier_20250613_044834.html (beyond limit (2/1))
+2025-06-13 04:58:45: 2025-06-13 04:58:45,530 - modules.utils - INFO - Comprehensive cleanup completed: {'raw_data': 1, 'processed_data': 1, 'reports': 1, 'intermediate': 0, 'total': 3}
+2025-06-13 04:58:45: 2025-06-13 04:58:45,553 - modules.config - INFO - [1f997508] Received 2288 plans
+2025-06-13 04:58:45: 2025-06-13 04:58:45,553 - modules.config - INFO - [1f997508] Using Enhanced Cost-Spec method: multi_frontier, feature_set=basic, fee_column=fee
+2025-06-13 04:58:45: 2025-06-13 04:58:45,665 - modules.config - INFO - [1f997508] Processed DataFrame shape: (2288, 77)
+2025-06-13 04:58:45: 2025-06-13 04:58:45,730 - modules.cost_spec - INFO - Starting multi-feature frontier regression method
+2025-06-13 04:58:45: 2025-06-13 04:58:45,730 - modules.cost_spec - INFO - Multi-frontier analysis features: ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb', 'is_5g']
+2025-06-13 04:58:45: 2025-06-13 04:58:45,826 - modules.cost_spec - INFO - Smallest feature increment for basic_data_clean: 0.04999999999999999
+2025-06-13 04:58:45: 2025-06-13 04:58:45,831 - modules.cost_spec - INFO - Feature basic_data_clean: Added 14 frontier points to collection
+2025-06-13 04:58:45: 2025-06-13 04:58:45,832 - modules.cost_spec - INFO - Feature basic_data_clean: Added unlimited plan to collection
+2025-06-13 04:58:45: 2025-06-13 04:58:45,878 - modules.cost_spec - INFO - Smallest feature increment for voice_clean: 10
+2025-06-13 04:58:45: 2025-06-13 04:58:45,881 - modules.cost_spec - INFO - Feature voice_clean: Added 9 frontier points to collection
+2025-06-13 04:58:45: 2025-06-13 04:58:45,882 - modules.cost_spec - INFO - Feature voice_clean: Added unlimited plan to collection
+2025-06-13 04:58:45: 2025-06-13 04:58:45,929 - modules.cost_spec - INFO - Smallest feature increment for message_clean: 10
+2025-06-13 04:58:45: 2025-06-13 04:58:45,931 - modules.cost_spec - INFO - Feature message_clean: Added 4 frontier points to collection
+2025-06-13 04:58:45: 2025-06-13 04:58:45,932 - modules.cost_spec - INFO - Feature message_clean: Added unlimited plan to collection
+2025-06-13 04:58:46: 2025-06-13 04:58:46,026 - modules.cost_spec - INFO - Smallest feature increment for tethering_gb: 0.02400000000000002
+2025-06-13 04:58:46: 2025-06-13 04:58:46,031 - modules.cost_spec - INFO - Feature tethering_gb: Added 11 frontier points to collection
+2025-06-13 04:58:46: 2025-06-13 04:58:46,125 - modules.cost_spec - INFO - Smallest feature increment for is_5g: 1
+2025-06-13 04:58:46: 2025-06-13 04:58:46,126 - modules.cost_spec - INFO - Feature is_5g: Added 2 frontier points to collection
+2025-06-13 04:58:46: 2025-06-13 04:58:46,127 - modules.cost_spec - INFO - Collected 33 unique frontier plans from all features
+2025-06-13 04:58:46: 2025-06-13 04:58:46,127 - modules.cost_spec - INFO - Feature message_clean: minimum increment = 10
+2025-06-13 04:58:46: 2025-06-13 04:58:46,227 - modules.cost_spec - INFO - Multi-feature frontier regression solved successfully:
+2025-06-13 04:58:46: 2025-06-13 04:58:46,227 - modules.cost_spec - INFO -   Mean absolute error: ₩3,400
+2025-06-13 04:58:46: 2025-06-13 04:58:46,227 - modules.cost_spec - INFO -   Max absolute error: ₩15,562
+2025-06-13 04:58:46: 2025-06-13 04:58:46,324 - modules.cost_spec - INFO - Smallest feature increment for basic_data_clean: 0.04999999999999999
+2025-06-13 04:58:46: 2025-06-13 04:58:46,326 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for basic_data_clean with 14 points using 'original_fee'
+2025-06-13 04:58:46: 2025-06-13 04:58:46,327 - modules.cost_spec - INFO - Added unlimited case for basic_data_clean (as basic_data_unlimited) with 'original_fee' 59000
+2025-06-13 04:58:46: 2025-06-13 04:58:46,422 - modules.cost_spec - INFO - Smallest feature increment for daily_data_clean: 2.0
+2025-06-13 04:58:46: 2025-06-13 04:58:46,423 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for daily_data_clean with 3 points using 'original_fee'
+2025-06-13 04:58:46: 2025-06-13 04:58:46,423 - modules.cost_spec - INFO - Added unlimited case for daily_data_clean (as daily_data_unlimited) with 'original_fee' 59000
+2025-06-13 04:58:46: 2025-06-13 04:58:46,470 - modules.cost_spec - INFO - Smallest feature increment for voice_clean: 10
+2025-06-13 04:58:46: 2025-06-13 04:58:46,472 - modules.cost_spec - INFO - Added unlimited case for voice_clean (as voice_unlimited) with 'original_fee' 4900
+2025-06-13 04:58:46: 2025-06-13 04:58:46,519 - modules.cost_spec - INFO - Smallest feature increment for message_clean: 10
+2025-06-13 04:58:46: 2025-06-13 04:58:46,520 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for message_clean with 4 points using 'original_fee'
+2025-06-13 04:58:46: 2025-06-13 04:58:46,522 - modules.cost_spec - INFO - Added unlimited case for message_clean (as message_unlimited) with 'original_fee' 4900
+2025-06-13 04:58:46: 2025-06-13 04:58:46,626 - modules.cost_spec - INFO - Smallest feature increment for additional_call: 3.0
+2025-06-13 04:58:46: 2025-06-13 04:58:46,627 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for additional_call (no unlimited option, using 'original_fee') with 6 points
+2025-06-13 04:58:46: 2025-06-13 04:58:46,722 - modules.cost_spec - INFO - Smallest feature increment for is_5g: 1
+2025-06-13 04:58:46: 2025-06-13 04:58:46,723 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for is_5g (no unlimited option, using 'original_fee') with 2 points
+2025-06-13 04:58:46: 2025-06-13 04:58:46,821 - modules.cost_spec - INFO - Smallest feature increment for tethering_gb: 0.02400000000000002
+2025-06-13 04:58:46: 2025-06-13 04:58:46,823 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for tethering_gb (no unlimited option, using 'original_fee') with 11 points
+2025-06-13 04:58:46: 2025-06-13 04:58:46,919 - modules.cost_spec - INFO - Smallest feature increment for has_throttled_data: 1
+2025-06-13 04:58:46: 2025-06-13 04:58:46,920 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for has_throttled_data (no unlimited option, using 'original_fee') with 2 points
+2025-06-13 04:58:47: 2025-06-13 04:58:47,016 - modules.cost_spec - INFO - Smallest feature increment for speed_when_exhausted: 1.0
+2025-06-13 04:58:47: 2025-06-13 04:58:47,016 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for speed_when_exhausted with 5 points using 'original_fee'
+2025-06-13 04:58:47: 2025-06-13 04:58:47,063 - modules.cost_spec - INFO - Added contribution column for basic_data_clean: min=1700.0, max=59000.0
+2025-06-13 04:58:47: 2025-06-13 04:58:47,093 - modules.cost_spec - INFO - Added contribution column for daily_data_clean: min=1700, max=59000
+2025-06-13 04:58:47: 2025-06-13 04:58:47,124 - modules.cost_spec - INFO - Added contribution column for voice_clean: min=1700.0, max=12500.0
+2025-06-13 04:58:47: 2025-06-13 04:58:47,169 - modules.cost_spec - INFO - Added contribution column for message_clean: min=1760.0, max=6080.0
+2025-06-13 04:58:47: 2025-06-13 04:58:47,194 - modules.cost_spec - INFO - Added contribution column for additional_call: min=1700.0, max=8800.0
+2025-06-13 04:58:47: 2025-06-13 04:58:47,220 - modules.cost_spec - INFO - Added contribution column for is_5g: min=1700, max=3300
+2025-06-13 04:58:47: 2025-06-13 04:58:47,262 - modules.cost_spec - INFO - Added contribution column for tethering_gb: min=1700.0, max=38200.0
+2025-06-13 04:58:47: 2025-06-13 04:58:47,287 - modules.cost_spec - INFO - Added contribution column for has_throttled_data: min=1700, max=5500
+2025-06-13 04:58:47: 2025-06-13 04:58:47,317 - modules.cost_spec - INFO - Added contribution column for speed_when_exhausted: min=1700, max=59000
+2025-06-13 04:58:47: 2025-06-13 04:58:47,545 - modules.cost_spec - INFO - Created multi-frontier breakdown: {'base_cost': 1426.993988408542, 'feature_costs': {'basic_data_clean': {'coefficient': 46.297620048633895, 'min_increment': 0.04999999999999999, 'cost_per_unit': 46.297620048633895}, 'voice_clean': {'coefficient': 1.9521763807004762, 'min_increment': 10, 'cost_per_unit': 1.9521763807004762}, 'message_clean': {'coefficient': 1.8304063086419287, 'min_increment': 10, 'cost_per_unit': 1.8304063086419287}, 'tethering_gb': {'coefficient': 138.89938502079158, 'min_increment': 0.02400000000000002, 'cost_per_unit': 138.89938502079158}, 'is_5g': {'coefficient': 8898.531781728307, 'min_increment': 1, 'cost_per_unit': 8898.531781728307}}, 'total_frontier_plans': 33, 'features_analyzed': 5}
+2025-06-13 04:58:47: 2025-06-13 04:58:47,548 - modules.config - INFO - [1f997508] Ranked DataFrame shape: (2288, 85)
+2025-06-13 04:58:47: 2025-06-13 04:58:47,551 - modules.config - INFO - Top 10 plans by rank to be stored:
+2025-06-13 04:58:47: plan_name         CS  rank_number
+2025-06-13 04:58:47: 27       5G 티플 5GB(5GB/300분)  37.752358            1
+2025-06-13 04:58:47: 29            A 스페셜 4.5GB+ 7  37.581849            2
+2025-06-13 04:58:47: 21            이마트24 6GB/300분  30.062451            3
+2025-06-13 04:58:47: 31          티플 5GB(5GB/300분)  28.378841            4
+2025-06-13 04:58:47: 209              [S] 300분5GB  27.932569            5
+2025-06-13 04:58:47: 52           티플 드림(3GB/200분)  27.391015            6
+2025-06-13 04:58:47: 26         가성비플러스(10GB/350분)  25.057023            7
+2025-06-13 04:58:47: 11   [일반] 실속 (5GB/100분)_12개월  24.829430            8
+2025-06-13 04:58:47: 56             티플포유(5G/100분)  24.829430            9
+2025-06-13 04:58:47: 15          가성비플러스(6GB/350분)  23.373473           10
+2025-06-13 04:58:47: /app/app.py:652: FutureWarning: Downcasting behavior in `replace` is deprecated and will be removed in a future version. To retain the old behavior, explicitly call `result.infer_objects(copy=False)`. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+2025-06-13 04:58:47: 
+2025-06-13 04:58:47: 2025-06-13 04:58:47,576 - modules.config - INFO - [1f997508] DataFrame has attrs: True
+2025-06-13 04:58:47: 2025-06-13 04:58:47,576 - modules.config - INFO - [1f997508] Cost structure discovered: {'base_cost': 1426.993988408542, 'feature_costs': {'basic_data_clean': {'coefficient': 46.297620048633895, 'min_increment': 0.04999999999999999, 'cost_per_unit': 46.297620048633895}, 'voice_clean': {'coefficient': 1.9521763807004762, 'min_increment': 10, 'cost_per_unit': 1.9521763807004762}, 'message_clean': {'coefficient': 1.8304063086419287, 'min_increment': 10, 'cost_per_unit': 1.8304063086419287}, 'tethering_gb': {'coefficient': 138.89938502079158, 'min_increment': 0.02400000000000002, 'cost_per_unit': 138.89938502079158}, 'is_5g': {'coefficient': 8898.531781728307, 'min_increment': 1, 'cost_per_unit': 8898.531781728307}}, 'total_frontier_plans': 33, 'features_analyzed': 5}
+2025-06-13 04:58:47: 2025-06-13 04:58:47,583 - modules.config - INFO - [1f997508] Prepared all_ranked_plans with 2288 plans
+2025-06-13 04:58:47: 2025-06-13 04:58:47,596 - modules.report_charts - INFO - Found unlimited basic_data_clean with minimum 'original_fee' 59000 from plan '(삼성팩) 너겟 59'
+2025-06-13 04:58:47: 2025-06-13 04:58:47,903 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:58:47: 2025-06-13 04:58:47,904 - modules.report_charts - INFO - Found unlimited daily_data_clean with minimum 'original_fee' 59000 from plan '(삼성팩) 너겟 59'
+2025-06-13 04:58:48: 2025-06-13 04:58:48,218 - modules.report_charts - INFO - Found unlimited voice_clean with minimum 'original_fee' 4900 from plan '데이터차단 (0GB/통화기본)'
+2025-06-13 04:58:48: 2025-06-13 04:58:48,360 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:58:48: 2025-06-13 04:58:48,362 - modules.report_charts - INFO - Found unlimited message_clean with minimum 'original_fee' 4900 from plan '데이터차단 (0GB/통화기본)'
+2025-06-13 04:58:48: 2025-06-13 04:58:48,509 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:58:48: 2025-06-13 04:58:48,821 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:58:49: 2025-06-13 04:58:49,373 - modules.config - INFO - [1f997508] HTML report successfully generated and saved to /tmp/reports/cs_reports/cs_ranking_frontier_20250613_045847.html
+2025-06-13 04:58:49: atus', 'tethering_data_unit', 'esim_fee', 'esim_fee_status', 'usim_delivery_fee', 'nfc_usim_delivery_fee', 'usim_delivery_fee_status', 'nfc_usim_delivery_fee_status', 'fee', 'original_fee', 'discount_fee', 'discount_period', 'post_discount_fee', 'agreement', 'agreement_period', 'agreement_type', 'num_of_signup', 'mvno_rating', 'monthly_review_score', 'discount_percentage']
+2025-06-13 04:58:49: Created is_5g feature: 430 5G plans found
+2025-06-13 04:58:49: Found 1452 plans with throttled data
+2025-06-13 04:58:49: Found 20 plans with unlimited basic data
+2025-06-13 04:58:49: Found 3 plans with unlimited daily data
+2025-06-13 04:58:49: Maximum values: basic_data=300.0, daily_data=5.0
+2025-06-13 04:58:49: NaN values imputed: 5381 -> 0
+2025-06-13 04:58:49: 
+2025-06-13 04:58:49: === FINAL PREPROCESSING STATS ===
+2025-06-13 04:58:49: Output DataFrame shape: (2288, 77)
+2025-06-13 04:58:49: Features generated: 77
+2025-06-13 04:58:49: 
+2025-06-13 04:58:49: Basic features available (13/13):
+2025-06-13 04:58:49: ✓ is_5g
+2025-06-13 04:58:49: ✓ basic_data_clean
+2025-06-13 04:58:49: ✓ basic_data_unlimited
+2025-06-13 04:58:49: ✓ daily_data_clean
+2025-06-13 04:58:49: ✓ daily_data_unlimited
+2025-06-13 04:58:49: ✓ voice_clean
+2025-06-13 04:58:49: ✓ voice_unlimited
+2025-06-13 04:58:49: ✓ message_clean
+2025-06-13 04:58:49: ✓ message_unlimited
+2025-06-13 04:58:49: ✓ throttle_speed_normalized
+2025-06-13 04:58:49: ✓ tethering_gb
+2025-06-13 04:58:49: ✓ unlimited_type_numeric
+2025-06-13 04:58:49: ✓ additional_call
+2025-06-13 04:58:49: 
+2025-06-13 04:58:49: Key feature statistics:
+2025-06-13 04:58:49: basic_data_clean: min=0.00, max=300.00, mean=25.09, median=10.00
+2025-06-13 04:58:49: daily_data_clean: min=0.00, max=5.00, mean=0.37, median=0.00
+2025-06-13 04:58:49: voice_clean: min=0.00, max=3000.00, mean=1773.89, median=3000.00
+2025-06-13 04:58:49: message_clean: min=0.00, max=2000.00, mean=1149.73, median=2000.00
+2025-06-13 04:58:49: throttle_speed_normalized: min=0.00, max=1.00, mean=0.17, median=0.10
+2025-06-13 04:58:49: unlimited_type_numeric: min=0.00, max=3.00, mean=1.30, median=2.00
+2025-06-13 04:58:49: original_fee: min=1700.00, max=77000.00, mean=26998.05, median=25300.00
+2025-06-13 04:58:49: INFO:     10.16.19.218:15727 - "POST /process HTTP/1.1" 200 OK
+2025-06-13 04:58:49: INFO:     10.16.23.18:25182 - "GET /?__sign=eyJhbGciOiJFZERTQSJ9.eyJyZWFkIjp0cnVlLCJwZXJtaXNzaW9ucyI6eyJyZXBvLmNvbnRlbnQucmVhZCI6dHJ1ZSwicmVwby5kZXZNb2RlLnJlYWQiOnRydWV9LCJvbkJlaGFsZk9mIjp7ImtpbmQiOiJ1c2VyIiwiX2lkIjoiNjQ1NWViYjFiZGEwZmJiYTQxMmU5NmNlIiwidXNlciI6Im04Y2hhYSIsInNlc3Npb25JZCI6IjY3ZjBjYzQ1ZTE3ZTUzNjBlN2JjNzI5MSJ9LCJpYXQiOjE3NDk3OTA2NDMsInN1YiI6Ii9zcGFjZXMvbThjaGFhL212bm9fcGxhbl9yYW5raW5nX21vZGVsIiwiZXhwIjoxNzQ5ODc3MDQzLCJpc3MiOiJodHRwczovL2h1Z2dpbmdmYWNlLmNvIn0.IlR2EvpjwEXcZ0s6Zak4ImiR4ICjzBV_uctIMFp-FHCvzsz3OsM-6G0UXiHjCfAedy3MhxAVxZSYI7OxCv6FDg HTTP/1.1" 200 OK
+2025-06-13 04:58:49: Successfully created directory: data/raw
+2025-06-13 04:58:49: Successfully created directory: data/processed
+2025-06-13 04:58:49: Successfully created directory: results
+2025-06-13 04:58:49: Successfully created directory: reports
+2025-06-13 04:58:49: Data types before conversion:
+2025-06-13 04:58:49: id                   int64
+2025-06-13 04:58:49: plan_name           object
+2025-06-13 04:58:49: network             object
+2025-06-13 04:58:49: mvno                object
+2025-06-13 04:58:49: mno                 object
+2025-06-13 04:58:49: basic_data         float64
+2025-06-13 04:58:49: daily_data         float64
+2025-06-13 04:58:49: data_exhaustion     object
+2025-06-13 04:58:49: voice                int64
+2025-06-13 04:58:49: message              int64
+2025-06-13 04:58:49: dtype: object
+2025-06-13 04:58:49: Skipping tethering unit conversion - already handled in SQL query
+2025-06-13 04:58:49: Data types after conversion:
+2025-06-13 04:58:49: id                   int64
+2025-06-13 04:58:49: plan_name           object
+2025-06-13 04:58:49: network             object
+2025-06-13 04:58:49: mvno                object
+2025-06-13 04:58:49: mno                 object
+2025-06-13 04:58:49: basic_data         float64
+2025-06-13 04:58:49: daily_data         float64
+2025-06-13 04:58:49: data_exhaustion     object
+2025-06-13 04:58:49: voice                int64
+2025-06-13 04:58:49: message              int64
+2025-06-13 04:58:49: dtype: object
+2025-06-13 04:58:49: 
+2025-06-13 04:58:49: === HF SERVER PREPROCESSING DETAILS ===
+2025-06-13 04:58:49: Input DataFrame shape: (2288, 40)
+2025-06-13 04:58:49: Initial columns: ['id', 'plan_name', 'network', 'mvno', 'mno', 'basic_data', 'daily_data', 'data_exhaustion', 'voice', 'message', 'additional_call', 'data_sharing', 'roaming_support', 'micro_payment', 'is_esim', 'signup_minor', 'signup_foreigner', 'has_usim', 'has_nfc_usim', 'tethering_gb', 'tethering_status', 'tethering_data_unit', 'esim_fee', 'esim_fee_status', 'usim_delivery_fee', 'nfc_usim_delivery_fee', 'usim_delivery_fee_status', 'nfc_usim_delivery_fee_status', 'fee', 'original_fee', 'discount_fee', 'discount_period', 'post_discount_fee', 'agreement', 'agreement_period', 'agreement_type', 'num_of_signup', 'mvno_rating', 'monthly_review_score', 'discount_percentage']
+2025-06-13 04:58:49: Created is_5g feature: 430 5G plans found
+2025-06-13 04:58:49: Found 1452 plans with throttled data
+2025-06-13 04:58:49: Found 20 plans with unlimited basic data
+2025-06-13 04:58:49: Found 3 plans with unlimited daily data
+2025-06-13 04:58:49: Maximum values: basic_data=300.0, daily_data=5.0
+2025-06-13 04:58:49: NaN values imputed: 5381 -> 0
+2025-06-13 04:58:49: 
+2025-06-13 04:58:49: === FINAL PREPROCESSING STATS ===
+2025-06-13 04:58:49: Output DataFra2025-06-13 04:58:49,427 - modules.report_charts - INFO - Found unlimited basic_data_clean with minimum 'original_fee' 59000 from plan '(삼성팩) 너겟 59'
+2025-06-13 04:58:49: 2025-06-13 04:58:49,761 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:58:49: 2025-06-13 04:58:49,762 - modules.report_charts - INFO - Found unlimited daily_data_clean with minimum 'original_fee' 59000 from plan '(삼성팩) 너겟 59'
+2025-06-13 04:58:50: 2025-06-13 04:58:50,081 - modules.report_charts - INFO - Found unlimited voice_clean with minimum 'original_fee' 4900 from plan '데이터차단 (0GB/통화기본)'
+2025-06-13 04:58:50: 2025-06-13 04:58:50,226 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:58:50: 2025-06-13 04:58:50,227 - modules.report_charts - INFO - Found unlimited message_clean with minimum 'original_fee' 4900 from plan '데이터차단 (0GB/통화기본)'
+2025-06-13 04:58:50: 2025-06-13 04:58:50,380 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:58:50: 2025-06-13 04:58:50,722 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 04:58:50: 2025-06-13 04:58:50,722 - modules.report_charts - INFO - Finished populating chart data.
+2025-06-13 05:01:21: 2025-06-13 05:01:21,058 - modules.config - INFO - [9490481b] Initial memory usage: 200.84 MB
+2025-06-13 05:01:21: 2025-06-13 05:01:21,058 - modules.config - INFO - [9490481b] Cleaning up old dataset files...
+2025-06-13 05:01:21: 2025-06-13 05:01:21,059 - modules.utils - INFO - Cleanup completed: deleted 1 files from data/raw
+2025-06-13 05:01:21: 2025-06-13 05:01:21,060 - modules.utils - INFO - Deleted old file: processed_data_20250613_045714.csv (beyond limit (2/1))
+2025-06-13 05:01:21: 2025-06-13 05:01:21,060 - modules.utils - INFO - Deleted old file: cs_ranking_frontier_20250613_045716.html (beyond limit (2/1))
+2025-06-13 05:01:21: 2025-06-13 05:01:21,061 - modules.utils - INFO - Comprehensive cleanup completed: {'raw_data': 1, 'processed_data': 1, 'reports': 1, 'intermediate': 0, 'total': 3}
+2025-06-13 05:01:21: 2025-06-13 05:01:21,089 - modules.config - INFO - [9490481b] Received 2288 plans
+2025-06-13 05:01:21: 2025-06-13 05:01:21,235 - modules.config - INFO - [9490481b] Processed DataFrame shape: (2288, 77)
+2025-06-13 05:01:21: 2025-06-13 05:01:21,400 - modules.cost_spec - INFO - Starting multi-feature frontier regression method
+2025-06-13 05:01:21: 2025-06-13 05:01:21,402 - modules.cost_spec - INFO - Multi-frontier analysis features: ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb', 'is_5g']
+2025-06-13 05:01:21: 2025-06-13 05:01:21,517 - modules.cost_spec - INFO - Smallest feature increment for basic_data_clean: 0.04999999999999999
+2025-06-13 05:01:21: 2025-06-13 05:01:21,524 - modules.cost_spec - INFO - Feature basic_data_clean: Added 14 frontier points to collection
+2025-06-13 05:01:21: 2025-06-13 05:01:21,586 - modules.cost_spec - INFO - Smallest feature increment for voice_clean: 10
+2025-06-13 05:01:21: 2025-06-13 05:01:21,590 - modules.cost_spec - INFO - Feature voice_clean: Added 9 frontier points to collection
+2025-06-13 05:01:21: 2025-06-13 05:01:21,592 - modules.cost_spec - INFO - Feature voice_clean: Added unlimited plan to collection
+2025-06-13 05:01:21: 2025-06-13 05:01:21,648 - modules.cost_spec - INFO - Smallest feature increment for message_clean: 10
+2025-06-13 05:01:21: 2025-06-13 05:01:21,651 - modules.cost_spec - INFO - Feature message_clean: Added 4 frontier points to collection
+2025-06-13 05:01:21: 2025-06-13 05:01:21,653 - modules.cost_spec - INFO - Feature message_clean: Added unlimited plan to collection
+2025-06-13 05:01:21: 2025-06-13 05:01:21,773 - modules.cost_spec - INFO - Smallest feature increment for tethering_gb: 0.02400000000000002
+2025-06-13 05:01:21: 2025-06-13 05:01:21,778 - modules.cost_spec - INFO - Feature tethering_gb: Added 11 frontier points to collection
+2025-06-13 05:01:21: 2025-06-13 05:01:21,888 - modules.cost_spec - INFO - Smallest feature increment for is_5g: 1
+2025-06-13 05:01:21: 2025-06-13 05:01:21,890 - modules.cost_spec - INFO - Feature is_5g: Added 2 frontier points to collection
+2025-06-13 05:01:21: 2025-06-13 05:01:21,891 - modules.cost_spec - INFO - Collected 33 unique frontier plans from all features
+2025-06-13 05:01:21: 2025-06-13 05:01:21,892 - modules.cost_spec - INFO - Feature basic_data_clean: minimum increment = 0.04999999999999999
+2025-06-13 05:01:21: 2025-06-13 05:01:21,893 - modules.cost_spec - INFO - Feature voice_clean: minimum increment = 10
+2025-06-13 05:01:21: 2025-06-13 05:01:21,893 - modules.cost_spec - INFO - Feature message_clean: minimum increment = 10
+2025-06-13 05:01:21: 2025-06-13 05:01:21,893 - modules.cost_spec - INFO - Feature tethering_gb: minimum increment = 0.02400000000000002
+2025-06-13 05:01:22: 2025-06-13 05:01:22,015 - modules.cost_spec - INFO - Multi-feature frontier regression solved successfully:
+2025-06-13 05:01:22: 2025-06-13 05:01:22,015 - modules.cost_spec - INFO -   message_clean pure cost: ₩1.83
+2025-06-13 05:01:22: 2025-06-13 05:01:22,015 - modules.cost_spec - INFO -   tethering_gb pure cost: ₩138.90
+2025-06-13 05:01:22: 2025-06-13 05:01:22,015 - modules.cost_spec - INFO -   Max absolute error: ₩15,562
+2025-06-13 05:01:22: 2025-06-13 05:01:22,015 - modules.cost_spec - INFO -   Used 33 frontier plans for regression
+2025-06-13 05:01:22: 2025-06-13 05:01:22,016 - modules.cost_spec - INFO - Successfully solved multi-frontier coefficients: [1.42699399e+03 4.62976200e+01 1.95217638e+00 1.83040631e+00
+2025-06-13 05:01:22: 1.38899385e+02 8.89853178e+03]
+2025-06-13 05:01:22: 2025-06-13 05:01:22,143 - modules.cost_spec - INFO - Smallest feature increment for basic_data_clean: 0.04999999999999999
+2025-06-13 05:01:22: 2025-06-13 05:01:22,145 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for basic_data_clean with 14 points using 'original_fee'
+2025-06-13 05:01:22: 2025-06-13 05:01:22,147 - modules.cost_spec - INFO - Added unlimited case for basic_data_clean (as basic_data_unlimited) with 'original_fee' 59000
+2025-06-13 05:01:22: 2025-06-13 05:01:22,258 - modules.cost_spec - INFO - Smallest feature increment for daily_data_clean: 2.0
+2025-06-13 05:01:22: 2025-06-13 05:01:22,259 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for daily_data_clean with 3 points using 'original_fee'
+2025-06-13 05:01:22: 2025-06-13 05:01:22,260 - modules.cost_spec - INFO - Added unlimited case for daily_data_clean (as daily_data_unlimited) with 'original_fee' 59000
+2025-06-13 05:01:22: 2025-06-13 05:01:22,320 - modules.cost_spec - INFO - Smallest feature increment for voice_clean: 10
+2025-06-13 05:01:22: 2025-06-13 05:01:22,322 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for voice_clean with 9 points using 'original_fee'
+2025-06-13 05:01:22: 2025-06-13 05:01:22,324 - modules.cost_spec - INFO - Added unlimited case for voice_clean (as voice_unlimited) with 'original_fee' 4900
+2025-06-13 05:01:22: 2025-06-13 05:01:22,382 - modules.cost_spec - INFO - Smallest feature increment for message_clean: 10
+2025-06-13 05:01:22: 2025-06-13 05:01:22,383 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for message_clean with 4 points using 'original_fee'
+2025-06-13 05:01:22: 2025-06-13 05:01:22,386 - modules.cost_spec - INFO - Added unlimited case for message_clean (as message_unlimited) with 'original_fee' 4900
+2025-06-13 05:01:22: 2025-06-13 05:01:22,498 - modules.cost_spec - INFO - Smallest feature increment for additional_call: 3.0
+2025-06-13 05:01:22: 2025-06-13 05:01:22,499 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for additional_call (no unlimited option, using 'original_fee') with 6 points
+2025-06-13 05:01:22: 2025-06-13 05:01:22,614 - modules.cost_spec - INFO - Smallest feature increment for is_5g: 1
+2025-06-13 05:01:22: 2025-06-13 05:01:22,733 - modules.cost_spec - INFO - Smallest feature increment for tethering_gb: 0.02400000000000002
+2025-06-13 05:01:22: 2025-06-13 05:01:22,735 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for tethering_gb (no unlimited option, using 'original_fee') with 11 points
+2025-06-13 05:01:22: 2025-06-13 05:01:22,850 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for has_throttled_data (no unlimited option, using 'original_fee') with 2 points
+2025-06-13 05:01:22: 2025-06-13 05:01:22,995 - modules.cost_spec - INFO - Smallest feature increment for speed_when_exhausted: 1.0
+2025-06-13 05:01:23: 2025-06-13 05:01:22,997 - modules.cost_spec - INFO - Created ROBUST monotonic frontier for speed_when_exhausted with 5 points using 'original_fee'
+2025-06-13 05:01:23: 2025-06-13 05:01:22,998 - modules.cost_spec - INFO - Added unlimited case for speed_when_exhausted (as has_unlimited_speed) with 'original_fee' 59000
+2025-06-13 05:01:23: 2025-06-13 05:01:23,053 - modules.cost_spec - INFO - Added contribution column for basic_data_clean: min=1700.0, max=59000.0
+2025-06-13 05:01:23: 2025-06-13 05:01:23,092 - modules.cost_spec - INFO - Added contribution column for daily_data_clean: min=1700, max=59000
+2025-06-13 05:01:23: 2025-06-13 05:01:23,132 - modules.cost_spec - INFO - Added contribution column for voice_clean: min=1700.0, max=12500.0
+2025-06-13 05:01:23: 2025-06-13 05:01:23,188 - modules.cost_spec - INFO - Added contribution column for message_clean: min=1760.0, max=6080.0
+2025-06-13 05:01:23: 2025-06-13 05:01:23,222 - modules.cost_spec - INFO - Added contribution column for additional_call: min=1700.0, max=8800.0
+2025-06-13 05:01:23: 2025-06-13 05:01:23,256 - modules.cost_spec - INFO - Added contribution column for is_5g: min=1700, max=3300
+2025-06-13 05:01:23: 2025-06-13 05:01:23,314 - modules.cost_spec - INFO - Added contribution column for tethering_gb: min=1700.0, max=38200.0
+2025-06-13 05:01:23: 2025-06-13 05:01:23,356 - modules.cost_spec - INFO - Added contribution column for has_throttled_data: min=1700, max=5500
+2025-06-13 05:01:23: 2025-06-13 05:01:23,400 - modules.cost_spec - INFO - Added contribution column for speed_when_exhausted: min=1700, max=59000
+2025-06-13 05:01:23: 2025-06-13 05:01:23,692 - modules.cost_spec - INFO - Created multi-frontier breakdown: {'base_cost': 1426.993988408542, 'feature_costs': {'basic_data_clean': {'coefficient': 46.297620048633895, 'min_increment': 0.04999999999999999, 'cost_per_unit': 46.297620048633895}, 'voice_clean': {'coefficient': 1.9521763807004762, 'min_increment': 10, 'cost_per_unit': 1.9521763807004762}, 'message_clean': {'coefficient': 1.8304063086419287, 'min_increment': 10, 'cost_per_unit': 1.8304063086419287}, 'tethering_gb': {'coefficient': 138.89938502079158, 'min_increment': 0.02400000000000002, 'cost_per_unit': 138.89938502079158}, 'is_5g': {'coefficient': 8898.531781728307, 'min_increment': 1, 'cost_per_unit': 8898.531781728307}}, 'total_frontier_plans': 33, 'features_analyzed': 5}
+2025-06-13 05:01:23: 2025-06-13 05:01:23,700 - modules.config - INFO - [9490481b] Ranked DataFrame shape: (2288, 85)
+2025-06-13 05:01:23: 2025-06-13 05:01:23,706 - modules.config - INFO - Top 10 plans by rank to be stored:
+2025-06-13 05:01:23: plan_name         CS  rank_number
+2025-06-13 05:01:23: 27       5G 티플 5GB(5GB/300분)  37.752358            1
+2025-06-13 05:01:23: 29            A 스페셜 4.5GB+ 7  37.581849            2
+2025-06-13 05:01:23: 21            이마트24 6GB/300분  30.062451            3
+2025-06-13 05:01:23: 31          티플 5GB(5GB/300분)  28.378841            4
+2025-06-13 05:01:23: 209              [S] 300분5GB  27.932569            5
+2025-06-13 05:01:23: 52           티플 드림(3GB/200분)  27.391015            6
+2025-06-13 05:01:23: 26         가성비플러스(10GB/350분)  25.057023            7
+2025-06-13 05:01:23: 11   [일반] 실속 (5GB/100분)_12개월  24.829430            8
+2025-06-13 05:01:23: 56             티플포유(5G/100분)  24.829430            9
+2025-06-13 05:01:23: 15          가성비플러스(6GB/350분)  23.373473           10
+2025-06-13 05:01:23: /app/app.py:652: FutureWarning: Downcasting behavior in `replace` is deprecated and will be removed in a future version. To retain the old behavior, explicitly call `result.infer_objects(copy=False)`. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+2025-06-13 05:01:23: 
+2025-06-13 05:01:23: 2025-06-13 05:01:23,748 - modules.config - INFO - [9490481b] Checking for cost_structure in DataFrame attrs...
+2025-06-13 05:01:23: 2025-06-13 05:01:23,748 - modules.config - INFO - [9490481b] DataFrame has attrs: True
+2025-06-13 05:01:23: 2025-06-13 05:01:23,749 - modules.config - INFO - [9490481b] Cost structure discovered: {'base_cost': 1426.993988408542, 'feature_costs': {'basic_data_clean': {'coefficient': 46.297620048633895, 'min_increment': 0.04999999999999999, 'cost_per_unit': 46.297620048633895}, 'voice_clean': {'coefficient': 1.9521763807004762, 'min_increment': 10, 'cost_per_unit': 1.9521763807004762}, 'message_clean': {'coefficient': 1.8304063086419287, 'min_increment': 10, 'cost_per_unit': 1.8304063086419287}, 'tethering_gb': {'coefficient': 138.89938502079158, 'min_increment': 0.02400000000000002, 'cost_per_unit': 138.89938502079158}, 'is_5g': {'coefficient': 8898.531781728307, 'min_increment': 1, 'cost_per_unit': 8898.531781728307}}, 'total_frontier_plans': 33, 'features_analyzed': 5}
+2025-06-13 05:01:23: 2025-06-13 05:01:23,763 - modules.config - INFO - [9490481b] Prepared all_ranked_plans with 2288 plans
+2025-06-13 05:01:23: 2025-06-13 05:01:23,783 - modules.report_charts - INFO - Found unlimited basic_data_clean with minimum 'original_fee' 59000 from plan '(삼성팩) 너겟 59'
+2025-06-13 05:01:24: 2025-06-13 05:01:24,164 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 05:01:24: 2025-06-13 05:01:24,166 - modules.report_charts - INFO - Found unlimited daily_data_clean with minimum 'original_fee' 59000 from plan '(삼성팩) 너겟 59'
+2025-06-13 05:01:24: 2025-06-13 05:01:24,570 - modules.report_charts - INFO - Found unlimited voice_clean with minimum 'original_fee' 4900 from plan '데이터차단 (0GB/통화기본)'
+2025-06-13 05:01:24: 2025-06-13 05:01:24,770 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 05:01:24: 2025-06-13 05:01:24,774 - modules.report_charts - INFO - Found unlimited message_clean with minimum 'original_fee' 4900 from plan '데이터차단 (0GB/통화기본)'
+2025-06-13 05:01:24: 2025-06-13 05:01:24,949 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 05:01:25: 2025-06-13 05:01:25,318 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 05:01:25: 2025-06-13 05:01:25,970 - modules.config - INFO - [9490481b] HTML report successfully generated and saved to /tmp/reports/cs_reports/cs_ranking_frontier_20250613_050123.html
+2025-06-13 05:01:26: 2025-06-13 05:01:26,051 - modules.report_charts - INFO - Found unlimited basic_data_clean with minimum 'original_fee' 59000 from plan '(삼성팩) 너겟 59'
+2025-06-13 05:01:26: 2025-06-13 05:01:26,422 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 05:01:26: 2025-06-13 05:01:26,423 - modules.report_charts - INFO - Found unlimited daily_data_clean with minimum 'original_fee' 59000 from plan '(삼성팩) 너겟 59'
+2025-06-13 05:01:26: 2025-06-13 05:01:26,869 - modules.report_charts - INFO - Found unlimited voice_clean with minimum 'original_fee' 4900 from plan '데이터차단 (0GB/통화기본)'
+2025-06-13 05:01:27: 2025-06-13 05:01:27,037 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 05:01:27: 2025-06-13 05:01:27,040 - modules.report_charts - INFO - Found unlimited message_clean with minimum 'original_fee' 4900 from plan '데이터차단 (0GB/통화기본)'
+2025-06-13 05:01:27: 2025-06-13 05:01:27,209 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 05:01:27: 2025-06-13 05:01:27,648 - modules.report_charts - INFO - Added (0,0) point to sorted frontier values for chart rendering
+2025-06-13 05:04:17: me shape: (2288, 77)
+2025-06-13 05:04:17: Features generated: 77
+2025-06-13 05:04:17: 
+2025-06-13 05:04:17: Basic features available (13/13):
+2025-06-13 05:04:17: ✓ is_5g
+2025-06-13 05:04:17: ✓ basic_data_clean
+2025-06-13 05:04:17: ✓ basic_data_unlimited
+2025-06-13 05:04:18: ✓ daily_data_clean
+2025-06-13 05:04:18: ✓ daily_data_unlimited
+2025-06-13 05:04:18: ✓ voice_clean
+2025-06-13 05:04:18: ✓ voice_unlimited
+2025-06-13 05:04:18: ✓ message_clean
+2025-06-13 05:04:18: ✓ message_unlimited
+2025-06-13 05:04:18: ✓ throttle_speed_normalized
+2025-06-13 05:04:18: ✓ tethering_gb
+2025-06-13 05:04:18: ✓ unlimited_type_numeric
+2025-06-13 05:04:18: ✓ additional_call
+2025-06-13 05:04:18: 
+2025-06-13 05:04:18: Key feature statistics:
+2025-06-13 05:04:18: basic_data_clean: min=0.00, max=300.00, mean=25.09, median=10.00
+2025-06-13 05:04:18: daily_data_clean: min=0.00, max=5.00, mean=0.37, median=0.00
+2025-06-13 05:04:18: voice_clean: min=0.00, max=3000.00, mean=1773.89, median=3000.00
+2025-06-13 05:04:18: message_clean: min=0.00, max=2000.00, mean=1149.73, median=2000.00
+2025-06-13 05:04:18: throttle_speed_normalized: min=0.00, max=1.00, mean=0.17, median=0.10
+2025-06-13 05:04:18: unlimited_type_numeric: min=0.00, max=3.00, mean=1.30, median=2.00
+2025-06-13 05:04:18: original_fee: min=1700.00, max=77000.00, mean=26998.05, median=25300.00
+2025-06-13 05:04:18: INFO:     127.0.0.1:35506 - "POST /process HTTP/1.1" 200 OK
+2025-06-13 05:04:18: Successfully created directory: data/raw
+2025-06-13 05:04:18: Successfully created directory: data/processed
+2025-06-13 05:04:18: Successfully created directory: results
+2025-06-13 05:04:18: Successfully created directory: reports
+2025-06-13 05:04:18: Data types before conversion:
+2025-06-13 05:04:18: id                   int64
+2025-06-13 05:04:18: plan_name           object
+2025-06-13 05:04:18: network             object
+2025-06-13 05:04:18: mvno                object
+2025-06-13 05:04:18: mno                 object
+2025-06-13 05:04:18: basic_data         float64
+2025-06-13 05:04:18: daily_data         float64
+2025-06-13 05:04:18: data_exhaustion     object
+2025-06-13 05:04:18: voice                int64
+2025-06-13 05:04:18: message              int64
+2025-06-13 05:04:18: dtype: object
+2025-06-13 05:04:18: Skipping tethering unit conversion - already handled in SQL query
+2025-06-13 05:04:18: Data types after conversion:
+2025-06-13 05:04:18: id                   int64
+2025-06-13 05:04:18: plan_name           object
+2025-06-13 05:04:18: network             object
+2025-06-13 05:04:18: mvno                object
+2025-06-13 05:04:18: mno                 object
+2025-06-13 05:04:18: basic_data         float64
+2025-06-13 05:04:18: daily_data         float64
+2025-06-13 05:04:18: data_exhaustion     object
+2025-06-13 05:04:18: voice                int64
+2025-06-13 05:04:18: message              int64
+2025-06-13 05:04:18: dtype: object
+2025-06-13 05:04:18: 
+2025-06-13 05:04:18: === HF SERVER PREPROCESSING DETAILS ===
+2025-06-13 05:04:18: Input DataFrame shape: (2288, 40)
+2025-06-13 05:04:18: Initial columns: ['id', 'plan_name', 'network', 'mvno', 'mno', 'basic_data', 'daily_data', 'data_exhaustion', 'voice', 'message', 'additional_call', 'data_sharing', 'roaming_support', 'micro_payment', 'is_esim', 'signup_minor', 'signup_foreigner', 'has_usim', 'has_nfc_usim', 'tethering_gb', 'tethering_status', 'tethering_data_unit', 'esim_fee', 'esim_fee_status', 'usim_delivery_fee', 'nfc_usim_delivery_fee', 'usim_delivery_fee_status', 'nfc_usim_delivery_fee_status', 'fee', 'original_fee', 'discount_fee', 'discount_period', 'post_discount_fee', 'agreement', 'agreement_period', 'agreement_type', 'num_of_signup', 'mvno_rating', 'monthly_review_score', 'discount_percentage']
+2025-06-13 05:04:18: Created is_5g feature: 430 5G plans found
+2025-06-13 05:04:18: Found 1452 plans with throttled data
+2025-06-13 05:04:18: Found 20 plans with unlimited basic data
+2025-06-13 05:04:18: Found 3 plans with unlimited daily data
+2025-06-13 05:04:18: Maximum values: basic_data=300.0, daily_data=5.0
+2025-06-13 05:04:18: NaN values imputed: 5381 -> 0
+2025-06-13 05:04:18: 
+2025-06-13 05:04:18: === FINAL PREPROCESSING STATS ===
+2025-06-13 05:04:18: Output DataFrame shape: (2288, 77)
+2025-06-13 05:04:18: Features generated: 77
+2025-06-13 05:04:18: 
+2025-06-13 05:04:18: Basic features available (13/13):
+2025-06-13 05:04:18: ✓ is_5g
+2025-06-13 05:04:18: ✓ basic_data_clean
+2025-06-13 05:04:18: ✓ basic_data_unlimited
+2025-06-13 05:04:18: ✓ daily_data_clean
+2025-06-13 05:04:18: ✓ daily_data_unlimited
+2025-06-13 05:04:18: ✓ voice_clean
+2025-06-13 05:04:18: ✓ voice_unlimited
+2025-06-13 05:04:18: ✓ message_clean
+2025-06-13 05:04:18: ✓ message_unlimited
+2025-06-13 05:04:18: ✓ throttle_speed_normalized
+2025-06-13 05:04:18: ✓ tethering_gb
+2025-06-13 05:04:18: ✓ unlimited_type_numeric
+2025-06-13 05:04:18: ✓ additional_call
+2025-06-13 05:04:18: 
+2025-06-13 05:04:18: Key feature statistics:
+2025-06-13 05:04:18: basic_data_clean: min=0.00, max=300.00, mean=25.09, median=10.00
+2025-06-13 05:04:18: daily_data_clean: min=0.00, max=5.00, mean=0.37, median=0.00
+2025-06-13 05:04:18: voice_clean: min=0.00, max=3000.00, mean=1773.89, median=3000.00
+2025-06-13 05:04:18: message_clean: min=0.00, max=2000.00, mean=1149.73, median=2000.00
+2025-06-13 05:04:18: throttle_speed_normalized: min=0.00, max=1.00, mean=0.17, median=0.10
+2025-06-13 05:04:18: unlimited_type_numeric: min=0.00, max=3.00, mean=1.30, median=2.00
+2025-06-13 05:04:18: original_fee: min=1700.00, max=77000.00, mean=26998.05, median=25300.00
+2025-06-13 05:04:18: INFO:     127.0.0.1:38482 - "POST /process HTTP/1.1" 200 OK
+2025-06-13 05:04:18: INFO:     127.0.0.1:50428 - "POST /test HTTP/1.1" 200 OK
+2025-06-13 05:04:20: INFO:     10.16.23.18:29224 - "GET /?__sign=eyJhbGciOiJFZERTQSJ9.eyJyZWFkIjp0cnVlLCJwZXJtaXNzaW9ucyI6eyJyZXBvLmNvbnRlbnQucmVhZCI6dHJ1ZSwicmVwby5kZXZNb2RlLnJlYWQiOnRydWV9LCJvbkJlaGFsZk9mIjp7ImtpbmQiOiJ1c2VyIiwiX2lkIjoiNjQ1NWViYjFiZGEwZmJiYTQxMmU5NmN2025-06-13 05:04:20,914 - modules.config - INFO - Set PYTHONPATH to: /app
+2025-06-13 05:04:20: INFO:     Started server process [16337]
+2025-06-13 05:04:20: 2025-06-13 05:04:20,927 - modules.config - INFO - FastAPI app started - log monitoring will start in 3 seconds
+2025-06-13 05:04:20: INFO:     Uvicorn running on http://0.0.0.0:7860 (Press CTRL+C to quit)
+2025-06-13 05:04:23: 2025-06-13 05:04:23,959 - modules.config - INFO - Log monitoring already running
+2025-06-13 05:11:10: 2025-06-13 05:11:10,041 - modules.config - INFO - Set PYTHONPATH to: /app
+2025-06-13 05:11:10: INFO:     Started server process [17286]
+2025-06-13 05:11:10: INFO:     Waiting for application startup.
+2025-06-13 05:11:10: 2025-06-13 05:11:10,050 - modules.config - INFO - FastAPI app started - log monitoring will start in 3 seconds
+2025-06-13 05:11:10: INFO:     Application startup complete.
+2025-06-13 05:11:10: INFO:     Uvicorn running on http://0.0.0.0:7860 (Press CTRL+C to quit)
+2025-06-13 05:11:13: 2025-06-13 05:11:13,075 - modules.config - INFO - Log monitoring already running
