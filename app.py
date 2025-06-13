@@ -768,9 +768,3 @@ def test(request: dict = Body(...)):
 
 # The /upload-csv endpoint has been removed
 # All functionality is now consolidated in the /process endpoint
-
-# Run the application
-if __name__ == "__main__":
-    import uvicorn
-    logger.info("Starting server with Uvicorn...")
-    uvicorn.run("app:app", host="0.0.0.0", port=7860, reload=True)
