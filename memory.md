@@ -2,6 +2,8 @@
 
 ## 📊 Current System Status
 - **Async chart calculation**: Implemented to eliminate continuous calculations triggered by root endpoint
+- **Visual status indicators**: Loading icons (⚙️) for in-progress, error icons (❌) for failed calculations
+- **Manual refresh system**: No auto-polling, users manually refresh to check progress
 - **Multi-frontier regression methodology**: Successfully implemented and fully operational
 - **Chart visualization**: Advanced charts now calculated asynchronously in background
 - **API response time**: Immediate response from /process endpoint, charts calculated separately

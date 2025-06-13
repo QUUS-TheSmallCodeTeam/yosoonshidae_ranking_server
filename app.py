@@ -300,11 +300,24 @@ class PlanInput(BaseModel):
 
 # Define FastAPI endpoints
 @app.get("/", response_class=HTMLResponse)
-def read_root():
+def read_root(basic: bool = False):
     """
     Serve the latest ranking HTML report if available, or show calculation status.
     """
     global cached_html_content, cached_html_timestamp, chart_calculation_status
+    
+    # If basic report is requested and we have data, show it
+    if basic and config.df_with_rankings is not None:
+        try:
+            df_for_html = config.df_with_rankings.copy()
+            is_cs = any(col for col in df_for_html.columns if col == 'CS')
+            
+            if is_cs:
+                df_for_html = df_for_html.sort_values('CS', ascending=False)
+                basic_html = generate_basic_html_report(df_for_html)
+                return HTMLResponse(content=basic_html)
+        except Exception as e:
+            logger.error(f"Error generating basic report: {e}")
     
     # Check if we have rankings in memory first
     if config.df_with_rankings is not None:
@@ -322,31 +335,86 @@ def read_root():
             <html>
                 <head>
                     <title>Generating Charts - Moyo Plan Rankings</title>
-                    <meta http-equiv="refresh" content="5">
                     <style>
-                        body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; }}
-                        .progress-container {{ width: 80%; margin: 20px auto; background-color: #f0f0f0; border-radius: 10px; }}
-                        .progress-bar {{ height: 30px; background-color: #007bff; border-radius: 10px; transition: width 0.3s; }}
-                        .status {{ margin: 20px 0; font-size: 18px; }}
-                        .spinner {{ border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 2s linear infinite; margin: 20px auto; }}
+                        body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; background-color: #f8f9fa; }}
+                        .status-container {{ max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                        .progress-container {{ width: 100%; margin: 30px 0; background-color: #e9ecef; border-radius: 10px; overflow: hidden; }}
+                        .progress-bar {{ height: 20px; background: linear-gradient(90deg, #007bff, #0056b3); border-radius: 10px; transition: width 0.3s ease; }}
+                        .status {{ margin: 20px 0; font-size: 18px; color: #495057; }}
+                        .loading-icon {{ font-size: 48px; margin: 20px 0; animation: spin 2s linear infinite; }}
+                        .refresh-btn {{ background-color: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 20px; }}
+                        .refresh-btn:hover {{ background-color: #0056b3; }}
                         @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+                        .eta {{ font-size: 14px; color: #6c757d; margin-top: 10px; }}
                     </style>
                 </head>
                 <body>
-                    <h1>📊 Generating Enhanced Charts</h1>
-                    <div class="spinner"></div>
-                    <div class="status">Processing advanced visualizations...</div>
-                    <div class="progress-container">
-                        <div class="progress-bar" style="width: {progress}%"></div>
+                    <div class="status-container">
+                        <h1>📊 Multi-Feature Frontier Regression Analysis</h1>
+                        <div class="loading-icon">⚙️</div>
+                        <div class="status">Processing advanced visualizations...</div>
+                        <div class="progress-container">
+                            <div class="progress-bar" style="width: {progress}%"></div>
+                        </div>
+                        <p><strong>{progress}% Complete</strong></p>
+                        <div class="eta">
+                            {'Estimated time remaining: 30-45 seconds' if progress < 50 else 'Almost done! 10-15 seconds remaining'}
+                        </div>
+                        <button class="refresh-btn" onclick="window.location.reload()">🔄 Check Progress</button>
+                        <hr style="margin: 30px 0;">
+                        <p style="font-size: 14px; color: #6c757d;">
+                            The system is generating advanced multi-frontier regression charts and cost structure analysis.<br>
+                            <strong>Manual refresh recommended</strong> - Click "Check Progress" or refresh the page to see updates.
+                        </p>
                     </div>
-                    <p>{progress}% Complete</p>
-                    <p><em>This page will automatically refresh every 5 seconds</em></p>
-                    <hr>
-                    <p>The system is generating advanced multi-frontier regression charts and cost structure analysis. This typically takes 30-60 seconds.</p>
                 </body>
             </html>
             """
             return HTMLResponse(content=status_html)
+        
+        # If there was an error in chart calculation, show error page
+        if chart_calculation_status['error_message']:
+            error_html = f"""
+            <html>
+                <head>
+                    <title>Chart Generation Failed - Moyo Plan Rankings</title>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; background-color: #f8f9fa; }}
+                        .error-container {{ max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border-left: 5px solid #dc3545; }}
+                        .error-icon {{ font-size: 48px; margin: 20px 0; color: #dc3545; }}
+                        .error-title {{ color: #dc3545; margin-bottom: 20px; }}
+                        .error-message {{ background-color: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0; font-family: monospace; text-align: left; }}
+                        .retry-btn {{ background-color: #28a745; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 10px; }}
+                        .retry-btn:hover {{ background-color: #218838; }}
+                        .basic-btn {{ background-color: #6c757d; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 10px; }}
+                        .basic-btn:hover {{ background-color: #5a6268; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="error-container">
+                        <h1 class="error-title">❌ Chart Generation Failed</h1>
+                        <div class="error-icon">⚠️</div>
+                        <p>The advanced chart generation encountered an error:</p>
+                        <div class="error-message">{chart_calculation_status['error_message']}</div>
+                        <p>You can try the following options:</p>
+                        <button class="retry-btn" onclick="window.location.href='/process'">🔄 Process New Data</button>
+                        <button class="basic-btn" onclick="generateBasicReport()">📋 Show Basic Report</button>
+                        <hr style="margin: 30px 0;">
+                        <p style="font-size: 14px; color: #6c757d;">
+                            The ranking calculations completed successfully, but chart visualization failed.<br>
+                            You can still access the ranking data through the API or process new data.
+                        </p>
+                    </div>
+                    <script>
+                        function generateBasicReport() {{
+                            // Redirect to a basic report endpoint
+                            window.location.href = '/?basic=true';
+                        }}
+                    </script>
+                </body>
+            </html>
+            """
+            return HTMLResponse(content=error_html)
         
         # If there was an error in chart calculation, show basic report without charts
         if chart_calculation_status['error_message']:
@@ -536,7 +604,7 @@ def read_root():
         html_content = f.read()
     
     # Set the latest_report_path variable for reference
-    latest_report_path = f"/reports/{latest_report.name}"
+    latest_report_path = f"/reports/cs_reports/{latest_report.name}"
     
     # Read and return the HTML content
     try:
@@ -925,6 +993,60 @@ def get_chart_status():
         status['status_text'] = "No calculations performed yet"
     
     return status
+
+@app.get("/status", response_class=HTMLResponse)
+def get_status_page():
+    """
+    Get a simple HTML page showing the current system status.
+    """
+    global chart_calculation_status
+    
+    status = chart_calculation_status.copy()
+    
+    if status['is_calculating']:
+        status_icon = "⚙️"
+        status_text = f"Calculating charts... {status['calculation_progress']}%"
+        status_color = "#007bff"
+    elif status['error_message']:
+        status_icon = "❌"
+        status_text = f"Error: {status['error_message']}"
+        status_color = "#dc3545"
+    elif status['last_calculation_time']:
+        status_icon = "✅"
+        status_text = "Charts ready"
+        status_color = "#28a745"
+    else:
+        status_icon = "⏳"
+        status_text = "No calculations performed yet"
+        status_color = "#6c757d"
+    
+    html = f"""
+    <html>
+        <head>
+            <title>System Status - Moyo Plan Rankings</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; background-color: #f8f9fa; }}
+                .status-card {{ max-width: 400px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                .status-icon {{ font-size: 64px; margin: 20px 0; }}
+                .status-text {{ font-size: 18px; color: {status_color}; margin: 20px 0; }}
+                .btn {{ background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px; text-decoration: none; display: inline-block; }}
+                .btn:hover {{ background-color: #0056b3; }}
+            </style>
+        </head>
+        <body>
+            <div class="status-card">
+                <h1>System Status</h1>
+                <div class="status-icon">{status_icon}</div>
+                <div class="status-text">{status_text}</div>
+                <a href="/" class="btn">🏠 Home</a>
+                <a href="/chart-status" class="btn">📊 API Status</a>
+                <button onclick="window.location.reload()" class="btn">🔄 Refresh</button>
+            </div>
+        </body>
+    </html>
+    """
+    
+    return HTMLResponse(content=html)
 
 @app.post("/test")
 def test(request: dict = Body(...)):

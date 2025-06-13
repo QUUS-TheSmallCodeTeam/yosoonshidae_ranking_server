@@ -18,6 +18,9 @@
 - **✅ COMPLETED**: /chart-status 엔드포인트 추가
 - **✅ COMPLETED**: 기본 HTML 보고서 fallback 구현
 - **✅ COMPLETED**: SSH 폴링으로 인한 연속 계산 문제 완전 해결
+- **✅ COMPLETED**: 시각적 상태 표시기 구현 (로딩 아이콘 ⚙️, 에러 아이콘 ❌)
+- **✅ COMPLETED**: 수동 새로고침 시스템 (자동 폴링 제거)
+- **✅ COMPLETED**: /status 엔드포인트 추가 (사용자 친화적 상태 페이지)
 
 ### 🔧 MAJOR FIX: Frontier-Based Linear Decomposition 
 - **✅ FIXED**: Changed from arbitrary "market segments" to frontier-based representative plan selection
@@ -39,12 +42,14 @@
 
 ## 🧪 IMMEDIATE TESTING NEEDED
 
-### Test Async Chart Calculation System ⭐ NEW PRIORITY
-- **TODO**: Test /process endpoint for immediate response with chart_status="calculating"
-- **TODO**: Verify /chart-status endpoint shows progress (0→10→30→50→80→100)
-- **TODO**: Confirm root endpoint shows progress page during calculation
-- **TODO**: Validate cached HTML is served after chart completion
-- **TODO**: Ensure no more continuous calculation logs from SSH polling
+### Test Async Chart Calculation System ⭐ COMPLETED
+- **✅ COMPLETED**: Test /process endpoint for immediate response with chart_status="calculating"
+- **✅ COMPLETED**: Verify /chart-status endpoint shows progress (0→10→30→50→80→100)
+- **✅ COMPLETED**: Confirm root endpoint shows progress page during calculation
+- **✅ COMPLETED**: Validate cached HTML is served after chart completion
+- **✅ COMPLETED**: Ensure no more continuous calculation logs from SSH polling
+- **✅ COMPLETED**: Visual status indicators working (⚙️ loading, ❌ error, ✅ ready)
+- **✅ COMPLETED**: Manual refresh system implemented (no auto-polling)
 
 ### Test Updated Linear Decomposition
 - **TODO**: Run `/process` endpoint to test frontier-based selection

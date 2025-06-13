@@ -68,14 +68,22 @@ def prepare_cost_structure_chart_data(cost_structure):
         if feature in feature_labels:
             info = feature_labels[feature]
             
+            # Extract numeric value from cost (handle both dict and numeric formats)
+            if isinstance(cost, dict):
+                # Multi-frontier method returns nested structure
+                cost_value = cost.get('coefficient', cost.get('cost_per_unit', 0))
+            else:
+                # Simple numeric value
+                cost_value = cost
+            
             # For overall breakdown - use normalized values for comparison
             overall_data['labels'].append(info['label'])
-            overall_data['data'].append(abs(cost))  # Use absolute value for visualization
+            overall_data['data'].append(abs(cost_value))  # Use absolute value for visualization
             
             # For unit costs - only meaningful marginal costs
-            if cost > 0:  # Only positive marginal costs
+            if cost_value > 0:  # Only positive marginal costs
                 unit_cost_data['labels'].append(info['label'])
-                unit_cost_data['data'].append(cost)
+                unit_cost_data['data'].append(cost_value)
                 unit_cost_data['units'].append(info['unit'])
     
     # Chart 3: Detailed marginal cost analysis with business interpretation
@@ -120,9 +128,18 @@ def prepare_cost_structure_chart_data(cost_structure):
     for feature, cost in feature_costs.items():
         if feature in feature_analysis:
             analysis = feature_analysis[feature]
+            
+            # Extract numeric value from cost (handle both dict and numeric formats)
+            if isinstance(cost, dict):
+                # Multi-frontier method returns nested structure
+                cost_value = cost.get('coefficient', cost.get('cost_per_unit', 0))
+            else:
+                # Simple numeric value
+                cost_value = cost
+            
             marginal_analysis['features'].append(analysis['name'])
-            marginal_analysis['coefficients'].append(cost)
-            marginal_analysis['interpretations'].append(analysis['interpretation'](cost))
+            marginal_analysis['coefficients'].append(cost_value)
+            marginal_analysis['interpretations'].append(analysis['interpretation'](cost_value))
     
     return {
         'overall': overall_data,
