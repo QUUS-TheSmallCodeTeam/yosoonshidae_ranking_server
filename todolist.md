@@ -1,5 +1,17 @@
 # 📋 할 일 목록
 
+## 🔥 High Priority
+
+### **Multicollinearity Resolution in Regression Analysis**
+- **Problem**: `message_unlimited` and `additional_call` coefficients are ₩0.0000 due to severe multicollinearity
+- **Impact**: Missing ₩18,482 value for unlimited messaging and ₩16,261 value for additional calls in cost model
+- **Solutions to implement**:
+  - [ ] Add Ridge/Lasso regularization to handle multicollinearity
+  - [ ] Implement variance inflation factor (VIF) checking
+  - [ ] Create composite features (e.g., `unlimited_communication_bundle`)
+  - [ ] Add feature selection algorithm to automatically handle correlated features
+- **Priority**: High - affects accuracy of cost model for major features
+
 ## ✅ 완료된 작업
 - Multi-Feature Frontier Regression Analysis 섹션 완전 제거
 - Fixed rates 방식으로 전체 요금제 랭킹 테이블 계산 변경
@@ -51,3 +63,31 @@
 - ✅ Clean, simplified interface without overpriced plan analysis
 - ✅ Accurate CS ratios reflecting true feature values
 - ✅ Comprehensive dataset coverage without filtering bias
+
+### **Voice & Message Unlimited Flag Integration**
+- [x] Fixed preprocessing to include unlimited flags in regression analysis
+- [x] Updated `fixed_rates` method to include voice_unlimited and message_unlimited
+- [x] Verified data preprocessing creates correct unlimited flags (1,227 message_unlimited plans)
+- [x] Confirmed features are included in regression analysis (16 total features)
+- [x] Voice unlimited coefficient now shows ₩3,115 (working correctly)
+
+### **System Architecture & Performance**
+- [x] Async chart calculation implementation
+- [x] Visual status indicators for calculation progress
+- [x] Manual refresh system (no auto-polling)
+- [x] Background chart processing
+- [x] Immediate API response with separate chart calculation
+
+## 💡 Future Enhancements
+
+### **Regression Model Improvements**
+- [ ] Implement cross-validation for coefficient stability
+- [ ] Add model diagnostics and residual analysis
+- [ ] Consider ensemble methods for robust coefficient estimation
+- [ ] Add confidence intervals for coefficient estimates
+
+### **Data Quality & Validation**
+- [ ] Add automated data quality checks
+- [ ] Implement outlier detection and handling
+- [ ] Add feature importance analysis
+- [ ] Create data drift monitoring

@@ -8,7 +8,8 @@
 - **Multi-frontier regression methodology**: Successfully implemented and fully operational
 - **Chart visualization**: Advanced charts now calculated asynchronously in background
 - **API response time**: Immediate response from /process endpoint, charts calculated separately
-- **Default method**: Changed to `fixed_rates` for new ranking table calculation approach
+- **Default method**: Changed to `fixed_rates` for consistent coefficient calculation
+- **Feature coefficient calculation**: Successfully includes voice_unlimited and message_unlimited in regression analysis
 - **Chart data format**: Fixed JavaScript functions to handle nested cost structure objects properly
 - **Marginal Cost Frontier Charts**: Successfully implemented feature-level trend visualization using pure marginal costs from multi-frontier regression
 - **✅ PIECEWISE LINEAR MODEL IMPLEMENTED**: Replaced simple linear model with realistic piecewise segments showing economies of scale
@@ -302,3 +303,30 @@ cat /proc/$PID/fd/1
 - 모든 기능이 정상 작동 중
 - Double counting 문제 해결 완료
 - Unlimited type flags 정상 작동
+
+## 🔧 Known Issues & Solutions
+
+### **Multicollinearity Problem in Regression Analysis**
+- **Issue**: `message_unlimited` and `additional_call` coefficients showing as ₩0.0000 despite strong price correlations
+- **Root Cause**: Severe multicollinearity between features:
+  - `message_unlimited` ↔ `voice_unlimited`: 0.968 correlation (nearly perfect)
+  - `message_unlimited` ↔ `additional_call`: 0.675 correlation
+  - `voice_unlimited` ↔ `additional_call`: 0.657 correlation
+- **Evidence**: 
+  - Strong individual price correlations: message_unlimited (0.5879), additional_call (0.4936)
+  - Clear price differences: unlimited messaging adds ₩18,482, additional calls add ₩16,261
+  - Features excluded from coefficient breakdown due to multicollinearity
+- **Status**: Identified but not yet resolved - requires regression methodology improvement
+
+## 🎯 Current Working Methods
+- **Data preprocessing**: Successfully creates message_unlimited flags from message=9999 values
+- **Feature inclusion**: All unlimited flags properly included in regression analysis
+- **Chart generation**: Asynchronous processing with proper status tracking
+- **Cost calculation**: Multi-feature regression with frontier-based methodology
+- **UI feedback**: Real-time status updates without auto-polling
+
+## 📝 Testing & Validation
+- **Test command**: `curl -X POST http://localhost:7860/process -H "Content-Type: application/json" -d @$(ls -t data/raw/*.json | head -1)`
+- **Log monitoring**: `./simple_log_monitor.sh &` for background monitoring
+- **Status verification**: Manual browser refresh to check calculation progress
+- **Data validation**: Preprocessing correctly handles 1,227 unlimited message plans and 856 additional call plans
