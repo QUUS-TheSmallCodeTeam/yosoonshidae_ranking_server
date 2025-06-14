@@ -240,31 +240,42 @@ The system now provides exactly what was requested:
 - [ ] Add export functionality for chart data
 - [ ] Create comparative analysis across different time periods
 
-# 📋 현재 할 일 목록
+## 🔬 방법론 개선 검토 완료
 
-## ✅ 완료된 작업
-1. **Marginal Cost Frontier Analysis 그래프 문제 해결** ✅
-   - `cost_structure.feature_costs`가 리스트 형태였는데 딕셔너리로 가정하던 문제 수정
-   - 리스트 형태 데이터를 딕셔너리로 변환하는 로직 추가
-   - `marginalCostFrontierData`에 실제 데이터가 정상적으로 포함됨
-   - 각 feature별 개별 트렌드 그래프가 정상 표시됨
+### ✅ 완료된 작업
+- [x] **전체 데이터셋 Multi-Feature Regression 구현**: FullDatasetMultiFeatureRegression 클래스 완성
+- [x] **누적적 한계비용 계산 구현**: fit_cumulative_piecewise_linear 함수 완성
+- [x] **실제 데이터 테스트**: 2,294개 요금제로 두 방법론 비교 분석 완료
+- [x] **성능 평가**: 데이터 활용도, 계수 변화, 경제학적 타당성 검증
 
-2. **데이터 파일 문제 해결** ✅
-   - 유저가 제공한 테스트 데이터로 정상 작동 확인
-   - `/process` 엔드포인트 → 차트 계산 → HTML 생성 프로세스 정상 작동
+### 📊 테스트 결과 요약
+- **전체 데이터셋 방식**: 69.5배 더 많은 데이터 활용, 하지만 일부 계수 왜곡 (voice_clean → 0)
+- **누적 한계비용**: 경제학적으로 더 현실적, 음수 한계비용 방지, 해석 복잡도 증가
 
-## 🎯 시스템 현재 상태
-- **Feature Frontier Charts**: 정상 작동 ✅
-- **Marginal Cost Frontier Charts**: 정상 작동 ✅ (각 feature별 개별 차트 표시)
-- **Multi-frontier Analysis**: 정상 작동 ✅
-- **Plan Efficiency Analysis**: 정상 작동 ✅
-- **멀티스레딩 차트 계산**: 정상 작동 ✅
+## 🎯 다음 단계 옵션
 
-## 📊 완성된 기능
-- **각 feature별 트렌드 그래프**: Marginal Cost Frontier Analysis 섹션에서 Feature Frontier Charts와 동일한 형태로 표시
-- **순수 한계비용 시각화**: Multi-Feature Frontier Regression에서 추출된 계수를 사용한 차트
-- **실시간 차트 상태 추적**: 개별 차트별 계산 진행 상황 표시
-- **병렬 차트 계산**: 5개 차트 타입 동시 계산
+### Option A: 기존 시스템 유지 + 선택적 개선
+- [ ] 현재 frontier-based regression 유지
+- [ ] 누적 한계비용을 선택적 옵션으로 추가
+- [ ] 사용자가 방법론 선택 가능하도록 UI 개선
 
-## 🚀 모든 주요 기능 완료
-유저가 요청한 모든 핵심 기능이 구현되고 정상 작동 중입니다.
+### Option B: 하이브리드 접근법
+- [ ] Frontier 선택은 유지하되, 더 많은 frontier 포인트 수집
+- [ ] 이상치 제거 로직을 frontier 선택에 적용
+- [ ] 누적 한계비용을 기본값으로 설정
+
+### Option C: 완전 전환
+- [ ] 전체 데이터셋 방식을 기본값으로 변경
+- [ ] 기존 frontier 방식을 비교 참조용으로 유지
+- [ ] 계수 해석 가이드라인 작성
+
+## 🚨 발견된 이슈
+- **Voice feature 계수 0**: 전체 데이터셋 방식에서 voice_clean 계수가 0이 됨 (해석 주의 필요)
+- **음수 한계비용**: 독립적 piecewise에서 음수 한계비용 발생 (경제학적으로 비현실적)
+- **Base cost 급증**: 전체 데이터셋 방식에서 base cost가 5배 증가 (₩2,907 → ₩15,270)
+
+## 💡 추가 개선 아이디어
+- [ ] **가중 회귀**: 최근 요금제에 더 높은 가중치 부여
+- [ ] **세그먼트별 회귀**: 통신사별, 가격대별 별도 회귀 모델
+- [ ] **동적 이상치 임계값**: 데이터 분포에 따른 적응적 이상치 제거
+- [ ] **교차 검증**: k-fold 교차 검증으로 모델 안정성 검증

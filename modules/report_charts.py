@@ -798,6 +798,101 @@ def fit_piecewise_linear(feature_values, costs, change_points):
     
     return segments
 
+def fit_cumulative_piecewise_linear(feature_values, costs, change_points):
+    """
+    Fit piecewise linear segments with CUMULATIVE marginal costs.
+    Each segment builds upon the previous segment's cost structure.
+    
+    This is more realistic than independent segments as it reflects how
+    economies/diseconomies of scale compound over feature ranges.
+    
+    Args:
+        feature_values: Array of feature values (sorted)
+        costs: Array of corresponding costs
+        change_points: List of change point indices
+        
+    Returns:
+        List of segment dictionaries with cumulative marginal costs
+    """
+    if len(feature_values) == 0:
+        return []
+    
+    segments = []
+    segment_starts = [0] + change_points + [len(feature_values)]
+    
+    # Base marginal cost for first segment
+    cumulative_marginal_cost = 0
+    
+    for i in range(len(segment_starts) - 1):
+        start_idx = segment_starts[i]
+        end_idx = segment_starts[i + 1]
+        
+        if start_idx == end_idx:
+            continue
+            
+        # Get segment data
+        seg_features = feature_values[start_idx:end_idx]
+        seg_costs = costs[start_idx:end_idx]
+        
+        if len(seg_features) < 2:
+            continue
+        
+        # Calculate independent marginal cost for this segment
+        feature_diff = seg_features[-1] - seg_features[0]
+        cost_diff = seg_costs[-1] - seg_costs[0]
+        
+        if feature_diff == 0:
+            segment_marginal_cost = 0
+        else:
+            segment_marginal_cost = cost_diff / feature_diff
+        
+        # CUMULATIVE: Add to previous segments' marginal costs
+        if i == 0:
+            # First segment: base marginal cost
+            cumulative_marginal_cost = segment_marginal_cost
+            incremental_cost = segment_marginal_cost
+        else:
+            # Subsequent segments: add incremental cost to cumulative
+            incremental_cost = segment_marginal_cost - (segments[-1]['independent_marginal_cost'] if segments else 0)
+            cumulative_marginal_cost = segments[-1]['cumulative_marginal_cost'] + incremental_cost
+        
+        # Calculate segment endpoints
+        start_feature = seg_features[0]
+        end_feature = seg_features[-1]
+        start_cost = seg_costs[0]
+        end_cost = seg_costs[-1]
+        
+        # Validate cumulative cost makes sense
+        if cumulative_marginal_cost < 0:
+            logger.warning(f"Negative cumulative marginal cost: {cumulative_marginal_cost:.2f}, setting to 0")
+            cumulative_marginal_cost = max(0, cumulative_marginal_cost)
+        
+        segment = {
+            'segment_index': i,
+            'start_feature': start_feature,
+            'end_feature': end_feature,
+            'start_cost': start_cost,
+            'end_cost': end_cost,
+            'feature_range': end_feature - start_feature,
+            'cost_range': end_cost - start_cost,
+            'independent_marginal_cost': segment_marginal_cost,  # This segment only
+            'cumulative_marginal_cost': cumulative_marginal_cost,  # Building on previous segments
+            'incremental_cost': incremental_cost if i > 0 else segment_marginal_cost,
+            'data_points': len(seg_features)
+        }
+        
+        segments.append(segment)
+        
+        logger.debug(f"Segment {i}: {start_feature:.1f}-{end_feature:.1f}, "
+                    f"Independent: ₩{segment_marginal_cost:.0f}/unit, "
+                    f"Cumulative: ₩{cumulative_marginal_cost:.0f}/unit, "
+                    f"Incremental: ₩{incremental_cost:.0f}/unit")
+    
+    marginal_costs_str = [f"₩{s['cumulative_marginal_cost']:.0f}" for s in segments]
+    logger.info(f"Fitted {len(segments)} CUMULATIVE segments with marginal costs: {marginal_costs_str}")
+    
+    return segments
+
 def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_continuous_features):
     """
     Prepare feature frontier charts using PIECEWISE LINEAR model for realistic marginal costs.

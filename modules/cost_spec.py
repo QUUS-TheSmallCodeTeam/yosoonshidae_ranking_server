@@ -1139,9 +1139,9 @@ class MultiFeatureFrontierRegression:
         logger.info(f"  Base cost (β₀): ₩{self.coefficients[0]:,.0f}")
         for i, feature in enumerate(analysis_features):
             logger.info(f"  {feature} pure cost: ₩{self.coefficients[i+1]:,.2f}")
+        logger.info(f"  Used {len(frontier_plans)} frontier plans for regression")
         logger.info(f"  Mean absolute error: ₩{mae:,.0f}")
         logger.info(f"  Max absolute error: ₩{max_error:,.0f}")
-        logger.info(f"  Used {len(frontier_plans)} frontier plans for regression")
         
         return self.coefficients
     
@@ -1168,6 +1168,195 @@ class MultiFeatureFrontierRegression:
             breakdown['feature_costs'][feature] = {
                 'coefficient': self.coefficients[i+1],
                 'min_increment': self.min_increments.get(feature, 1),
+                'cost_per_unit': self.coefficients[i+1]
+            }
+        
+        return breakdown
+
+class FullDatasetMultiFeatureRegression:
+    """
+    Alternative to MultiFeatureFrontierRegression that uses ALL plans in the dataset
+    instead of just frontier plans. This captures market-wide pricing patterns
+    but requires careful outlier handling.
+    """
+    
+    def __init__(self, features=None, outlier_threshold=3.0):
+        self.features = features or ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb']
+        self.outlier_threshold = outlier_threshold  # Standard deviations for outlier detection
+        self.coefficients = None
+        self.all_plans = None
+        self.outliers_removed = 0
+        
+    def remove_outliers(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Remove obvious pricing outliers that would skew regression.
+        
+        Args:
+            df: DataFrame with plan data
+            
+        Returns:
+            DataFrame with outliers removed
+        """
+        df_clean = df.copy()
+        initial_count = len(df_clean)
+        
+        # Method 1: Remove plans with extremely high cost per feature
+        for feature in self.features:
+            if feature not in df_clean.columns:
+                continue
+                
+            # Calculate cost per feature unit
+            df_clean[f'{feature}_cost_per_unit'] = df_clean['original_fee'] / (df_clean[feature] + 1)  # +1 to avoid division by zero
+            
+            # Remove outliers based on Z-score
+            mean_cost = df_clean[f'{feature}_cost_per_unit'].mean()
+            std_cost = df_clean[f'{feature}_cost_per_unit'].std()
+            
+            if std_cost > 0:
+                z_scores = np.abs((df_clean[f'{feature}_cost_per_unit'] - mean_cost) / std_cost)
+                df_clean = df_clean[z_scores <= self.outlier_threshold]
+            
+            # Clean up temporary column
+            df_clean = df_clean.drop(columns=[f'{feature}_cost_per_unit'])
+        
+        # Method 2: Remove plans with extremely high total cost
+        total_cost_mean = df_clean['original_fee'].mean()
+        total_cost_std = df_clean['original_fee'].std()
+        
+        if total_cost_std > 0:
+            z_scores = np.abs((df_clean['original_fee'] - total_cost_mean) / total_cost_std)
+            df_clean = df_clean[z_scores <= self.outlier_threshold]
+        
+        self.outliers_removed = initial_count - len(df_clean)
+        logger.info(f"Removed {self.outliers_removed} outliers ({self.outliers_removed/initial_count*100:.1f}%) from {initial_count} plans")
+        
+        return df_clean
+        
+    def solve_full_dataset_coefficients(self, df: pd.DataFrame) -> np.ndarray:
+        """
+        Solve for coefficients using ALL plans in the dataset after outlier removal.
+        
+        Args:
+            df: DataFrame with plan data
+            
+        Returns:
+            Array of coefficients [β₀, β₁, β₂, ...]
+        """
+        # Step 1: Remove outliers
+        df_clean = self.remove_outliers(df)
+        self.all_plans = df_clean
+        
+        if len(df_clean) < len(self.features) + 1:
+            raise ValueError(f"Insufficient plans ({len(df_clean)}) after outlier removal for {len(self.features)} features")
+        
+        # Step 2: Build feature matrix (exclude unlimited flags)
+        from modules.cost_spec import UNLIMITED_FLAGS
+        analysis_features = [f for f in self.features if f not in UNLIMITED_FLAGS.values()]
+        
+        # Handle unlimited features by converting to large values
+        X_data = []
+        y_data = []
+        
+        for _, plan in df_clean.iterrows():
+            feature_vector = []
+            
+            for feature in analysis_features:
+                if feature not in plan:
+                    feature_vector.append(0)
+                    continue
+                    
+                # Check if this feature is unlimited for this plan
+                unlimited_flag = UNLIMITED_FLAGS.get(feature)
+                if unlimited_flag and unlimited_flag in plan and plan[unlimited_flag] == 1:
+                    # Use a large value to represent unlimited
+                    max_value = df[feature].max() * 2
+                    feature_vector.append(max_value)
+                else:
+                    feature_vector.append(plan[feature])
+            
+            X_data.append(feature_vector)
+            y_data.append(plan['original_fee'])
+        
+        X = np.array(X_data)
+        y = np.array(y_data)
+        
+        # Add intercept column
+        X = np.column_stack([np.ones(len(X)), X])
+        
+        # Step 3: Solve constrained regression (all coefficients ≥ 0)
+        def objective(beta):
+            return np.sum((X @ beta - y) ** 2)
+        
+        # Bounds: all coefficients non-negative
+        bounds = [(0, None)] * len(X[0])
+        
+        # Initial guess
+        try:
+            beta_ols = np.linalg.lstsq(X, y, rcond=None)[0]
+            initial_guess = np.maximum(beta_ols, 0)
+        except:
+            avg_cost = np.mean(y)
+            initial_guess = [avg_cost * 0.4] + [avg_cost * 0.1] * len(analysis_features)
+        
+        # Solve optimization
+        from scipy.optimize import minimize
+        result = minimize(
+            objective,
+            x0=initial_guess,
+            method='trust-constr',
+            bounds=bounds,
+            options={'disp': False, 'maxiter': 1000}
+        )
+        
+        if not result.success:
+            logger.error(f"Full dataset multi-feature regression failed: {result.message}")
+            raise RuntimeError("Failed to solve full dataset multi-feature regression")
+        
+        self.coefficients = result.x
+        
+        # Validation logging
+        predicted = X @ self.coefficients
+        actual = y
+        mae = np.mean(np.abs(predicted - actual))
+        max_error = np.max(np.abs(predicted - actual))
+        rmse = np.sqrt(np.mean((predicted - actual) ** 2))
+        
+        logger.info(f"Full dataset multi-feature regression solved successfully:")
+        logger.info(f"  Base cost (β₀): ₩{self.coefficients[0]:,.0f}")
+        for i, feature in enumerate(analysis_features):
+            logger.info(f"  {feature} cost: ₩{self.coefficients[i+1]:,.2f}")
+        logger.info(f"  Used {len(df_clean)} plans (removed {self.outliers_removed} outliers)")
+        logger.info(f"  Mean absolute error: ₩{mae:,.0f}")
+        logger.info(f"  Root mean square error: ₩{rmse:,.0f}")
+        logger.info(f"  Max absolute error: ₩{max_error:,.0f}")
+        
+        return self.coefficients
+        
+    def get_coefficient_breakdown(self) -> dict:
+        """
+        Get coefficient breakdown for visualization.
+        
+        Returns:
+            Dictionary with coefficient information
+        """
+        if self.coefficients is None:
+            raise ValueError("Must solve coefficients first")
+            
+        from modules.cost_spec import UNLIMITED_FLAGS
+        analysis_features = [f for f in self.features if f not in UNLIMITED_FLAGS.values()]
+        
+        breakdown = {
+            'base_cost': self.coefficients[0],
+            'feature_costs': {},
+            'total_plans_used': len(self.all_plans) if self.all_plans is not None else 0,
+            'outliers_removed': self.outliers_removed,
+            'features_analyzed': len(analysis_features),
+            'method': 'full_dataset'
+        }
+        
+        for i, feature in enumerate(analysis_features):
+            breakdown['feature_costs'][feature] = {
+                'coefficient': self.coefficients[i+1],
                 'cost_per_unit': self.coefficients[i+1]
             }
         
