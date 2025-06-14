@@ -1485,7 +1485,8 @@ def prepare_granular_marginal_cost_frontier_data(df, multi_frontier_breakdown, c
     # Run full dataset multi-feature regression
     try:
         full_dataset_analyzer = FullDatasetMultiFeatureRegression()
-        full_dataset_result = full_dataset_analyzer.analyze(clean_df, core_continuous_features)
+        coefficients = full_dataset_analyzer.solve_full_dataset_coefficients(clean_df)
+        full_dataset_result = full_dataset_analyzer.get_coefficient_breakdown()
         
         if not full_dataset_result or 'feature_costs' not in full_dataset_result:
             logger.error("Full dataset regression failed")

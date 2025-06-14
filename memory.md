@@ -23,6 +23,7 @@
 - **✅ PIECEWISE SEGMENTS PROPERLY IMPLEMENTED**: Using fit_cumulative_piecewise_linear for realistic cost accumulation
 - **✅ MULTI-FEATURE FRONTIER REGRESSION ANALYSIS REMOVED**: Deleted entire section from HTML and related calculation code per user request
 - **✅ FIXED RATES METHOD IMPLEMENTED**: New ranking calculation using pure coefficients for entire dataset without filtering
+- **✅ UNLIMITED FLAGS IN REGRESSION**: voice_unlimited and message_unlimited now properly included in Feature Marginal Cost Coefficients table
 
 ## 🎯 Key Achievements
 - **Cross-contamination problem solved**: Marginal Cost Frontier Charts show pure feature trends without contamination

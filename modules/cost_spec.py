@@ -751,18 +751,16 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
         logger.info("Starting fixed rates method using pure coefficients")
         df_result = df.copy()
         
-        # Get features for this feature set
+        # Get ALL features for this feature set (including unlimited flags)
         if feature_set in FEATURE_SETS:
-            features = [f for f in FEATURE_SETS[feature_set] if f not in UNLIMITED_FLAGS.values()]
+            # Start with the base feature set
+            all_features = FEATURE_SETS[feature_set].copy()
+            # Add corresponding unlimited flags
+            for continuous_feature, unlimited_flag in UNLIMITED_FLAGS.items():
+                if continuous_feature in all_features and unlimited_flag not in all_features:
+                    all_features.append(unlimited_flag)
         else:
             raise ValueError(f"Unknown feature set: {feature_set}")
-        
-        # Get all features for this feature set (excluding unlimited flags)
-        if feature_set in FEATURE_SETS:
-            all_features = [f for f in FEATURE_SETS[feature_set] if f not in UNLIMITED_FLAGS.values()]
-        else:
-            # Fallback to safe features if feature_set not found
-            all_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb', 'is_5g']
         
         # Only use features that actually exist in the dataframe
         analysis_features = [f for f in all_features if f in df.columns]
@@ -783,20 +781,11 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
             
             for i, feature in enumerate(analysis_features):
                 if feature in df.columns:
-                    # Use the actual feature values (already zeroed out for unlimited plans in preprocessing)
+                    # Use the actual feature values (continuous features already zeroed out for unlimited plans, 
+                    # unlimited flags have their own coefficients)
                     baselines += coefficients[i+1] * df[feature].values
                 else:
                     logger.warning(f"Feature {feature} not found in data, treating as 0")
-            
-            # Add unlimited flag coefficients separately
-            for feature, unlimited_flag in UNLIMITED_FLAGS.items():
-                if feature in analysis_features and unlimited_flag in df.columns:
-                    # Find the coefficient index for the unlimited flag
-                    if unlimited_flag in analysis_features:
-                        flag_index = analysis_features.index(unlimited_flag)
-                        baselines += coefficients[flag_index+1] * df[unlimited_flag].values
-                    else:
-                        logger.warning(f"Unlimited flag {unlimited_flag} not found in analysis features")
             
             # Add results to dataframe
             df_result['B_fixed_rates'] = baselines
@@ -1270,7 +1259,10 @@ class FullDatasetMultiFeatureRegression:
     """
     
     def __init__(self, features=None, outlier_threshold=3.0):
-        self.features = features or ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb']
+        # Use the correct feature set from FEATURE_SETS
+        if features is None:
+            features = FEATURE_SETS['basic']
+        self.features = features
         self.outlier_threshold = outlier_threshold  # Standard deviations for outlier detection
         self.coefficients = None
         self.all_plans = None
@@ -1289,26 +1281,7 @@ class FullDatasetMultiFeatureRegression:
         df_clean = df.copy()
         initial_count = len(df_clean)
         
-        # Method 1: Remove plans with extremely high cost per feature
-        for feature in self.features:
-            if feature not in df_clean.columns:
-                continue
-                
-            # Calculate cost per feature unit
-            df_clean[f'{feature}_cost_per_unit'] = df_clean['original_fee'] / (df_clean[feature] + 1)  # +1 to avoid division by zero
-            
-            # Remove outliers based on Z-score
-            mean_cost = df_clean[f'{feature}_cost_per_unit'].mean()
-            std_cost = df_clean[f'{feature}_cost_per_unit'].std()
-            
-            if std_cost > 0:
-                z_scores = np.abs((df_clean[f'{feature}_cost_per_unit'] - mean_cost) / std_cost)
-                df_clean = df_clean[z_scores <= self.outlier_threshold]
-            
-            # Clean up temporary column
-            df_clean = df_clean.drop(columns=[f'{feature}_cost_per_unit'])
-        
-        # Method 2: Remove plans with extremely high total cost
+        # Remove plans with extremely high total cost (more than 3 std devs from mean)
         total_cost_mean = df_clean['original_fee'].mean()
         total_cost_std = df_clean['original_fee'].std()
         
@@ -1335,14 +1308,15 @@ class FullDatasetMultiFeatureRegression:
         df_clean = self.remove_outliers(df)
         self.all_plans = df_clean
         
-        if len(df_clean) < len(self.features) + 1:
-            raise ValueError(f"Insufficient plans ({len(df_clean)}) after outlier removal for {len(self.features)} features")
+        # Step 2: Build feature matrix using ALL features in the feature set
+        analysis_features = [f for f in self.features if f in df_clean.columns]
         
-        # Step 2: Build feature matrix (exclude unlimited flags)
-        from modules.cost_spec import UNLIMITED_FLAGS
-        analysis_features = [f for f in self.features if f not in UNLIMITED_FLAGS.values()]
+        if len(df_clean) < len(analysis_features) + 1:
+            raise ValueError(f"Insufficient plans ({len(df_clean)}) after outlier removal for {len(analysis_features)} features")
         
-        # Handle unlimited features by converting to large values
+        logger.info(f"Using {len(analysis_features)} features: {analysis_features}")
+        
+        # Build feature matrix X and target vector y
         X_data = []
         y_data = []
         
@@ -1352,15 +1326,8 @@ class FullDatasetMultiFeatureRegression:
             for feature in analysis_features:
                 if feature not in plan:
                     feature_vector.append(0)
-                    continue
-                    
-                # Check if this feature is unlimited for this plan
-                unlimited_flag = UNLIMITED_FLAGS.get(feature)
-                if unlimited_flag and unlimited_flag in plan and plan[unlimited_flag] == 1:
-                    # Use a large value to represent unlimited
-                    max_value = df[feature].max() * 2
-                    feature_vector.append(max_value)
                 else:
+                    # Use the actual preprocessed values (unlimited features are already zeroed out)
                     feature_vector.append(plan[feature])
             
             X_data.append(feature_vector)
@@ -1379,13 +1346,13 @@ class FullDatasetMultiFeatureRegression:
         # Bounds: all coefficients non-negative
         bounds = [(0, None)] * len(X[0])
         
-        # Initial guess
+        # Initial guess using OLS
         try:
             beta_ols = np.linalg.lstsq(X, y, rcond=None)[0]
             initial_guess = np.maximum(beta_ols, 0)
         except:
             avg_cost = np.mean(y)
-            initial_guess = [avg_cost * 0.4] + [avg_cost * 0.1] * len(analysis_features)
+            initial_guess = [avg_cost * 0.1] + [100.0] * len(analysis_features)
         
         # Solve optimization
         from scipy.optimize import minimize
@@ -1431,8 +1398,7 @@ class FullDatasetMultiFeatureRegression:
         if self.coefficients is None:
             raise ValueError("Must solve coefficients first")
             
-        from modules.cost_spec import UNLIMITED_FLAGS
-        analysis_features = [f for f in self.features if f not in UNLIMITED_FLAGS.values()]
+        analysis_features = [f for f in self.features if f in self.all_plans.columns]
         
         breakdown = {
             'base_cost': self.coefficients[0],
