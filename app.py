@@ -87,7 +87,6 @@ chart_types = [
     'feature_frontier',
     'marginal_cost_frontier', 
     'multi_frontier_analysis',
-    'linear_decomposition',
     'plan_efficiency'
 ]
 
@@ -138,11 +137,14 @@ def calculate_single_chart(chart_type, df_ranked, method, cost_structure, reques
             
         elif chart_type == 'marginal_cost_frontier':
             update_chart_status(chart_type, progress=30)
-            from modules.report_charts import prepare_marginal_cost_frontier_data
+            from modules.report_charts import prepare_marginal_cost_frontier_data, prepare_granular_marginal_cost_frontier_data
             if hasattr(df_ranked, 'attrs') and 'multi_frontier_breakdown' in df_ranked.attrs:
                 multi_frontier_breakdown = df_ranked.attrs['multi_frontier_breakdown']
                 core_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb']
-                chart_data = prepare_marginal_cost_frontier_data(df_ranked, multi_frontier_breakdown, core_features)
+                
+                # Use granular method with unlimited intercepts
+                chart_data = prepare_granular_marginal_cost_frontier_data(df_ranked, multi_frontier_breakdown, core_features)
+                logger.info(f"[{request_id}] Using GRANULAR marginal cost frontier with unlimited intercepts")
             else:
                 logger.warning(f"[{request_id}] No multi_frontier_breakdown found for {chart_type}")
                 
@@ -155,10 +157,7 @@ def calculate_single_chart(chart_type, df_ranked, method, cost_structure, reques
             else:
                 logger.warning(f"[{request_id}] No multi_frontier_breakdown found for {chart_type}")
                 
-        elif chart_type == 'linear_decomposition':
-            update_chart_status(chart_type, progress=30)
-            from modules.report_html import prepare_cost_structure_chart_data
-            chart_data = prepare_cost_structure_chart_data(cost_structure)
+        # Linear decomposition chart removed per user request
             
         elif chart_type == 'plan_efficiency':
             update_chart_status(chart_type, progress=30)
@@ -365,7 +364,7 @@ async def root(basic: bool = False):
                     'feature_frontier': 'Feature Frontier Charts',
                     'marginal_cost_frontier': 'Marginal Cost Frontier Charts',
                     'multi_frontier_analysis': 'Multi-Frontier Analysis',
-                    'linear_decomposition': 'Linear Decomposition Charts',
+                    # 'linear_decomposition': 'Linear Decomposition Charts', # Removed per user request
                     'plan_efficiency': 'Plan Efficiency Matrix'
                 }.get(chart_type, chart_type.replace('_', ' ').title())
                 
@@ -505,7 +504,7 @@ async def root(basic: bool = False):
             cost_structure = getattr(df_with_rankings, 'cost_structure', None) or getattr(df_with_rankings, 'multi_frontier_breakdown', None)
             
             method_name = {
-                "linear_decomposition": "Linear Decomposition",
+                # "linear_decomposition": "Linear Decomposition", # Removed per user request
                 "multi_frontier": "Multi-Feature Frontier Regression",
                 "frontier": "Frontier-Based"
             }.get(method, "Enhanced Cost-Spec")

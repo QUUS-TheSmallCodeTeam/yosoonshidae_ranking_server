@@ -798,13 +798,10 @@ def fit_piecewise_linear(feature_values, costs, change_points):
     
     return segments
 
-def fit_cumulative_piecewise_linear(feature_values, costs, change_points):
+def fit_piecewise_linear_segments(feature_values, costs, change_points):
     """
-    Fit piecewise linear segments with CUMULATIVE marginal costs.
-    Each segment builds upon the previous segment's cost structure.
-    
-    This is more realistic than independent segments as it reflects how
-    economies/diseconomies of scale compound over feature ranges.
+    Fit piecewise linear segments with proper marginal rates for each segment.
+    Each segment has its own marginal rate (cost per unit) calculated from the data points in that segment.
     
     Args:
         feature_values: Array of feature values (sorted)
@@ -812,16 +809,13 @@ def fit_cumulative_piecewise_linear(feature_values, costs, change_points):
         change_points: List of change point indices
         
     Returns:
-        List of segment dictionaries with cumulative marginal costs
+        List of segment dictionaries with marginal rates for each segment
     """
     if len(feature_values) == 0:
         return []
     
     segments = []
     segment_starts = [0] + change_points + [len(feature_values)]
-    
-    # Base marginal cost for first segment
-    cumulative_marginal_cost = 0
     
     for i in range(len(segment_starts) - 1):
         start_idx = segment_starts[i]
@@ -837,35 +831,39 @@ def fit_cumulative_piecewise_linear(feature_values, costs, change_points):
         if len(seg_features) < 2:
             continue
         
-        # Calculate independent marginal cost for this segment
-        feature_diff = seg_features[-1] - seg_features[0]
-        cost_diff = seg_costs[-1] - seg_costs[0]
+        # Calculate marginal rate for this segment using linear regression
+        # This gives us the best fit rate for all points in this segment
+        from sklearn.linear_model import LinearRegression
+        import numpy as np
         
-        if feature_diff == 0:
-            segment_marginal_cost = 0
-        else:
-            segment_marginal_cost = cost_diff / feature_diff
+        X = seg_features.reshape(-1, 1)
+        y = seg_costs
         
-        # CUMULATIVE: Add to previous segments' marginal costs
-        if i == 0:
-            # First segment: base marginal cost
-            cumulative_marginal_cost = segment_marginal_cost
-            incremental_cost = segment_marginal_cost
-        else:
-            # Subsequent segments: add incremental cost to cumulative
-            incremental_cost = segment_marginal_cost - (segments[-1]['independent_marginal_cost'] if segments else 0)
-            cumulative_marginal_cost = segments[-1]['cumulative_marginal_cost'] + incremental_cost
+        try:
+            reg = LinearRegression().fit(X, y)
+            segment_marginal_rate = reg.coef_[0]
+            segment_intercept = reg.intercept_
+        except:
+            # Fallback to simple slope calculation
+            feature_diff = seg_features[-1] - seg_features[0]
+            cost_diff = seg_costs[-1] - seg_costs[0]
+            
+            if feature_diff == 0:
+                segment_marginal_rate = 0
+            else:
+                segment_marginal_rate = cost_diff / feature_diff
+            segment_intercept = seg_costs[0] - segment_marginal_rate * seg_features[0]
+        
+        # Ensure positive marginal rate (negative rates don't make economic sense)
+        if segment_marginal_rate < 0:
+            logger.warning(f"Negative marginal rate in segment {i}: {segment_marginal_rate:.2f}, setting to 0")
+            segment_marginal_rate = 0
         
         # Calculate segment endpoints
         start_feature = seg_features[0]
         end_feature = seg_features[-1]
         start_cost = seg_costs[0]
         end_cost = seg_costs[-1]
-        
-        # Validate cumulative cost makes sense
-        if cumulative_marginal_cost < 0:
-            logger.warning(f"Negative cumulative marginal cost: {cumulative_marginal_cost:.2f}, setting to 0")
-            cumulative_marginal_cost = max(0, cumulative_marginal_cost)
         
         segment = {
             'segment_index': i,
@@ -875,21 +873,20 @@ def fit_cumulative_piecewise_linear(feature_values, costs, change_points):
             'end_cost': end_cost,
             'feature_range': end_feature - start_feature,
             'cost_range': end_cost - start_cost,
-            'independent_marginal_cost': segment_marginal_cost,  # This segment only
-            'cumulative_marginal_cost': cumulative_marginal_cost,  # Building on previous segments
-            'incremental_cost': incremental_cost if i > 0 else segment_marginal_cost,
-            'data_points': len(seg_features)
+            'marginal_rate': segment_marginal_rate,  # Cost per unit for this segment
+            'intercept': segment_intercept,
+            'data_points': len(seg_features),
+            'r_squared': reg.score(X, y) if 'reg' in locals() else 0.0
         }
         
         segments.append(segment)
         
         logger.debug(f"Segment {i}: {start_feature:.1f}-{end_feature:.1f}, "
-                    f"Independent: ₩{segment_marginal_cost:.0f}/unit, "
-                    f"Cumulative: ₩{cumulative_marginal_cost:.0f}/unit, "
-                    f"Incremental: ₩{incremental_cost:.0f}/unit")
+                    f"Rate: ₩{segment_marginal_rate:.0f}/unit, "
+                    f"R²: {segment.get('r_squared', 0):.3f}")
     
-    marginal_costs_str = [f"₩{s['cumulative_marginal_cost']:.0f}" for s in segments]
-    logger.info(f"Fitted {len(segments)} CUMULATIVE segments with marginal costs: {marginal_costs_str}")
+    marginal_rates_str = [f"₩{s['marginal_rate']:.0f}" for s in segments]
+    logger.info(f"Fitted {len(segments)} segments with marginal rates: {marginal_rates_str}")
     
     return segments
 
@@ -1215,3 +1212,590 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
     
     logger.info(f"✅ Completed PIECEWISE LINEAR frontier preparation for {len(marginal_cost_frontier_data)} features")
     return marginal_cost_frontier_data
+
+def create_granular_segments_with_intercepts(df, feature, unlimited_flag=None):
+    """
+    Create granular segments with one segment per feature value change.
+    Also calculate unlimited intercept coefficient if applicable.
+    
+    Args:
+        df: DataFrame with plan data
+        feature: Continuous feature name
+        unlimited_flag: Corresponding unlimited flag name (optional)
+        
+    Returns:
+        Dict with granular segments and unlimited intercept info
+    """
+    logger.info(f"Creating GRANULAR segments for {feature} (one per value change)")
+    
+    # Process non-unlimited plans for continuous segments
+    if unlimited_flag and unlimited_flag in df.columns:
+        df_limited = df[(df[unlimited_flag] == 0) & df['original_fee'].notna()].copy()
+    else:
+        df_limited = df[df['original_fee'].notna()].copy()
+    
+    if df_limited.empty:
+        logger.warning(f"No limited plans found for {feature}")
+        return {'segments': [], 'unlimited_intercept': None}
+    
+    # Get all unique feature values and their minimum costs
+    unique_vals = sorted(df_limited[feature].unique())
+    frontier_points = []
+    
+    for val in unique_vals:
+        matching_plans = df_limited[df_limited[feature] == val]
+        if not matching_plans.empty:
+            min_cost = matching_plans['original_fee'].min()
+            frontier_points.append((val, min_cost))
+    
+    logger.info(f"Found {len(frontier_points)} unique feature values for {feature}")
+    
+    # Apply basic monotonicity (remove decreasing costs only)
+    filtered_points = []
+    for i, (feat_val, cost) in enumerate(frontier_points):
+        if i == 0:
+            filtered_points.append((feat_val, cost))
+            continue
+            
+        prev_feat, prev_cost = filtered_points[-1]
+        
+        # Only remove if cost decreases with more features (basic economics violation)
+        if feat_val > prev_feat and cost >= prev_cost:
+            filtered_points.append((feat_val, cost))
+        elif feat_val > prev_feat and cost < prev_cost:
+            # Skip this point - it violates basic economics
+            logger.debug(f"Skipping decreasing cost point for {feature}: {feat_val} at ₩{cost} (prev: {prev_feat} at ₩{prev_cost})")
+            continue
+        else:
+            filtered_points.append((feat_val, cost))
+    
+    logger.info(f"After basic monotonicity: {len(filtered_points)} points for {feature}")
+    
+    # Create granular segments (one per consecutive value pair)
+    segments = []
+    for i in range(len(filtered_points) - 1):
+        start_val, start_cost = filtered_points[i]
+        end_val, end_cost = filtered_points[i + 1]
+        
+        # Calculate marginal rate for this specific segment
+        if end_val > start_val:
+            marginal_rate = (end_cost - start_cost) / (end_val - start_val)
+        else:
+            marginal_rate = 0
+        
+        segments.append({
+            'start_feature': float(start_val),
+            'end_feature': float(end_val),
+            'start_cost': float(start_cost),
+            'end_cost': float(end_cost),
+            'marginal_rate': float(marginal_rate),
+            'segment_id': i,
+            'feature_range': f"{start_val}-{end_val}",
+            'cost_range': f"₩{start_cost:,.0f}-₩{end_cost:,.0f}"
+        })
+    
+    logger.info(f"Created {len(segments)} granular segments for {feature}")
+    
+    # Calculate unlimited intercept coefficient
+    unlimited_intercept = None
+    if unlimited_flag and unlimited_flag in df.columns:
+        unlimited_plans = df[(df[unlimited_flag] == 1) & df['original_fee'].notna()]
+        if not unlimited_plans.empty:
+            # Calculate unlimited premium as intercept
+            avg_unlimited_cost = unlimited_plans['original_fee'].mean()
+            
+            # Compare to similar limited plans (at high feature levels)
+            if filtered_points:
+                max_limited_feature = max(point[0] for point in filtered_points)
+                high_feature_plans = df_limited[df_limited[feature] >= max_limited_feature * 0.8]
+                
+                if not high_feature_plans.empty:
+                    avg_high_limited_cost = high_feature_plans['original_fee'].mean()
+                    unlimited_premium = avg_unlimited_cost - avg_high_limited_cost
+                    
+                    unlimited_intercept = {
+                        'coefficient': float(unlimited_premium),
+                        'unlimited_avg_cost': float(avg_unlimited_cost),
+                        'limited_avg_cost': float(avg_high_limited_cost),
+                        'premium': float(unlimited_premium),
+                        'unlimited_count': len(unlimited_plans),
+                        'flag_name': unlimited_flag
+                    }
+                    
+                    logger.info(f"Calculated unlimited intercept for {feature}: ₩{unlimited_premium:,.0f} premium")
+    
+    return {
+        'segments': segments,
+        'unlimited_intercept': unlimited_intercept,
+        'total_segments': len(segments),
+        'feature_name': feature
+    }
+
+def calculate_granular_piecewise_cost_with_intercepts(feature_values, unlimited_flags, 
+                                                    granular_segments, unlimited_intercepts):
+    """
+    Calculate total cost using granular piecewise segments plus unlimited intercepts.
+    
+    Args:
+        feature_values: Dict of continuous feature values
+        unlimited_flags: Dict of unlimited flag values (0 or 1)
+        granular_segments: Dict of granular segments for each feature
+        unlimited_intercepts: Dict of unlimited intercept coefficients
+        
+    Returns:
+        Dict with detailed cost breakdown
+    """
+    total_cost = 0
+    feature_costs = {}
+    intercept_costs = {}
+    
+    # Calculate continuous feature costs using granular segments
+    for feature, value in feature_values.items():
+        if feature not in granular_segments or value <= 0:
+            continue
+            
+        segments = granular_segments[feature]['segments']
+        feature_cost = 0
+        segment_details = []
+        
+        for segment in segments:
+            start_feat = segment['start_feature']
+            end_feat = segment['end_feature']
+            rate = segment['marginal_rate']
+            
+            # Calculate usage within this segment
+            if value > start_feat:
+                segment_end = min(end_feat, value)
+                segment_usage = segment_end - start_feat
+                
+                if segment_usage > 0:
+                    segment_cost = segment_usage * rate
+                    feature_cost += segment_cost
+                    
+                    segment_details.append({
+                        'segment_id': segment['segment_id'],
+                        'range': f"{start_feat}-{min(end_feat, value)}",
+                        'usage': segment_usage,
+                        'rate': rate,
+                        'cost': segment_cost
+                    })
+        
+        feature_costs[feature] = {
+            'total_cost': feature_cost,
+            'segments_used': segment_details,
+            'feature_value': value
+        }
+        total_cost += feature_cost
+    
+    # Add unlimited intercept costs
+    for flag, is_unlimited in unlimited_flags.items():
+        if is_unlimited == 1 and flag in unlimited_intercepts:
+            intercept_cost = unlimited_intercepts[flag]['coefficient']
+            intercept_costs[flag] = {
+                'intercept_cost': intercept_cost,
+                'is_active': True,
+                'flag_name': flag
+            }
+            total_cost += intercept_cost
+        elif flag in unlimited_intercepts:
+            intercept_costs[flag] = {
+                'intercept_cost': 0,
+                'is_active': False,
+                'flag_name': flag
+            }
+    
+    return {
+        'total_cost': total_cost,
+        'continuous_costs': feature_costs,
+        'intercept_costs': intercept_costs,
+        'breakdown': {
+            'continuous_total': sum(fc['total_cost'] for fc in feature_costs.values()),
+            'intercept_total': sum(ic['intercept_cost'] for ic in intercept_costs.values() if ic['is_active'])
+        }
+    }
+
+def prepare_granular_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_continuous_features):
+    """
+    Prepare COMPREHENSIVE GRANULAR marginal cost frontier charts using ENTIRE DATASET.
+    Uses full dataset regression instead of frontier points for more comprehensive analysis.
+    
+    Args:
+        df: DataFrame with plan data
+        multi_frontier_breakdown: Multi-frontier regression results (optional, for fallback coefficients)
+        core_continuous_features: List of features to visualize
+        
+    Returns:
+        Dictionary with comprehensive granular marginal cost frontier data including intercepts
+    """
+    logger.info("Preparing COMPREHENSIVE GRANULAR marginal cost frontier charts using ENTIRE DATASET")
+    logger.info(f"Processing ALL features: {core_continuous_features}")
+    
+    from modules.cost_spec import UNLIMITED_FLAGS, FullDatasetMultiFeatureRegression
+    
+    # Feature display configuration
+    feature_display_names = {
+        'basic_data_clean': 'Data (GB)',
+        'voice_clean': 'Voice (min)', 
+        'message_clean': 'Messages',
+        'tethering_gb': 'Tethering (GB)',
+        'is_5g': '5G Support'
+    }
+    
+    feature_units = {
+        'basic_data_clean': 'KRW/GB',
+        'voice_clean': 'KRW/min',
+        'message_clean': 'KRW/msg', 
+        'tethering_gb': 'KRW/GB',
+        'is_5g': 'KRW/feature'
+    }
+    
+    # Use ENTIRE DATASET for regression analysis
+    logger.info(f"Using ENTIRE DATASET: {len(df)} plans for comprehensive analysis")
+    
+    # Prepare clean dataset for regression
+    clean_df = df.copy()
+    
+    # Remove plans with missing essential data
+    essential_columns = ['original_fee'] + [f for f in core_continuous_features if f in df.columns]
+    clean_df = clean_df.dropna(subset=essential_columns)
+    
+    logger.info(f"Clean dataset: {len(clean_df)} plans after removing missing data")
+    
+    if len(clean_df) < 50:
+        logger.error(f"Insufficient data for full dataset analysis: {len(clean_df)} plans")
+        return {}
+    
+    # Run full dataset multi-feature regression
+    try:
+        full_dataset_analyzer = FullDatasetMultiFeatureRegression()
+        full_dataset_result = full_dataset_analyzer.analyze(clean_df, core_continuous_features)
+        
+        if not full_dataset_result or 'feature_costs' not in full_dataset_result:
+            logger.error("Full dataset regression failed")
+            return {}
+            
+        logger.info(f"✅ Full dataset regression successful with {len(clean_df)} plans")
+        
+        # Extract coefficients from full dataset analysis
+        feature_costs = full_dataset_result['feature_costs']
+        base_cost = full_dataset_result.get('base_cost', 0)
+        
+        logger.info(f"Full dataset base cost: ₩{base_cost:,.0f}")
+        for feature, cost_info in feature_costs.items():
+            coeff = cost_info.get('coefficient', 0)
+            logger.info(f"Full dataset {feature}: ₩{coeff:.2f} per unit")
+            
+    except Exception as e:
+        logger.error(f"Full dataset regression failed: {str(e)}")
+        # Fallback to provided multi_frontier_breakdown if available
+        if multi_frontier_breakdown and multi_frontier_breakdown.get('feature_costs'):
+            logger.info("Falling back to provided multi-frontier breakdown")
+            feature_costs = multi_frontier_breakdown['feature_costs']
+            base_cost = multi_frontier_breakdown.get('base_cost', 0)
+        else:
+            logger.error("No fallback data available")
+            return {}
+    
+    granular_frontier_data = {}
+    features_processed = 0
+    
+    # Process each feature using full dataset coefficients
+    for feature in core_continuous_features:
+        if feature not in clean_df.columns or feature not in feature_costs:
+            logger.warning(f"Feature {feature} not available for analysis")
+            continue
+            
+        # Get coefficient from full dataset analysis
+        cost_info = feature_costs[feature]
+        pure_coefficient = cost_info.get('coefficient', 0)
+        
+        logger.info(f"Processing {feature} with full dataset coefficient: ₩{pure_coefficient:.2f}")
+        
+        # Get feature range from entire dataset
+        feature_values = clean_df[feature].dropna()
+        if feature_values.empty:
+            continue
+            
+        min_val = float(feature_values.min())
+        max_val = float(feature_values.max())
+        unique_values = sorted(feature_values.unique())
+        
+        logger.info(f"Feature {feature} range: {min_val} to {max_val} ({len(unique_values)} unique values)")
+        
+        # Handle unlimited plans separately
+        unlimited_flag = UNLIMITED_FLAGS.get(feature)
+        unlimited_info = None
+        
+        if unlimited_flag and unlimited_flag in clean_df.columns:
+            unlimited_plans = clean_df[(clean_df[unlimited_flag] == 1) & clean_df['original_fee'].notna()]
+            if not unlimited_plans.empty:
+                min_unlimited_cost = unlimited_plans['original_fee'].min()
+                unlimited_plan_name = unlimited_plans.loc[unlimited_plans['original_fee'].idxmin()].get('plan_name', 'Unknown')
+                unlimited_info = {
+                    'has_unlimited': True,
+                    'min_cost': float(min_unlimited_cost),
+                    'plan_name': unlimited_plan_name,
+                    'count': len(unlimited_plans)
+                }
+                logger.info(f"Found {len(unlimited_plans)} unlimited {feature} plans, cheapest: ₩{min_unlimited_cost}")
+        
+        # Create piecewise analysis using actual market data points
+        # Get actual plans at each feature level for piecewise analysis
+        feature_level_data = []
+        for val in unique_values:
+            matching_plans = clean_df[clean_df[feature] == val]
+            if not matching_plans.empty:
+                costs = matching_plans['original_fee'].values
+                min_cost = costs.min()
+                avg_cost = costs.mean()
+                plan_count = len(costs)
+                
+                feature_level_data.append({
+                    'feature_value': float(val),
+                    'min_cost': float(min_cost),
+                    'avg_cost': float(avg_cost),
+                    'plan_count': int(plan_count),
+                    'actual_costs': costs.tolist()
+                })
+        
+        logger.info(f"Collected data for {len(feature_level_data)} feature levels for {feature}")
+        
+        # Calculate piecewise segments based on actual market data
+        if len(feature_level_data) >= 3:
+            # Extract features and costs for piecewise analysis
+            features_array = np.array([point['feature_value'] for point in feature_level_data])
+            costs_array = np.array([point['min_cost'] for point in feature_level_data])
+            
+            # Detect change points and fit piecewise linear segments
+            change_points = detect_change_points(features_array, costs_array)
+            segments = fit_piecewise_linear_segments(features_array, costs_array, change_points)
+            
+            logger.info(f"Created {len(segments)} piecewise segments for {feature}")
+            
+            # Create frontier points for visualization using PROPER PIECEWISE calculation
+            frontier_points = []
+            for i, point_data in enumerate(feature_level_data):
+                feature_val = point_data['feature_value']
+                actual_cost = point_data['min_cost']
+                
+                # Find which segment this point belongs to and calculate CUMULATIVE cost
+                segment_marginal_cost = pure_coefficient  # fallback
+                segment_info = "linear"
+                cumulative_cost = base_cost + (feature_val * pure_coefficient)  # fallback
+                
+                # Calculate PROPER cumulative cost using piecewise segments
+                if segments:
+                    total_feature_cost = 0
+                    current_feature_position = 0
+                    
+                    # Find which segment this feature value falls into
+                    target_segment = None
+                    for seg_idx, segment in enumerate(segments):
+                        if segment['start_feature'] <= feature_val <= segment['end_feature']:
+                            target_segment = segment
+                            segment_marginal_cost = segment['marginal_rate']
+                            segment_info = f"Segment {seg_idx+1}: {segment['start_feature']:.1f}-{segment['end_feature']:.1f}"
+                            break
+                    
+                    # Calculate cumulative cost by going through segments up to target
+                    for seg_idx, segment in enumerate(segments):
+                        segment_start = segment['start_feature']
+                        segment_end = segment['end_feature']
+                        segment_rate = segment['marginal_rate']
+                        
+                        if feature_val <= segment_start:
+                            # We don't reach this segment
+                            break
+                        elif feature_val >= segment_end:
+                            # We use the entire segment
+                            segment_contribution = (segment_end - segment_start) * segment_rate
+                            total_feature_cost += segment_contribution
+                        else:
+                            # We use part of this segment (this is our target segment)
+                            segment_contribution = (feature_val - segment_start) * segment_rate
+                            total_feature_cost += segment_contribution
+                            break
+                    
+                    # Final cumulative cost
+                    cumulative_cost = base_cost + total_feature_cost
+                    
+                    # Set fallback values if no target segment found
+                    if target_segment is None:
+                        segment_marginal_cost = pure_coefficient
+                        segment_info = "Outside segment range"
+                
+                predicted_single_feature_cost = total_feature_cost if 'total_feature_cost' in locals() else feature_val * pure_coefficient
+                
+                frontier_points.append({
+                    'feature_value': feature_val,
+                    'actual_cost': actual_cost,
+                    'marginal_cost': segment_marginal_cost,
+                    'total_marginal_cost': predicted_single_feature_cost,
+                    'predicted_single_feature_cost': predicted_single_feature_cost,
+                    'cumulative_cost': cumulative_cost,
+                    'segment': segment_info,
+                    'segment_info': segment_info,
+                    'is_actual_plan': True,
+                    'plan_count': point_data['plan_count']
+                })
+            
+            # Create actual plan points for market comparison
+            actual_plan_points = []
+            for _, plan in clean_df.iterrows():
+                if pd.notna(plan[feature]) and pd.notna(plan['original_fee']):
+                    feature_val = plan[feature]
+                    actual_cost = plan['original_fee']
+                    plan_name = plan.get('plan_name', 'Unknown')
+                    
+                    # Find segment
+                    segment_info = "market_point"
+                    for seg_idx, segment in enumerate(segments):
+                        if segment['start_feature'] <= feature_val <= segment['end_feature']:
+                            segment_info = f"Segment {seg_idx+1}: {segment['start_feature']:.1f}-{segment['end_feature']:.1f}"
+                            break
+                    
+                    actual_plan_points.append({
+                        'feature_value': float(feature_val),
+                        'actual_cost': float(actual_cost),
+                        'plan_name': plan_name,
+                        'segment_info': segment_info
+                    })
+            
+            logger.info(f"Created {len(actual_plan_points)} actual market plan points for {feature}")
+            
+        else:
+            # Fallback to linear model
+            logger.warning(f"Using linear model for {feature} due to insufficient data points")
+            segments = []
+            frontier_points = []
+            actual_plan_points = []
+            
+            # Create linear points
+            for point_data in feature_level_data:
+                feature_val = point_data['feature_value']
+                predicted_cost = base_cost + (feature_val * pure_coefficient)
+                
+                frontier_points.append({
+                    'feature_value': feature_val,
+                    'actual_cost': point_data['min_cost'],
+                    'marginal_cost': pure_coefficient,
+                    'total_marginal_cost': feature_val * pure_coefficient,
+                    'predicted_single_feature_cost': feature_val * pure_coefficient,
+                    'cumulative_cost': predicted_cost,
+                    'segment': 'linear',
+                    'segment_info': 'Linear model',
+                    'is_actual_plan': True,
+                    'plan_count': point_data['plan_count']
+                })
+        
+        # Store comprehensive data for this feature
+        granular_frontier_data[feature] = {
+            'feature_name': feature,
+            'display_name': feature_display_names.get(feature, feature),
+            'unit': feature_units.get(feature, 'KRW/unit'),
+            'pure_coefficient': pure_coefficient,
+            'base_cost': base_cost,
+            'frontier_points': frontier_points,
+            'actual_plan_points': actual_plan_points,
+            'unlimited_info': unlimited_info,
+            'piecewise_info': {
+                'is_piecewise': len(segments) > 1,
+                'num_segments': len(segments),
+                'segments': segments,
+                'change_points_detected': len(change_points) if 'change_points' in locals() else 0,
+                'continuous_data_only': True
+            },
+            'feature_range': {
+                'min': min_val,
+                'max': max_val,
+                'unique_values': len(unique_values),
+                'filtered_frontier_points': len(frontier_points)
+            },
+            'cost_analysis': {
+                'min_marginal_cost': min([p['marginal_cost'] for p in frontier_points]) if frontier_points else 0,
+                'max_marginal_cost': max([p['marginal_cost'] for p in frontier_points]) if frontier_points else 0,
+                'avg_marginal_cost': np.mean([p['marginal_cost'] for p in frontier_points]) if frontier_points else 0,
+                'marginal_cost_range': max([p['marginal_cost'] for p in frontier_points]) - min([p['marginal_cost'] for p in frontier_points]) if frontier_points else 0,
+                'economies_of_scale': len(segments) > 1,
+                'total_cost_range': max([p['cumulative_cost'] for p in frontier_points]) - min([p['cumulative_cost'] for p in frontier_points]) if frontier_points else 0
+            }
+        }
+        
+        features_processed += 1
+        logger.info(f"✅ Processed {feature}: {len(frontier_points)} frontier points, {len(actual_plan_points)} market plans")
+    
+    if features_processed == 0:
+        logger.error("No features were successfully processed!")
+        return {}
+    
+    logger.info(f"✅ Successfully processed {features_processed}/{len(core_continuous_features)} features using ENTIRE DATASET")
+    
+    # Add method metadata
+    method_info = {
+        'name': 'Full Dataset Marginal Cost Analysis',
+        'description': 'Marginal costs extracted from entire dataset regression',
+        'total_plans_analyzed': len(clean_df),
+        'features_analyzed': features_processed
+    }
+    
+    # Add cost breakdown for comprehensive analysis
+    cost_breakdown = {
+        'base_cost': base_cost,
+        'feature_costs': [
+            {
+                'feature': feature,
+                'display_name': feature_display_names.get(feature, feature),
+                'coefficient': feature_costs[feature].get('coefficient', 0),
+                'unit': feature_units.get(feature, 'KRW/unit'),
+                'cost_per_unit': feature_costs[feature].get('coefficient', 0)
+            }
+            for feature in core_continuous_features
+            if feature in feature_costs
+        ]
+    }
+    
+    # Add coefficient comparison with PIECEWISE SEGMENTS (not fixed rates)
+    coefficient_comparison = {
+        'features': [],
+        'piecewise_segments': [],
+        'display_names': [],
+        'units': []
+    }
+    
+    for feature in core_continuous_features:
+        if feature in feature_costs and feature in granular_frontier_data:
+            feature_data = granular_frontier_data[feature]
+            display_name = feature_display_names.get(feature, feature)
+            unit = feature_units.get(feature, 'KRW/unit')
+            
+            # Get piecewise segments for this feature
+            piecewise_info = feature_data.get('piecewise_info', {})
+            segments = piecewise_info.get('segments', [])
+            
+            if segments and len(segments) > 1:
+                # Multiple segments - show piecewise structure
+                segment_descriptions = []
+                for i, segment in enumerate(segments):
+                    start_val = segment['start_feature']
+                    end_val = segment['end_feature']
+                    marginal_rate = segment['marginal_rate']
+                    segment_descriptions.append(f"Segment {i+1} ({start_val:.1f}-{end_val:.1f}): ₩{marginal_rate:.2f}")
+                
+                coefficient_comparison['features'].append(display_name)
+                coefficient_comparison['piecewise_segments'].append(segment_descriptions)
+                coefficient_comparison['display_names'].append(display_name)
+                coefficient_comparison['units'].append(unit)
+            else:
+                # Single segment or linear - show single rate
+                base_coefficient = feature_costs[feature].get('coefficient', 0)
+                coefficient_comparison['features'].append(display_name)
+                coefficient_comparison['piecewise_segments'].append([f"Linear: ₩{base_coefficient:.2f}"])
+                coefficient_comparison['display_names'].append(display_name)
+                coefficient_comparison['units'].append(unit)
+    
+    return {
+        **granular_frontier_data,
+        'method_info': method_info,
+        'cost_breakdown': cost_breakdown,
+        'coefficient_comparison': coefficient_comparison
+    }

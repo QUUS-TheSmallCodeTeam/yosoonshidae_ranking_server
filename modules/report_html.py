@@ -9,7 +9,7 @@ import json
 import pandas as pd
 from datetime import datetime
 from .report_utils import NumpyEncoder, FEATURE_DISPLAY_NAMES, FEATURE_UNITS, UNLIMITED_FLAGS
-from .report_charts import prepare_feature_frontier_data, prepare_residual_analysis_data, prepare_marginal_cost_frontier_data
+from .report_charts import prepare_feature_frontier_data, prepare_residual_analysis_data, prepare_granular_marginal_cost_frontier_data
 from .report_tables import generate_all_plans_table_html, generate_residual_analysis_table_html
 
 # Configure logging
@@ -398,44 +398,16 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
         advanced_analysis_data = prepare_multi_frontier_chart_data(df, multi_frontier_breakdown)
         advanced_analysis_json = json.dumps(advanced_analysis_data, cls=NumpyEncoder)
     
-    # Generate linear decomposition charts if data is available
-    linear_decomp_chart_html = ""
+    # Linear decomposition analysis removed per user request
     linear_decomp_json = "null"
-    
-    if linear_decomp_cost_structure:
-        linear_decomp_chart_html = """
-        <div class="charts-wrapper">
-            <h2>📊 Linear Decomposition Analysis</h2>
-            <div class="note">
-                <p><strong>Method:</strong> Linear Decomposition - Extracts marginal costs through regression analysis</p>
-                <p><strong>Mathematical Model:</strong> plan_cost = β₀ + β₁×data + β₂×voice + β₃×SMS + β₄×tethering + β₅×5G</p>
-            </div>
-            <div style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: center;">
-                <div class="chart-container" style="width: 500px; height: 400px;">
-                    <h3 style="text-align: center; margin-top: 0;">💰 Marginal Costs</h3>
-                    <p style="text-align: center; font-size: 0.9em; color: #666;">Cost per unit of each feature</p>
-                    <canvas id="linearMarginalCostChart" style="max-height: 300px;"></canvas>
-                </div>
-                <div class="chart-container" style="width: 500px; height: 400px;">
-                    <h3 style="text-align: center; margin-top: 0;">🏗️ Cost Structure</h3>
-                    <p style="text-align: center; font-size: 0.9em; color: #666;">Base cost + feature contributions</p>
-                    <canvas id="linearCostBreakdownChart" style="max-height: 300px;"></canvas>
-                </div>
-            </div>
-        </div>
-        """
-        
-        # Prepare linear decomposition chart data
-        linear_decomp_data = prepare_cost_structure_chart_data(linear_decomp_cost_structure)
-        linear_decomp_json = json.dumps(linear_decomp_data, cls=NumpyEncoder)
     
     # Define continuous features for visualization (5 most important)
     core_continuous_features = [
         'basic_data_clean', 
-        'daily_data_clean',
         'voice_clean',
         'message_clean',
-        'tethering_gb'
+        'tethering_gb',
+        'is_5g'  # Added 5G feature
     ]
     
     # Prepare data for feature frontier charts
@@ -477,7 +449,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
             'feature_costs': simplified_feature_costs,
             'base_cost': cost_structure.get('base_cost', 0)
         }
-        marginal_cost_frontier_data = prepare_marginal_cost_frontier_data(df, mock_breakdown, core_continuous_features)
+        marginal_cost_frontier_data = prepare_granular_marginal_cost_frontier_data(df, mock_breakdown, core_continuous_features)
     
     # Convert to JSON for JavaScript
     feature_frontier_json = json.dumps(feature_frontier_data, cls=NumpyEncoder)
@@ -651,8 +623,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
             <!-- Multi-Frontier Analysis Charts -->
             {multi_frontier_chart_html}
             
-            <!-- Linear Decomposition Analysis Charts -->
-            {linear_decomp_chart_html}
+            <!-- Linear Decomposition Analysis removed per user request -->
         
             <div class="note">
                 <p>이 보고서는 Cost-Spec Ratio 방법론을 기반으로 한 모바일 플랜 랭킹을 보여줍니다. CS 비율이 높을수록 사양 대비 더 좋은 가치를 제공합니다.</p>
@@ -709,8 +680,8 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
             // Cost structure data from Python (multi-frontier method)
             const advancedAnalysisData = __ADVANCED_ANALYSIS_JSON__;
             
-            // Linear decomposition data from Python
-            const linearDecompData = __LINEAR_DECOMP_JSON__;
+            // Linear decomposition data removed per user request
+            const linearDecompData = null;
             
             // Plan efficiency data from Python
             const planEfficiencyData = __PLAN_EFFICIENCY_JSON__;
@@ -1416,155 +1387,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 });
             }
             
-            // Linear Decomposition Chart Functions
-            function createLinearMarginalCostChart(data) {
-                const canvas = document.getElementById('linearMarginalCostChart');
-                if (!canvas || !data.feature_costs) return;
-                
-                const features = Object.keys(data.feature_costs);
-                const costs = Object.values(data.feature_costs).map(cost => {
-                    // Handle both nested object format and simple numeric format
-                    return typeof cost === 'object' ? cost.coefficient || cost.cost_per_unit || 0 : cost;
-                });
-                const labels = features.map(f => {
-                    const displayNames = {
-                        'basic_data_clean': 'Data (GB)',
-                        'voice_clean': 'Voice (min)',
-                        'message_clean': 'Messages',
-                        'tethering_gb': 'Tethering (GB)',
-                        'is_5g': '5G Access'
-                    };
-                    return displayNames[f] || f;
-                });
-                
-                new Chart(canvas, {
-                    type: 'bar',
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            label: 'Marginal Cost (₩)',
-                            data: costs,
-                            backgroundColor: [
-                                'rgba(52, 152, 219, 0.8)',   // Data - Blue
-                                'rgba(46, 204, 113, 0.8)',   // Voice - Green  
-                                'rgba(155, 89, 182, 0.8)',   // Messages - Purple
-                                'rgba(241, 196, 15, 0.8)',   // Tethering - Yellow
-                                'rgba(231, 76, 60, 0.8)'     // 5G - Red
-                            ],
-                            borderColor: [
-                                'rgba(52, 152, 219, 1)',
-                                'rgba(46, 204, 113, 1)',
-                                'rgba(155, 89, 182, 1)',
-                                'rgba(241, 196, 15, 1)',
-                                'rgba(231, 76, 60, 1)'
-                            ],
-                            borderWidth: 2
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                display: false
-                            },
-                            title: {
-                                display: true,
-                                text: 'Linear Regression: Feature Coefficients'
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        const value = context.parsed.y;
-                                        return `Marginal Cost: ₩${value.toLocaleString()}`;
-                                    }
-                                }
-                            }
-                        },
-                        scales: {
-                            x: {
-                                title: {
-                                    display: true,
-                                    text: 'Features'
-                                }
-                            },
-                            y: {
-                                title: {
-                                    display: true,
-                                    text: 'Marginal Cost (₩)'
-                                },
-                                beginAtZero: true
-                            }
-                        }
-                    }
-                });
-            }
-            
-            function createLinearCostBreakdownChart(data) {
-                const canvas = document.getElementById('linearCostBreakdownChart');
-                if (!canvas || !data.feature_costs) return;
-                
-                const labels = ['Base Cost'];
-                const values = [data.base_cost || 0];
-                const colors = ['rgba(149, 165, 166, 0.8)'];
-                
-                Object.entries(data.feature_costs).forEach(([feature, cost], index) => {
-                    const displayNames = {
-                        'basic_data_clean': 'Data',
-                        'voice_clean': 'Voice',
-                        'message_clean': 'Messages',
-                        'tethering_gb': 'Tethering',
-                        'is_5g': '5G'
-                    };
-                    labels.push(displayNames[feature] || feature);
-                    // Handle both nested object format and simple numeric format
-                    const costValue = typeof cost === 'object' ? cost.coefficient || cost.cost_per_unit || 0 : cost;
-                    values.push(Math.abs(costValue)); // Use absolute value for visualization
-                    colors.push([
-                        'rgba(52, 152, 219, 0.8)',
-                        'rgba(46, 204, 113, 0.8)',
-                        'rgba(155, 89, 182, 0.8)',
-                        'rgba(241, 196, 15, 0.8)',
-                        'rgba(231, 76, 60, 0.8)'
-                    ][index % 5]);
-                });
-                
-                new Chart(canvas, {
-                    type: 'doughnut',
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            data: values,
-                            backgroundColor: colors,
-                            borderWidth: 2,
-                            borderColor: '#fff'
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                position: 'bottom'
-                            },
-                            title: {
-                                display: true,
-                                text: 'Linear Decomposition: Cost Structure'
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        const value = context.parsed;
-                                        const total = values.reduce((a, b) => a + b, 0);
-                                        const percentage = ((value / total) * 100).toFixed(1);
-                                        return `₩${value.toLocaleString()} (${percentage}%)`;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-            }
+            // Linear Decomposition Chart Functions removed per user request
             
             // Function to create traditional feature frontier charts
             function createFeatureFrontierCharts() {
@@ -1689,9 +1512,9 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 }
             }
             
-            // Function to create marginal cost frontier charts
+            // Function to create full dataset marginal cost frontier charts
             function createMarginalCostFrontierCharts(marginalCostData) {
-                console.log('Creating marginal cost frontier charts');
+                console.log('Creating FULL DATASET marginal cost frontier charts');
                 console.log('marginalCostData:', marginalCostData);
                 
                 if (!marginalCostData || Object.keys(marginalCostData).length === 0) {
@@ -1705,34 +1528,66 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     return;
                 }
                 
-                // Create charts for each feature
+                // Display method metadata if available
+                if (marginalCostData.method_info) {
+                    const methodInfo = document.createElement('div');
+                    methodInfo.className = 'method-info';
+                    methodInfo.style.background = '#e8f4fd';
+                    methodInfo.style.padding = '15px';
+                    methodInfo.style.margin = '0 0 20px 0';
+                    methodInfo.style.borderRadius = '8px';
+                    methodInfo.style.border = '1px solid #3498db';
+                    
+                    methodInfo.innerHTML = `
+                        <h4 style="margin: 0 0 10px 0; color: #2c3e50;">📊 ${marginalCostData.method_info.name}</h4>
+                        <p style="margin: 0; color: #34495e;">
+                            <strong>Method:</strong> ${marginalCostData.method_info.description}<br>
+                            <strong>Total Plans Analyzed:</strong> ${marginalCostData.method_info.total_plans_analyzed.toLocaleString()}<br>
+                            <strong>Features Analyzed:</strong> ${marginalCostData.method_info.features_analyzed}<br>
+                            <strong>Approach:</strong> Entire dataset regression (not just frontier points)
+                        </p>
+                    `;
+                    chartsContainer.appendChild(methodInfo);
+                }
+                
+                // Create charts for each feature (skip metadata entries)
                 for (const [feature, data] of Object.entries(marginalCostData)) {
-                    console.log(`Creating marginal cost frontier chart for ${feature}`);
+                    if (feature === 'method_info' || feature === 'cost_breakdown' || feature === 'coefficient_comparison') continue; // Skip metadata
+                    
+                    console.log(`Creating full dataset marginal cost chart for ${feature}`);
                     
                     // Create chart container
                     const chartContainer = document.createElement('div');
                     chartContainer.className = 'chart-container';
                     chartContainer.style.width = '100%';
-                    chartContainer.style.height = '500px';
-                    chartContainer.style.margin = '0 0 20px 0';
-                    chartContainer.style.padding = '15px';
+                    chartContainer.style.height = '600px';
+                    chartContainer.style.margin = '0 0 30px 0';
+                    chartContainer.style.padding = '20px';
                     chartContainer.style.boxSizing = 'border-box';
+                    chartContainer.style.border = '1px solid #ddd';
+                    chartContainer.style.borderRadius = '8px';
+                    chartContainer.style.background = '#fafafa';
                     
                     // Create feature title
                     const title = document.createElement('h3');
-                    title.textContent = `${data.display_name} - Total Marginal Cost by Market Plan`;
+                    title.textContent = `${data.display_name} - Full Dataset Analysis`;
                     title.style.marginTop = '0';
                     title.style.textAlign = 'center';
                     title.style.color = '#2c3e50';
                     chartContainer.appendChild(title);
                     
-                    // Create subtitle with coefficient info
+                    // Create subtitle with analysis info
                     const subtitle = document.createElement('p');
-                    subtitle.textContent = `Each blue dot shows an actual market plan's pure feature cost - no base cost, you pay only for what you get`;
+                    subtitle.innerHTML = `
+                        <strong>Coefficient:</strong> ₩${data.pure_coefficient.toFixed(2)} ${data.unit}<br>
+                        <strong>Feature Range:</strong> ${data.feature_range.min} - ${data.feature_range.max} (${data.feature_range.unique_values} unique values)<br>
+                        <strong>Frontier Points:</strong> ${data.feature_range.filtered_frontier_points}<br>
+                        ${data.unlimited_info ? `<strong>Unlimited Plans:</strong> ${data.unlimited_info.count} plans, cheapest: ₩${data.unlimited_info.min_cost.toLocaleString()}` : '<strong>No unlimited plans</strong> for this feature'}
+                    `;
                     subtitle.style.textAlign = 'center';
                     subtitle.style.color = '#7f8c8d';
                     subtitle.style.fontSize = '0.9em';
-                    subtitle.style.margin = '0 0 10px 0';
+                    subtitle.style.margin = '0 0 15px 0';
                     chartContainer.appendChild(subtitle);
                     
                     // Create canvas for Chart.js
@@ -1740,35 +1595,79 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     chartContainer.appendChild(canvas);
                     chartsContainer.appendChild(chartContainer);
                     
-                    // Prepare datasets - Blue dots are ACTUAL market plans transformed to marginal cost space
-                    const frontierDataset = {
-                        label: 'Market Plans (Total Marginal Cost)',
-                        data: data.frontier_points.map(point => ({
-                            x: point.feature_value,
-                            y: point.total_marginal_cost,  // Use pre-calculated total marginal cost
-                            marginal_rate: point.marginal_cost,  // Keep per-unit rate for tooltip
-                            actual_cost: point.actual_cost,
-                            predicted_cost: point.predicted_single_feature_cost,  // Base + this feature only
-                            segment_info: point.segment_info,
-                            is_actual_plan: point.is_actual_plan
-                        })),
-                        borderColor: 'rgba(52, 152, 219, 1)',      // Blue
-                        backgroundColor: 'rgba(52, 152, 219, 0.7)', // Blue dots
-                        pointBackgroundColor: 'rgba(52, 152, 219, 1)',
-                        pointRadius: 6,
-                        pointHoverRadius: 9,
-                        borderWidth: 2,
-                        fill: false,  // No fill for scatter plot
-                        tension: 0,   // No smooth line between points
-                        showLine: false  // Don't connect the dots - they're actual market plans
-                    };
+                    // Prepare datasets
+                    const datasets = [];
                     
-                    // Create Chart.js chart - Only show marginal cost analysis (no red dots)
+                    // Dataset 1: Frontier points (cumulative costs from piecewise segments)
+                    if (data.frontier_points && data.frontier_points.length > 0) {
+                        const frontierDataset = {
+                            label: `Cumulative Cost Trend (Piecewise)`,
+                            data: data.frontier_points.map(point => ({
+                                x: point.feature_value,
+                                y: point.cumulative_cost,  // Plot CUMULATIVE cost, not marginal rate
+                                actual_cost: point.actual_cost,
+                                marginal_rate: point.marginal_cost,
+                                predicted_cost: point.cumulative_cost,
+                                segment: point.segment_info,
+                                plan_count: point.plan_count
+                            })),
+                            borderColor: 'rgba(52, 152, 219, 1)',      // Blue line
+                            backgroundColor: 'rgba(52, 152, 219, 0.1)', // Light blue fill
+                            pointBackgroundColor: 'rgba(52, 152, 219, 1)',
+                            pointRadius: 5,
+                            pointHoverRadius: 8,
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.1
+                        };
+                        datasets.push(frontierDataset);
+                    }
+                    
+                    // Dataset 2: Actual market plans (scatter)
+                    if (data.actual_plan_points && data.actual_plan_points.length > 0) {
+                        const actualPlansDataset = {
+                            label: 'Actual Market Plans',
+                            data: data.actual_plan_points.map(point => ({
+                                x: point.feature_value,
+                                y: point.actual_cost,
+                                plan_name: point.plan_name,
+                                segment: point.segment_info
+                            })),
+                            backgroundColor: 'rgba(231, 76, 60, 0.6)',  // Red dots
+                            pointBackgroundColor: 'rgba(231, 76, 60, 0.8)',
+                            pointRadius: 3,
+                            pointHoverRadius: 6,
+                            showLine: false
+                        };
+                        datasets.push(actualPlansDataset);
+                    }
+                    
+                    // Dataset 3: Unlimited plans (if available)
+                    if (data.unlimited_info && data.unlimited_info.has_unlimited) {
+                        const unlimitedDataset = {
+                            label: `Unlimited Plans`,
+                            data: [{
+                                x: data.feature_range.max * 1.1, // Position at right edge
+                                y: data.unlimited_info.min_cost,
+                                plan_name: data.unlimited_info.plan_name,
+                                unlimited_count: data.unlimited_info.count
+                            }],
+                            borderColor: 'rgba(255, 159, 64, 1)',      // Orange
+                            backgroundColor: 'rgba(255, 159, 64, 0.8)', // Orange dot
+                            pointBackgroundColor: 'rgba(255, 159, 64, 1)',
+                            pointRadius: 8,
+                            pointHoverRadius: 12,
+                            borderWidth: 3,
+                            showLine: false,
+                            pointStyle: 'triangle'
+                        };
+                        datasets.push(unlimitedDataset);
+                    }
+                    
+                    // Create Chart.js chart
                     new Chart(canvas, {
-                        type: 'scatter',
-                        data: {
-                            datasets: [frontierDataset]
-                        },
+                        type: 'line',
+                        data: { datasets: datasets },
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
@@ -1783,10 +1682,10 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                                 y: {
                                     title: {
                                         display: true,
-                                        text: 'Total Marginal Cost (₩)'
+                                        text: 'Cost (KRW)'
                                     },
-                                    beginAtZero: false,  // Don't start from zero to better show variation
-                                    grace: '10%'  // Add some padding to see points clearly
+                                    beginAtZero: true,
+                                    grace: '10%'
                                 }
                             },
                             plugins: {
@@ -1797,28 +1696,101 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                                     callbacks: {
                                         title: function(context) {
                                             const point = context[0];
-                                            return `Market Plan (${point.raw.segment_info?.range || 'segment'})`;
+                                            if (point.raw.plan_name) {
+                                                return point.raw.plan_name;
+                                            }
+                                            return `${data.display_name}: ${point.parsed.x}`;
                                         },
                                         label: function(context) {
                                             const point = context.raw;
-                                            const isInconsistent = context.parsed.y > point.actual_cost;
-                                            const inconsistentFlag = isInconsistent ? ' ⚠️ ISSUE!' : '';
+                                            const dataset = context.dataset;
                                             
-                                            return [
-                                                `Total Marginal Cost: ₩${context.parsed.y.toLocaleString()}${inconsistentFlag}`,
-                                                `Actual Plan Cost: ₩${point.actual_cost.toLocaleString()}`,
-                                                `Pure Feature Cost: ₩${point.predicted_cost.toLocaleString()}`,
-                                                `Marginal Rate: ₩${point.marginal_rate.toLocaleString()} ${data.unit}`,
-                                                `Feature Value: ${point.x}`,
-                                                `Segment: ${point.segment_info?.range || 'N/A'}`,
-                                                isInconsistent ? '⚠️ Marginal > Actual (Model Issue)' : '✅ Consistent'
-                                            ];
+                                            if (dataset.label.includes('Cumulative Cost Trend')) {
+                                                return [
+                                                    `Cumulative Cost: ₩${context.parsed.y.toLocaleString()}`,
+                                                    `Marginal Rate: ₩${point.marginal_rate.toFixed(2)} ${data.unit}`,
+                                                    `Actual Market Cost: ₩${point.actual_cost.toLocaleString()}`,
+                                                    `Plans at this level: ${point.plan_count}`,
+                                                    `Segment: ${point.segment}`
+                                                ];
+                                            } else if (dataset.label.includes('Actual Market Plans')) {
+                                                return [
+                                                    `Plan: ${point.plan_name}`,
+                                                    `Actual Cost: ₩${context.parsed.y.toLocaleString()}`,
+                                                    `Feature Value: ${context.parsed.x}`,
+                                                    `Segment: ${point.segment}`
+                                                ];
+                                            } else if (dataset.label.includes('Unlimited')) {
+                                                return [
+                                                    `Unlimited Plan: ${point.plan_name}`,
+                                                    `Cost: ₩${context.parsed.y.toLocaleString()}`,
+                                                    `Total Unlimited Plans: ${point.unlimited_count}`
+                                                ];
+                                            }
+                                            return `Cost: ₩${context.parsed.y.toLocaleString()}`;
                                         }
                                     }
                                 }
                             }
                         }
                     });
+                }
+                
+                // Display coefficient comparison if available
+                if (marginalCostData.coefficient_comparison) {
+                    const comparisonContainer = document.createElement('div');
+                    comparisonContainer.className = 'coefficient-comparison';
+                    comparisonContainer.style.background = '#f8f9fa';
+                    comparisonContainer.style.padding = '20px';
+                    comparisonContainer.style.margin = '20px 0';
+                    comparisonContainer.style.borderRadius = '8px';
+                    comparisonContainer.style.border = '1px solid #dee2e6';
+                    
+                    const comparisonTitle = document.createElement('h4');
+                    comparisonTitle.textContent = '📊 Piecewise Marginal Cost Structure';
+                    comparisonTitle.style.margin = '0 0 15px 0';
+                    comparisonTitle.style.color = '#2c3e50';
+                    comparisonContainer.appendChild(comparisonTitle);
+                    
+                    const coeffTable = document.createElement('table');
+                    coeffTable.style.width = '100%';
+                    coeffTable.style.borderCollapse = 'collapse';
+                    coeffTable.style.fontSize = '0.9em';
+                    
+                    let tableHTML = `
+                        <thead>
+                            <tr style="background: #e9ecef;">
+                                <th style="padding: 10px; border: 1px solid #dee2e6; text-align: left;">Feature</th>
+                                <th style="padding: 10px; border: 1px solid #dee2e6; text-align: left;">Piecewise Segments</th>
+                                <th style="padding: 10px; border: 1px solid #dee2e6; text-align: center;">Unit</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                    `;
+                    
+                    const comparison = marginalCostData.coefficient_comparison;
+                    for (let i = 0; i < comparison.features.length; i++) {
+                        const feature = comparison.features[i];
+                        const segments = comparison.piecewise_segments[i];
+                        const unit = comparison.units[i];
+                        
+                        // Format segments as a list
+                        const segmentsList = segments.map(seg => `<div style="margin: 2px 0; font-size: 0.9em;">${seg}</div>`).join('');
+                        
+                        tableHTML += `
+                            <tr>
+                                <td style="padding: 8px; border: 1px solid #dee2e6; vertical-align: top;">${feature}</td>
+                                <td style="padding: 8px; border: 1px solid #dee2e6; vertical-align: top;">${segmentsList}</td>
+                                <td style="padding: 8px; border: 1px solid #dee2e6; text-align: center; vertical-align: top;">${unit}</td>
+                            </tr>
+                        `;
+                    }
+                    
+                    tableHTML += '</tbody>';
+                    coeffTable.innerHTML = tableHTML;
+                    comparisonContainer.appendChild(coeffTable);
+                    
+                    chartsContainer.appendChild(comparisonContainer);
                 }
             }
             
@@ -1838,11 +1810,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     createMultiFrontierCharts(advancedAnalysisData);
                 }
                 
-                // Create linear decomposition charts if available
-                if (linearDecompData && linearDecompData !== null) {
-                    createLinearMarginalCostChart(linearDecompData);
-                    createLinearCostBreakdownChart(linearDecompData);
-                }
+                // Linear decomposition charts removed per user request
             });
 
         </script>
@@ -1861,14 +1829,14 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     html = html.replace('{method_info_html}', method_info_html)
     html = html.replace('{comparison_info_html}', comparison_info_html)
     html = html.replace('{multi_frontier_chart_html}', advanced_analysis_chart_html)
-    html = html.replace('{linear_decomp_chart_html}', linear_decomp_chart_html)
+    # Linear decomposition chart removed per user request
     html = html.replace('{all_plans_html}', all_plans_html)
 
     # Replace JSON placeholders safely
     html = html.replace('__FEATURE_FRONTIER_JSON__', feature_frontier_json)
     html = html.replace('__MARGINAL_COST_FRONTIER_JSON__', marginal_cost_frontier_json)
     html = html.replace('__ADVANCED_ANALYSIS_JSON__', advanced_analysis_json)
-    html = html.replace('__LINEAR_DECOMP_JSON__', linear_decomp_json)
+    # Linear decomposition JSON removed per user request
     html = html.replace('__PLAN_EFFICIENCY_JSON__', plan_efficiency_json)
 
     return html

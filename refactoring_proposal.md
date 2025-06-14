@@ -36,6 +36,159 @@ Note: No base cost (β₀) - you pay only for features you get, calculated cumul
 - **Proven test results**: 28 total segments across all features, ₩270/unit average
 - **Status**: Ready for production integration
 
+## 🎯 Categorical Feature Handling ⭐ Intercept-Based Integration
+
+### Mathematical Foundation: Comprehensive Multi-Feature Model with Unlimited Intercepts
+
+**Complete Equation for All Features:**
+```
+Price = Σ(Data_granular_segments) + Σ(Voice_granular_segments) + Σ(Message_granular_segments) + Σ(Tethering_granular_segments)
+      + β_data_unlimited × basic_data_unlimited 
+      + β_voice_unlimited × voice_unlimited
+      + β_message_unlimited × message_unlimited
+      + β_tethering_unlimited × tethering_unlimited
+
+Where:
+- Each continuous feature uses granular piecewise segments (one per value change)
+- Each unlimited flag contributes a fixed intercept (0 or 1 × coefficient)
+- ALL features processed simultaneously for comprehensive analysis
+- No segmentation within categorical features (they're binary: 0 or 1)
+```
+
+### Comprehensive Feature Processing Strategy
+
+**All Features Included:**
+1. **Continuous Features**: `basic_data_clean`, `voice_clean`, `message_clean`, `tethering_gb`
+2. **Unlimited Flags**: `basic_data_unlimited`, `voice_unlimited`, `message_unlimited`, `tethering_unlimited`
+3. **Additional Categorical**: `is_5g` (as binary feature)
+
+**Granular Segmentation for Each Continuous Feature:**
+- **Data (basic_data_clean)**: One segment per GB value change
+- **Voice (voice_clean)**: One segment per minute value change  
+- **Messages (message_clean)**: One segment per message count change
+- **Tethering (tethering_gb)**: One segment per GB value change
+
+**Unlimited Intercept Calculation for Each Flag:**
+- **Data Unlimited**: Premium over highest limited data plan
+- **Voice Unlimited**: Premium over highest limited voice plan
+- **Message Unlimited**: Premium over highest limited message plan
+- **Tethering Unlimited**: Premium over highest limited tethering plan
+
+### Implementation Requirements
+
+#### 1. **Multi-Feature Data Collection**
+```python
+def prepare_comprehensive_granular_data(df, all_continuous_features, all_unlimited_flags):
+    """Process ALL features simultaneously"""
+    
+    all_granular_segments = {}
+    all_unlimited_intercepts = {}
+    
+    # Process each continuous feature
+    for feature in all_continuous_features:
+        unlimited_flag = all_unlimited_flags.get(feature)
+        granular_result = create_granular_segments_with_intercepts(df, feature, unlimited_flag)
+        
+        all_granular_segments[feature] = granular_result
+        if granular_result['unlimited_intercept']:
+            all_unlimited_intercepts[unlimited_flag] = granular_result['unlimited_intercept']
+    
+    return all_granular_segments, all_unlimited_intercepts
+```
+
+#### 2. **Comprehensive Cost Calculation**
+```python
+def calculate_total_plan_cost(plan_features, unlimited_flags, all_segments, all_intercepts):
+    """Calculate complete plan cost using all features"""
+    
+    total_cost = 0
+    breakdown = {'continuous': {}, 'intercepts': {}}
+    
+    # Add continuous feature costs
+    for feature, value in plan_features.items():
+        if feature in all_segments and value > 0:
+            feature_cost = calculate_granular_piecewise_cost(value, all_segments[feature])
+            breakdown['continuous'][feature] = feature_cost
+            total_cost += feature_cost
+    
+    # Add unlimited intercept costs
+    for flag, is_unlimited in unlimited_flags.items():
+        if is_unlimited == 1 and flag in all_intercepts:
+            intercept_cost = all_intercepts[flag]['coefficient']
+            breakdown['intercepts'][flag] = intercept_cost
+            total_cost += intercept_cost
+    
+    return total_cost, breakdown
+```
+
+#### 3. **Enhanced Visualization Strategy**
+```python
+# Chart Layout: 2x2 grid for all continuous features
+chart_layout = {
+    'basic_data_clean': {'position': 'top-left', 'title': 'Data (GB)'},
+    'voice_clean': {'position': 'top-right', 'title': 'Voice (min)'},
+    'message_clean': {'position': 'bottom-left', 'title': 'Messages'},
+    'tethering_gb': {'position': 'bottom-right', 'title': 'Tethering (GB)'}
+}
+
+# Intercept Summary Panel
+intercept_panel = {
+    'unlimited_data': 'Fixed cost if unlimited data',
+    'unlimited_voice': 'Fixed cost if unlimited voice', 
+    'unlimited_messages': 'Fixed cost if unlimited messages',
+    'unlimited_tethering': 'Fixed cost if unlimited tethering'
+}
+```
+
+### Data Structure Requirements
+
+**Expected Output Format:**
+```python
+granular_frontier_data = {
+    'basic_data_clean': {
+        'feature_name': 'basic_data_clean',
+        'display_name': 'Data (GB)',
+        'unit': 'KRW/GB',
+        'chart_points': [...],  # Granular segments
+        'total_segments': 45,
+        'unlimited_intercept': {...} or None
+    },
+    'voice_clean': {
+        'feature_name': 'voice_clean',
+        'display_name': 'Voice (min)',
+        'unit': 'KRW/min', 
+        'chart_points': [...],
+        'total_segments': 23,
+        'unlimited_intercept': {...} or None
+    },
+    # ... similar for message_clean, tethering_gb
+    
+    '_metadata': {
+        'method': 'comprehensive_granular_with_intercepts',
+        'total_features': 4,
+        'total_segments': 156,  # Sum across all features
+        'unlimited_intercepts': 3,  # Number of active unlimited flags
+        'formula': 'Price = Σ(all_granular_segments) + Σ(all_unlimited_intercepts)'
+    },
+    
+    '_examples': {
+        'basic_plan': {...},
+        'premium_unlimited_plan': {...},
+        'mixed_plan': {...}
+    }
+}
+```
+
+### Quality Assurance Requirements
+
+1. **Feature Coverage**: All 4 continuous features must be processed
+2. **Unlimited Detection**: All unlimited flags must be checked and calculated
+3. **Data Validation**: Each feature must have valid segments and chart points
+4. **Error Handling**: Graceful handling of missing features or insufficient data
+5. **Metadata Completeness**: All statistics and method information included
+
+This comprehensive approach ensures that the granular marginal cost analysis covers the complete mobile plan pricing structure with maximum detail and mathematical accuracy.
+
 ## 🧪 Tested Solution: Multi-Feature Cumulative Marginal Cost System
 
 ### Problem-Solving Approach

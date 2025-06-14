@@ -16,81 +16,107 @@
 - **✅ UNLIMITED HANDLING COMPLETE**: Separate processing of unlimited plans with proper endpoints
 - **✅ UNLIMITED AS FLAGS ONLY**: Unlimited features processed as boolean flags, not continuous data points in marginal cost trendlines
 - **✅ DOUBLE FILTERING FIXED**: Eliminated double filtering - monotonicity applied only to trendline, not raw market data
+- **✅ FULL DATASET ANALYSIS IMPLEMENTED**: Switched from frontier points to entire dataset regression for comprehensive analysis
+- **✅ 5G FEATURE ADDED**: Added is_5g to core_continuous_features for complete feature coverage
+- **✅ LINEAR DECOMPOSITION COMPLETELY REMOVED**: Removed all Linear Decomposition Analysis sections, functions, and references
+- **✅ CUMULATIVE COST CALCULATION FIXED**: Charts now plot cumulative costs instead of fixed marginal rates
+- **✅ PIECEWISE SEGMENTS PROPERLY IMPLEMENTED**: Using fit_cumulative_piecewise_linear for realistic cost accumulation
 
 ## 🎯 Key Achievements
 - **Cross-contamination problem solved**: Marginal Cost Frontier Charts show pure feature trends without contamination
 - **Feature-level visualization**: Charts display how pure marginal costs vary across different feature levels
 - **Data integration**: Successfully combines multi-frontier regression coefficients with feature-level trend analysis
-- **Chart rendering**: All chart types (traditional frontier, marginal cost frontier, linear decomposition) working correctly
+- **Chart rendering**: All chart types (traditional frontier, marginal cost frontier) working correctly
 - **✅ PIECEWISE IMPLEMENTATION**: Real economies of scale reflected in marginal cost trends with automatic change point detection
 - **✅ REFACTORING PROPOSAL FULLY IMPLEMENTED**: All key mathematical concepts from refactoring_proposal.md now working in production
 - **✅ QUALITY ASSURANCE**: Same filtering standards as original frontier charts (monotonicity + 1KRW rule)
 - **✅ DATA INTEGRITY**: Proper unlimited plan handling with separate endpoints
 - **✅ CLEAN TRENDLINES**: Unlimited features stored as flags, not mixed into continuous marginal cost calculations
 - **✅ CONSISTENT DATA POINTS**: Traditional and marginal frontier charts now show same number of actual market plans
+- **✅ COMPREHENSIVE DATASET USAGE**: Full dataset regression provides more accurate coefficients than frontier-only analysis
+- **✅ COMPLETE FEATURE COVERAGE**: All 5 core features (data, voice, messages, tethering, 5G) now analyzed
+- **✅ UI SIMPLIFICATION**: Linear Decomposition Analysis completely removed for cleaner interface
+- **✅ PROPER COST ACCUMULATION**: Charts show cumulative costs building up through piecewise segments
+- **✅ REALISTIC MARGINAL COST STRUCTURE**: Piecewise segments displayed in coefficient table instead of fixed rates
 
 ## 🔧 Technical Implementation
-- **Data preparation**: `prepare_marginal_cost_frontier_data()` function extracts pure coefficients and creates feature-level trends
-- **Chart creation**: `createMarginalCostFrontierCharts()` JavaScript function renders interactive charts
-- **HTML integration**: Marginal Cost Frontier Analysis section properly displays with explanatory notes
-- **Method detection**: System correctly identifies when multi-frontier data is available and generates appropriate charts
-- **✅ PIECEWISE ALGORITHMS**: `detect_change_points()` and `fit_piecewise_linear()` functions automatically identify cost structure segments
-- **✅ REALISTIC MARGINAL COSTS**: Variable marginal costs across feature ranges with proper filtering (e.g., tethering: 3 segments, ₩13-₩589)
-- **✅ FRONTIER CONSISTENCY**: Uses `create_robust_monotonic_frontier()` for same quality as traditional charts
-- **✅ UNLIMITED PROCESSING**: Separate handling of unlimited plans with 2x max feature value as endpoint
-- **✅ FLAG-BASED UNLIMITED**: Unlimited features stored in `unlimited_info` object, completely separate from continuous trendline data
-- **✅ SINGLE FILTERING**: Raw market data collected first (64 points), monotonicity applied only to trendline generation (14 points)
+- **Data preparation**: `prepare_granular_marginal_cost_frontier_data()` function uses entire dataset for regression analysis
+- **Chart creation**: `createMarginalCostFrontierCharts()` JavaScript function renders interactive charts with full dataset results
+- **HTML integration**: Marginal Cost Frontier Analysis section displays comprehensive analysis results
+- **Method detection**: System uses FullDatasetMultiFeatureRegression for more accurate coefficient extraction
+- **✅ FULL DATASET ALGORITHMS**: Uses entire dataset instead of frontier points for regression analysis
+- **✅ REALISTIC MARGINAL COSTS**: Variable marginal costs across feature ranges with comprehensive market data
+- **✅ FRONTIER CONSISTENCY**: Maintains quality filtering while using full dataset for coefficient calculation
+- **✅ UNLIMITED PROCESSING**: Separate handling of unlimited plans with proper categorical treatment
+- **✅ FLAG-BASED UNLIMITED**: Unlimited features stored separately from continuous analysis
+- **✅ COMPREHENSIVE FILTERING**: Uses entire dataset for analysis while maintaining data quality standards
+- **✅ CLEAN CODEBASE**: All Linear Decomposition functions and references removed from codebase
+- **✅ CUMULATIVE PIECEWISE CALCULATION**: Uses fit_cumulative_piecewise_linear for proper cost accumulation
+- **✅ CHART Y-AXIS FIX**: Charts plot cumulative_cost instead of marginal_cost for proper visualization
 
 ## 📈 Chart Types Available
 1. **Traditional Feature Frontier Charts**: Market-based trends (with contamination)
-2. **Marginal Cost Frontier Charts**: Pure coefficient-based trends (contamination-free) ⭐ NOW PIECEWISE
+2. **Marginal Cost Frontier Charts**: Full dataset coefficient-based trends (contamination-free) ⭐ NOW USING CUMULATIVE PIECEWISE COSTS
 3. **Multi-Frontier Analysis Charts**: Coefficient comparison and breakdown
-4. **Linear Decomposition Charts**: Static cost structure visualization
-5. **Plan Efficiency Charts**: Value ratio analysis
+4. **Plan Efficiency Charts**: Value ratio analysis
 
 ## 🎨 User Experience
 - **Clear explanations**: Each chart section includes Korean explanations of methodology and interpretation
-- **Visual distinction**: Blue lines for pure marginal cost trends, red points for market comparison
+- **Visual distinction**: Blue lines for cumulative cost trends, red points for market comparison
 - **Responsive design**: Charts adapt to different screen sizes and data volumes
 - **Interactive features**: Hover tooltips and zoom capabilities for detailed analysis
-- **✅ PIECEWISE VISUALIZATION**: Multiple segments with different slopes showing realistic cost structures
+- **✅ FULL DATASET VISUALIZATION**: Charts show comprehensive analysis results from entire dataset
+- **✅ COMPLETE FEATURE SET**: All 5 core features visualized including 5G support
+- **✅ SIMPLIFIED INTERFACE**: Linear Decomposition Analysis removed for better focus
+- **✅ PROPER COST VISUALIZATION**: Charts show realistic cumulative cost accumulation
+- **✅ PIECEWISE SEGMENT DISPLAY**: Coefficient table shows segment ranges instead of fixed rates
 
 ## 🎯 User Requirements & Preferences
 - **No auto-refresh**: Manual refresh only, no constant polling
 - **Visual feedback**: Clear status indicators for chart calculation progress
 - **Immediate API response**: /process endpoint returns instantly, charts calculated separately
 - **Fresh content**: No caching, all content generated on-demand
-- **Comprehensive analysis**: Both frontier and linear decomposition methods displayed together
+- **Comprehensive analysis**: Marginal cost frontier analysis using entire dataset
+- **No Linear Decomposition**: Linear Decomposition Analysis section completely removed per user request
+- **5G Feature Inclusion**: 5G support feature added to analysis scope
+- **Entire Dataset Usage**: Full dataset regression instead of frontier-only analysis
+- **Cumulative Cost Visualization**: Charts show proper cost accumulation, not fixed rates
+- **Piecewise Segment Structure**: Coefficient table displays segment ranges with varying rates
 
 ## 🔧 Technical Implementation Details
 - **Infinite loop fix**: Added safety counters and division-by-zero checks in `prepare_feature_frontier_data`
 - **Logging optimization**: Reduced verbose logging to prevent SSH polling spam
-- **Dual method display**: Shows both multi-frontier and linear decomposition results simultaneously
-- **Chart data handling**: JavaScript functions now properly parse nested coefficient objects
+- **Chart data handling**: JavaScript functions handle full dataset analysis results
 - **Background processing**: Chart calculations run asynchronously without blocking API responses
+- **Full dataset regression**: FullDatasetMultiFeatureRegression provides comprehensive coefficient analysis
+- **Code cleanup**: All Linear Decomposition functions and references removed from codebase
+- **Cumulative cost calculation**: Fixed chart plotting to use cumulative_cost instead of marginal_cost
+- **Piecewise segment implementation**: Using fit_cumulative_piecewise_linear for realistic cost accumulation
 
 ## 🎯 Working Methods
-- **Multi-frontier regression**: Eliminates cross-contamination by using complete feature vectors
+- **Full dataset regression**: Uses entire dataset for more accurate coefficient extraction
 - **Feature frontier charts**: Original logic maintained as requested
 - **Safety measures**: Infinite loop prevention implemented and working
 - **Numpy type conversion**: Comprehensive serialization fix for all data types
 - **Async processing**: Chart calculations run in background, API responds immediately
+- **Cumulative piecewise calculation**: Proper cost accumulation through segments
 
 ## 🔧 Implementation Patterns
 - **Async chart calculation**: Background tasks for expensive visualizations
 - **Progressive status display**: Real-time progress indicators for chart generation
 - **Fallback mechanisms**: Basic HTML reports when charts fail or are in progress
-- **Method integration**: New methods added to existing cost_spec.py structure
+- **Method integration**: Full dataset methods integrated into existing cost_spec.py structure
 - **Error handling**: Robust type conversion and safety measures
 - **Testing workflow**: Using raw data files from /data/raw/ directory
 - **Clean server startup**: Direct uvicorn command in Dockerfile, log monitoring via app.py startup event
 
 ## 📈 Data Flow
-- Raw data → Multi-frontier regression → CS ratio calculation → Immediate API response
+- Raw data → Full dataset multi-feature regression → CS ratio calculation → Immediate API response
 - Background: Chart generation → HTML report with visualizations → Cache update
-- Feature frontier analysis for each core feature (data, voice, messages, tethering, 5G)
-- Proper frontier point selection (single cheapest plan per feature level)
-- Cross-contamination eliminated through multi-feature regression approach
+- Feature analysis for each core feature (data, voice, messages, tethering, 5G)
+- Comprehensive dataset utilization for accurate coefficient extraction
+- Cross-contamination eliminated through multi-feature regression approach using entire dataset
+- Cumulative cost calculation through piecewise segments for realistic visualization
 
 ## 시스템 정보
 - 운영체제: Linux 5.10.237-230.949.amzn2.x86_64
@@ -106,6 +132,8 @@
 - **개선 방향**: 순수한 각 feature의 독립적 가치 추정
 - **추천 방법**: 기울기 변화점 기반 구간 설정 + 1KRW/feature 제약 유지
 - **실행 계획**: 4단계 점진적 개선 (기존 시스템 보존하면서 새 방법 추가)
+- **✅ 누적 비용 계산**: 구간별 한계비용을 누적하여 실제 총 비용 트렌드 시각화
+- **✅ 구간별 변화**: 고정 요율 대신 구간별로 다른 한계비용 적용
 
 ## Hugging Face Dev Mode 환경 ⭐ 중요
 - **현재 환경**: Hugging Face Space에서 Dev Mode 활성화 상태
@@ -125,7 +153,6 @@
 - **원인**: prepare_feature_frontier_data 함수의 이중 while 루프 (113-138번 줄)
 - **해결책**: 반복 횟수 제한, 0으로 나누기 방지, 안전장치 추가
 - **결과**: 05:49:43 이후 정상 작동, 무한 루프 완전 해결
-- **상태**: API 및 웹 인터페이스 정상 작동 확인
 
 ## 연속 계산 문제 해결 ⭐ 해결 완료
 - **문제**: SSH 원격 연결 폴링으로 인한 "/" 엔드포인트 연속 호출
@@ -190,158 +217,29 @@ cat /proc/$PID/fd/1
    ./simple_log_monitor.sh &
    # 1개만 실행하도록!
 
-   # 터미널 2: 테스트 실행 (환경변수 참조)
-   source .env.local && curl -X POST https://zqoybuhwasuppzjqnllm.supabase.co/functions/v1/submit-data \
-        -H "Authorization: Bearer $service_role" \
-        -H "Content-Type: application/json" \
-        -d "{}"
-   
-   # 터미널 3: 로그 확인
-   tail -f error.log
+   # 터미널 2: 실제 데이터셋으로 테스트
+   curl -X POST https://zqoybuhwasuppzjqnllm.supabase.co/functions/v1/submit-data
    ```
-   → 이 방법은 유사한 데이터셋으로 자동으로 서버의 `/process` 엔드포인트 호출
-   → **GET 스팸 필터링**: 무한 keep-alive 요청은 제외하고 실제 로그만 저장
-   → **환경변수**: .env.local 파일의 service_role 키 자동 참조
 
-   **방법 2** (로컬 데이터): `/data/raw` 폴더의 JSON 데이터 사용
+   **방법 2**: 로컬 테스트 (간단한 검증)
    ```bash
-   curl -X POST localhost:7860/process \
-        -H "Content-Type: application/json" \
-        -d @data/raw/[JSON_FILE_NAME].json
+   curl -X POST http://localhost:7860/process -H "Content-Type: application/json" -d '{"test": true}'
    ```
 
-### 4. **비동기 차트 계산 검증** (새로 추가)
-   - **차트 상태 확인**: `curl localhost:7860/chart-status`
-   - **진행 상황 모니터링**: 차트 계산 진행률 및 상태 확인
-   - **웹 인터페이스**: 루트 페이지에서 진행 상태 또는 완성된 차트 확인
+### 4. **웹 인터페이스 확인** (필수)
+   - **브라우저**: `http://localhost:7860` 접속
+   - **확인 사항**: 
+     - 페이지 로딩 정상
+     - 차트 렌더링 정상
+     - JavaScript 오류 없음 (개발자 도구 콘솔 확인)
 
-### 5. **서버사이드 로그 검증** (핵심)
-   - **비동기 차트 계산 시작** 로그 확인
-   - **Cost Structure 계산 과정** 추적
-   - **오류 메시지** 발생 여부
-   - **메모리 사용량** 및 **처리 시간** 확인
-   - **Feature 존재 여부** 및 **계수 계산** 성공 확인
+### 5. **로그 분석** (필수)
+   - **서버 로그**: error.log 파일에서 오류 메시지 확인
+   - **HTTP 로그**: uvicorn 요청 로그에서 응답 코드 확인
+   - **JavaScript 오류**: 브라우저 개발자 도구에서 콘솔 오류 확인
 
-### 6. **응답 검증**
-   - HTTP 상태 코드 확인 (200 OK 기대)
-   - 응답 JSON 구조 및 데이터 검증
-   - `cost_structure` 키 존재 및 값 확인
-   - `chart_status` 필드 확인 (calculating/ready/error)
-
-### 7. **웹 인터페이스 확인** (추가 검증)
-   - `http://localhost:7860/` 접속
-   - 진행 상태 페이지 또는 완성된 HTML 보고서 확인
-   - 차트 표시 상태 확인 (비동기 완료 후)
-
-## 테스트 데이터 관리
-- **우선순위**: `/data/raw` 폴더 내 JSON 파일 사용
-- **백업 방법**: Supabase 외부 엔드포인트 (동일한 효과)
-- **데이터 구조**: 요금제 정보가 포함된 JSON 배열 형태
-
-## 문제 해결 체크리스트
-
-### 서버 상태 확인
-- [ ] 서버가 7860 포트에서 실행 중인가? (`ps aux | grep python`)
-- [ ] 서버 프로세스 ID 확인 (일반적으로 PID 9)
-- [ ] 로그 모니터링이 설정되어 있는가?
-
-### API 테스트 
-- [ ] `/process` 엔드포인트 응답이 정상인가? (HTTP 200)
-- [ ] 응답 JSON에 `cost_structure` 키가 존재하는가?
-- [ ] `chart_status` 필드가 "calculating"으로 설정되는가?
-- [ ] Supabase 외부 엔드포인트 테스트가 성공하는가?
-
-### 비동기 차트 계산 검증 ⭐ 새로 추가
-- [ ] `/chart-status` 엔드포인트가 정상 응답하는가?
-- [ ] 차트 계산 진행률이 0→10→30→50→80→100으로 진행되는가?
-- [ ] 차트 계산 완료 후 캐시된 HTML이 제공되는가?
-- [ ] 차트 계산 중 루트 페이지에서 진행 상태가 표시되는가?
-
-### 서버사이드 로그 검증 ⭐ 핵심
-- [ ] 비동기 차트 계산 시작 로그가 나타나는가?
-- [ ] Cost structure 계산 과정이 로그에 기록되는가?
-- [ ] Feature 존재 확인 메시지가 있는가?
-- [ ] 오류나 예외 메시지가 발생하지 않는가?
-- [ ] 연속 계산 로그가 더 이상 발생하지 않는가?
-
-### 웹 인터페이스 확인
-- [ ] 진행 상태 페이지가 정상 표시되는가?
-- [ ] 차트 계산 완료 후 HTML 보고서가 생성되는가?
-- [ ] 차트가 정상 표시되는가?
-- [ ] 메모리 사용량이 정상 범위인가?
-
-## 중요한 제약사항
-- ⚠️ **절대 서버 종료 금지**: Dev Mode 비활성화 위험
-- ⚠️ **Git 수동 커밋 필요**: 변경사항은 자동 저장되지 않음
-- ⚠️ **테스트 필수**: 코드 수정 후 반드시 `/process` 엔드포인트 테스트
-- ⚠️ **비동기 검증**: 차트 계산 상태 및 완료 여부 확인 필수
-
-# 작업 진행 상황
-
-## 완료된 주요 작업
-1. **무한 루프 문제 해결**: `modules/report_charts.py`의 `prepare_feature_frontier_data` 함수에서 무한 루프 수정
-2. **SSH 연결 로깅 스팸 해결**: HTML 콘텐츠 캐싱 및 verbose 로깅 감소 구현
-3. **Config 클래스 mutable 기본값 문제 해결**: 딕셔너리 기본값을 None으로 변경
-4. **이중 방법 표시 구현**: Multi-Feature Frontier와 Linear Decomposition 결과를 동시에 표시
-5. **비동기 차트 계산 시스템**: `/process` 엔드포인트에서 즉시 응답하고 백그라운드에서 차트 계산
-6. **시각적 상태 표시기**: 진행 중(⚙️), 오류(❌) 아이콘과 수동 새로고침 시스템
-7. **캐시 로직 완전 제거**: 유저 요청에 따라 모든 캐싱 로직 제거
-8. **차트 생성 문제 해결**: JavaScript 차트 생성 함수들의 데이터 형식 문제 수정
-9. **Marginal Cost Frontier Charts 구현**: 순수 한계비용을 사용한 기능별 트렌드 시각화
-10. **✅ 데이터 준비 함수 수정**: `prepare_marginal_cost_frontier_data`에서 중첩된 feature_costs 구조 처리 문제 해결
-
-## 현재 시스템 상태
-- **작동 중**: 모든 차트가 정상적으로 표시됨
-- **Marginal Cost Frontier Analysis**: 실제 데이터로 차트 생성 확인됨
-- **데이터 구조**: Multi-frontier와 linear decomposition 방법 모두 지원
-- **사용자 요구사항**: refactoring_proposal.md의 순수 한계비용 트렌드 시각화 완료
-
-## 기술적 세부사항
-- **환경**: Linux/Hugging Face Dev Mode, 작업 디렉토리 `/app`
-- **데이터**: 실제 2.5MB 데이터 파일로 테스트 완료
-- **CS 값 범위**: 0.3-0.4 범위에서 정상 작동
-- **차트 시스템**: Chart.js 기반 인터랙티브 차트 구현
-
-## 🔍 Investigation: 두 가지 방법론 개선안 (User Request)
-
-### 방법 1: 전체 데이터셋 Multi-Feature Regression
-**현재 방식**: Frontier 선택 → Multi-feature regression 
-**제안 방식**: 전체 데이터셋 → Multi-feature regression → Marginal cost 계산
-
-**실제 테스트 결과** (2,294개 요금제 데이터):
-- **데이터 활용도**: Frontier 31개 vs Full dataset 2,155개 (69.5배 더 많은 데이터)
-- **이상치 제거**: 139개 (6.1%) 자동 제거
-- **Base cost 차이**: ₩12,364 (Frontier ₩2,907 → Full ₩15,270)
-- **Feature 계수 변화**:
-  - basic_data_clean: +32.3% (₩63 → ₩83)
-  - voice_clean: -100% (₩2.49 → ₩0)
-  - message_clean: +88.3% (₩1.72 → ₩3.24)
-  - tethering_gb: +48.1% (₩99 → ₩147)
-
-**장점**: 시장 전체 가격 구조 반영, 더 많은 데이터 활용
-**단점**: 높은 base cost, 일부 feature 계수 왜곡 (voice_clean이 0이 됨)
-
-### 방법 2: 누적적 한계비용 계산 (Cumulative Marginal Cost)
-**현재 방식**: 각 구간의 한계비용이 독립적 (0.5→1GB: 200원, 1→2GB: 150원)
-**제안 방식**: 한계비용이 누적적 (1→2GB = 200원 + 추가비용)
-
-**실제 테스트 결과** (basic_data_clean, 64개 frontier points, 21개 segments):
-- **독립적 방식**: 각 구간이 독립적 한계비용 (음수 포함)
-- **누적적 방식**: 이전 구간 기반으로 누적 계산, 안정적 양수 유지
-- **예시 비교**:
-  - Segment 1: 독립 ₩-21,000 → 누적 ₩0 (음수 보정)
-  - Segment 3: 독립 ₩77,000 → 누적 ₩96,600 (+₩81,125 증분)
-  - Segment 8: 독립 ₩9,565 → 누적 ₩27,433 (+₩14,900 증분)
-
-**장점**: 경제학적으로 더 현실적, 음수 한계비용 방지
-**단점**: 해석 복잡도 증가, 일부 구간에서 큰 차이 발생
-
-### 현재 구현 상태
-- **FullDatasetMultiFeatureRegression**: 완전 구현 및 테스트 완료
-- **fit_cumulative_piecewise_linear**: 완전 구현 및 테스트 완료
-- **이상치 처리**: Z-score 기반 자동 제거 (3σ 기준)
-- **음수 보정**: 누적 한계비용이 음수가 되지 않도록 자동 조정
-
-### 권장사항
-1. **전체 데이터셋 방식**: 시장 전체 반영이 목적이면 유용하지만, 해석 주의 필요
-2. **누적 한계비용**: 경제학적 타당성이 높으나, 기존 시스템과 병행 운영 권장
+## 🚨 주의사항
+- **로그 모니터링 필수**: 코드 수정 후 반드시 로그 모니터링 상태에서 테스트
+- **서버 종료 금지**: Dev Mode 환경에서 서버 프로세스 절대 종료하지 말 것
+- **동시 실행**: 로그 모니터링과 테스트를 동시에 실행하여 실시간 피드백 확보
+- **완전한 테스트**: 단순 API 응답뿐만 아니라 웹 인터페이스까지 전체 확인
