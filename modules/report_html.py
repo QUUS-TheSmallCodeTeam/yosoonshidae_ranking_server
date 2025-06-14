@@ -155,7 +155,7 @@ def prepare_plan_efficiency_data(df, method):
     
     Args:
         df: DataFrame with plan data including CS ratios and baselines
-        method: Method used ('linear_decomposition' or 'frontier')
+        method: Method used ('linear_decomposition', 'frontier', 'fixed_rates', or 'multi_frontier')
         
     Returns:
         Dictionary with chart data for JavaScript rendering
@@ -168,10 +168,16 @@ def prepare_plan_efficiency_data(df, method):
         'diagonal': {'min': 0, 'max': 0}
     }
     
-    # Get baseline and actual cost columns
-    baseline_col = 'B_decomposed' if method == 'linear_decomposition' and 'B_decomposed' in df.columns else 'B'
+    # Get baseline and actual cost columns based on method
+    if method == 'linear_decomposition' and 'B_decomposed' in df.columns:
+        baseline_col = 'B_decomposed'
+        cs_col = 'CS_decomposed'
+    else:
+        # For frontier, fixed_rates, multi_frontier methods, use standard columns
+        baseline_col = 'B'
+        cs_col = 'CS'
+    
     actual_col = 'fee'
-    cs_col = 'CS_decomposed' if method == 'linear_decomposition' and 'CS_decomposed' in df.columns else 'CS'
     
     if baseline_col not in df.columns or actual_col not in df.columns or cs_col not in df.columns:
         return None
@@ -211,6 +217,139 @@ def prepare_plan_efficiency_data(df, method):
         efficiency_data['diagonal']['max'] = max(all_costs)
     
     return efficiency_data
+
+def generate_feature_rates_table_html(cost_structure):
+    """
+    Generate HTML table showing feature rates/coefficients used in CS calculations.
+    
+    Args:
+        cost_structure: Dictionary containing feature_costs and other cost data
+        
+    Returns:
+        HTML string for the feature rates table
+    """
+    if not cost_structure or not cost_structure.get('feature_costs'):
+        return ""
+    
+    feature_costs = cost_structure.get('feature_costs', {})
+    
+    # Handle different feature_costs structures
+    if isinstance(feature_costs, list):
+        # Convert list format to dict format
+        features_data = {
+            item['feature']: {
+                'coefficient': item.get('coefficient', 0),
+                'display_name': item.get('display_name', item['feature']),
+                'unit': item.get('unit', '')
+            }
+            for item in feature_costs
+        }
+    elif isinstance(feature_costs, dict):
+        # Check if feature_costs has nested structure
+        if feature_costs and isinstance(list(feature_costs.values())[0], dict):
+            features_data = feature_costs
+        else:
+            # Flat structure - convert to nested
+            features_data = {
+                feature: {
+                    'coefficient': coeff,
+                    'display_name': feature.replace('_clean', '').replace('_', ' ').title(),
+                    'unit': 'KRW/unit'
+                }
+                for feature, coeff in feature_costs.items()
+            }
+    else:
+        return ""
+    
+    # Create table HTML
+    table_html = """
+    <div class="metrics">
+        <h3>기능별 한계비용 계수 (Feature Marginal Cost Coefficients)</h3>
+        <p>아래 표는 CS 비율 계산에 사용되는 각 기능의 한계비용을 보여줍니다.</p>
+        <table style="width: 100%; max-width: 800px; margin: 0 auto;">
+            <thead>
+                <tr>
+                    <th>기능 (Feature)</th>
+                    <th>한계비용 (Marginal Cost)</th>
+                    <th>단위 (Unit)</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
+    
+    # Feature display names mapping
+    feature_names = {
+        'basic_data_clean': '데이터 (Data)',
+        'voice_clean': '음성통화 (Voice)',
+        'message_clean': '문자메시지 (Messages)',
+        'tethering_gb': '테더링 (Tethering)',
+        'is_5g': '5G 지원 (5G Support)',
+        'data_stops_after_quota': '데이터 소진 후 중단 (Data Stops)',
+        'data_throttled_after_quota': '데이터 소진 후 속도제한 (Data Throttled)',
+        'data_unlimited_speed': '데이터 무제한 (Data Unlimited)',
+        'basic_data_unlimited': '기본 데이터 무제한 (Basic Data Unlimited)',
+        'voice_unlimited': '음성 무제한 (Voice Unlimited)',
+        'message_unlimited': '문자 무제한 (Message Unlimited)',
+        'has_throttled_data': '속도제한 데이터 (Throttled Data)',
+        'additional_call': '추가 통화 (Additional Call)',
+        'speed_when_exhausted': '소진 후 속도 (Speed When Exhausted)'
+    }
+    
+    # Feature units mapping
+    feature_units = {
+        'basic_data_clean': 'KRW/GB',
+        'voice_clean': 'KRW/분',
+        'message_clean': 'KRW/건',
+        'tethering_gb': 'KRW/GB',
+        'is_5g': 'KRW (고정)',
+        'data_stops_after_quota': 'KRW (기준)',
+        'data_throttled_after_quota': 'KRW (고정)',
+        'data_unlimited_speed': 'KRW (고정)',
+        'basic_data_unlimited': 'KRW (고정)',
+        'voice_unlimited': 'KRW (고정)',
+        'message_unlimited': 'KRW (고정)',
+        'has_throttled_data': 'KRW (고정)',
+        'additional_call': 'KRW/unit',
+        'speed_when_exhausted': 'KRW/Mbps'
+    }
+    
+    # Sort features by coefficient value (highest first)
+    sorted_features = sorted(features_data.items(), 
+                           key=lambda x: x[1].get('coefficient', 0), 
+                           reverse=True)
+    
+    for feature, data in sorted_features:
+        coefficient = data.get('coefficient', 0)
+        display_name = feature_names.get(feature, feature.replace('_clean', '').replace('_', ' ').title())
+        unit = feature_units.get(feature, 'KRW/unit')
+        
+        # Format coefficient with proper number formatting
+        if coefficient >= 1000:
+            coeff_str = f"₩{coefficient:,.0f}"
+        elif coefficient >= 1:
+            coeff_str = f"₩{coefficient:.2f}"
+        else:
+            coeff_str = f"₩{coefficient:.4f}"
+        
+        table_html += f"""
+                <tr>
+                    <td style="text-align: left; font-weight: bold;">{display_name}</td>
+                    <td style="text-align: right; font-family: monospace;">{coeff_str}</td>
+                    <td style="text-align: center;">{unit}</td>
+                </tr>
+        """
+    
+    table_html += """
+            </tbody>
+        </table>
+        <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+            * 이 계수들은 전체 데이터셋에서 추출된 순수 한계비용으로, cross-contamination이 제거된 값입니다.<br>
+            * CS 비율 = 기준비용(이 계수들로 계산) / 실제 요금
+        </p>
+    </div>
+    """
+    
+    return table_html
 
 def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings", is_cs=True, title=None, method=None, cost_structure=None):
     """
@@ -352,63 +491,16 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     multi_frontier_breakdown = getattr(df, 'attrs', {}).get('multi_frontier_breakdown')
     linear_decomp_cost_structure = getattr(df, 'attrs', {}).get('cost_structure')
     
-    # Show multi-frontier charts if data is available (regardless of method parameter)
-    if multi_frontier_breakdown:
-        from .report_charts import prepare_multi_frontier_chart_data
-        
-        # Prepare debug info
-        debug_keys_info = ""
-        if multi_frontier_breakdown:
-            keys_list = list(multi_frontier_breakdown.keys())
-            debug_keys_info = f'<p>Multi-Frontier Keys: {keys_list}</p>'
-        else:
-            debug_keys_info = '<p>Multi-Frontier Keys: None</p>'
-            
-        advanced_analysis_chart_html = """
-        <div class="charts-wrapper">
-            <h2>🔬 Multi-Feature Frontier Regression Analysis</h2>
-            <div class="note">
-                <p><strong>Method:</strong> Multi-Feature Frontier Regression - Solves cross-contamination by extracting pure marginal costs</p>
-                <p><strong>Key Innovation:</strong> Each coefficient represents the true value of a single feature, with other features held constant</p>
-                {debug_keys_info_placeholder}
-            </div>
-            <div style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: center;">
-                <div class="chart-container" style="width: 500px; height: 400px;">
-                    <h3 style="text-align: center; margin-top: 0;">🎯 Pure Marginal Costs</h3>
-                    <p style="text-align: center; font-size: 0.9em; color: #666;">Cross-contamination eliminated</p>
-                    <canvas id="pureMarginalCostChart" style="max-height: 300px;"></canvas>
-                </div>
-                <div class="chart-container" style="width: 500px; height: 400px;">
-                    <h3 style="text-align: center; margin-top: 0;">📊 Cost Structure Breakdown</h3>
-                    <p style="text-align: center; font-size: 0.9em; color: #666;">Base cost + feature contributions</p>
-                    <canvas id="costBreakdownChart" style="max-height: 300px;"></canvas>
-                </div>
-                <div class="chart-container" style="width: 1000px; height: 400px;">
-                    <h3 style="text-align: center; margin-top: 0;">🔍 Frontier Plan Analysis</h3>
-                    <p style="text-align: center; font-size: 0.9em; color: #666;">Quality and diversity of plans used for regression</p>
-                    <canvas id="frontierAnalysisChart" style="max-height: 300px;"></canvas>
-                </div>
-            </div>
-        </div>
-        """.format(
-            debug_keys_info_placeholder=debug_keys_info
-        )
-        
-        # Prepare chart data
-        advanced_analysis_data = prepare_multi_frontier_chart_data(df, multi_frontier_breakdown)
-        advanced_analysis_json = json.dumps(advanced_analysis_data, cls=NumpyEncoder)
+    # Multi-Feature Frontier Regression Analysis section removed per user request
     
     # Linear decomposition analysis removed per user request
     linear_decomp_json = "null"
     
-    # Define continuous features for visualization (5 most important)
-    core_continuous_features = [
-        'basic_data_clean', 
-        'voice_clean',
-        'message_clean',
-        'tethering_gb',
-        'is_5g'  # Added 5G feature
-    ]
+    # Import CORE_FEATURES from cost_spec to use all 14 features
+    from modules.cost_spec import CORE_FEATURES
+    
+    # Use all features from FEATURE_SETS['basic'] for comprehensive analysis
+    core_continuous_features = CORE_FEATURES
     
     # Prepare data for feature frontier charts
     feature_frontier_data, all_chart_data, visual_frontiers_for_residual_table = prepare_feature_frontier_data(df, core_continuous_features)
@@ -454,6 +546,9 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     # Convert to JSON for JavaScript
     feature_frontier_json = json.dumps(feature_frontier_data, cls=NumpyEncoder)
     marginal_cost_frontier_json = json.dumps(marginal_cost_frontier_data, cls=NumpyEncoder)
+    
+    # Generate feature rates table HTML
+    feature_rates_table_html = generate_feature_rates_table_html(cost_structure)
     
     # Generate table HTML
     all_plans_html = generate_all_plans_table_html(df_sorted)
@@ -665,6 +760,8 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 </p>
             </div>
 
+            {feature_rates_table_html}
+            
             <h2>전체 요금제 랭킹</h2>
             {all_plans_html}
         </div>
@@ -857,12 +954,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 }
                 
                 // Create marginal cost charts if cost structure data is available
-                if (advancedAnalysisData && advancedAnalysisData !== null) {
-                    console.log('Creating multi-frontier analysis charts...');
-                    createMultiFrontierCharts(advancedAnalysisData);
-                } else {
-                    console.log('No advanced analysis data available for multi-frontier charts');
-                }
+                // Multi-frontier charts removed per user request
             });
             
             // Function to create cost structure charts
@@ -1139,253 +1231,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 });
             }
             
-            // Function to create multi-frontier analysis charts
-            function createMultiFrontierCharts(advancedAnalysisData) {
-                console.log('createMultiFrontierCharts called');
-                console.log('advancedAnalysisData:', advancedAnalysisData);
-                
-                if (!advancedAnalysisData || !advancedAnalysisData.cost_breakdown) {
-                    console.log('Cannot create multi-frontier charts - missing data');
-                    return;
-                }
-                
-                // Chart 1: Pure Marginal Costs
-                createPureMarginalCostChart(advancedAnalysisData);
-                
-                // Chart 2: Cost Structure Breakdown
-                createCostBreakdownChart(advancedAnalysisData);
-                
-                // Chart 3: Frontier Plan Analysis
-                createFrontierAnalysisChart(advancedAnalysisData);
-            }
-            
-            // Create linear decomposition charts if data is available
-            if (linearDecompData && linearDecompData !== null) {
-                createLinearMarginalCostChart(linearDecompData);
-                createLinearCostBreakdownChart(linearDecompData);
-            }
-            
-            // Chart 1: Pure Marginal Costs Bar Chart
-            function createPureMarginalCostChart(data) {
-                const canvas = document.getElementById('pureMarginalCostChart');
-                if (!canvas || !data.coefficient_comparison) return;
-                
-                const comparison = data.coefficient_comparison;
-                
-                new Chart(canvas, {
-                    type: 'bar',
-                    data: {
-                        labels: comparison.display_names,
-                        datasets: [{
-                            label: 'Pure Marginal Cost (₩)',
-                            data: comparison.pure_costs,
-                            backgroundColor: [
-                                'rgba(52, 152, 219, 0.8)',   // Data - Blue
-                                'rgba(46, 204, 113, 0.8)',   // Voice - Green  
-                                'rgba(155, 89, 182, 0.8)',   // Messages - Purple
-                                'rgba(241, 196, 15, 0.8)',   // Tethering - Yellow
-                                'rgba(231, 76, 60, 0.8)'     // 5G - Red
-                            ],
-                            borderColor: [
-                                'rgba(52, 152, 219, 1)',
-                                'rgba(46, 204, 113, 1)',
-                                'rgba(155, 89, 182, 1)',
-                                'rgba(241, 196, 15, 1)',
-                                'rgba(231, 76, 60, 1)'
-                            ],
-                            borderWidth: 2
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                display: false
-                            },
-                            title: {
-                                display: true,
-                                text: 'Cross-Contamination Eliminated: Pure Feature Values'
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        const index = context.dataIndex;
-                                        const value = context.parsed.y;
-                                        const unit = comparison.units[index];
-                                        return [
-                                            `Pure Cost: ₩${value.toLocaleString()}${unit}`,
-                                            'This represents the true marginal value',
-                                            'with other features held constant'
-                                        ];
-                                    }
-                                }
-                            }
-                        },
-                        scales: {
-                            x: {
-                                title: {
-                                    display: true,
-                                    text: 'Features'
-                                }
-                            },
-                            y: {
-                                title: {
-                                    display: true,
-                                    text: 'Pure Marginal Cost (₩)'
-                                },
-                                beginAtZero: true
-                            }
-                        }
-                    }
-                });
-            }
-            
-            // Chart 2: Cost Structure Breakdown Pie Chart
-            function createCostBreakdownChart(data) {
-                const canvas = document.getElementById('costBreakdownChart');
-                if (!canvas || !data.cost_breakdown) return;
-                
-                const breakdown = data.cost_breakdown;
-                const labels = ['Base Cost'];
-                const values = [breakdown.base_cost];
-                const colors = ['rgba(149, 165, 166, 0.8)'];
-                
-                breakdown.feature_costs.forEach((feature, index) => {
-                    labels.push(feature.display_name);
-                    values.push(feature.coefficient);
-                    colors.push([
-                        'rgba(52, 152, 219, 0.8)',
-                        'rgba(46, 204, 113, 0.8)',
-                        'rgba(155, 89, 182, 0.8)',
-                        'rgba(241, 196, 15, 0.8)',
-                        'rgba(231, 76, 60, 0.8)'
-                    ][index % 5]);
-                });
-                
-                new Chart(canvas, {
-                    type: 'doughnut',
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            data: values,
-                            backgroundColor: colors,
-                            borderWidth: 2,
-                            borderColor: '#fff'
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                position: 'bottom'
-                            },
-                            title: {
-                                display: true,
-                                text: `Total Plans: ${data.method_info.total_frontier_plans} | Features: ${data.method_info.features_analyzed}`
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        const value = context.parsed;
-                                        const total = values.reduce((a, b) => a + b, 0);
-                                        const percentage = ((value / total) * 100).toFixed(1);
-                                        return `₩${value.toLocaleString()} (${percentage}%)`;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-            
-            // Chart 3: Frontier Plan Analysis
-            function createFrontierAnalysisChart(data) {
-                const canvas = document.getElementById('frontierAnalysisChart');
-                if (!canvas || !data.frontier_plan_analysis) return;
-                
-                const analysis = data.frontier_plan_analysis.plan_count_by_feature;
-                const features = Object.keys(analysis);
-                const uniqueValues = features.map(f => analysis[f].unique_values);
-                const totalPlans = features.map(f => analysis[f].total_plans);
-                
-                new Chart(canvas, {
-                    type: 'bar',
-                    data: {
-                        labels: features.map(f => {
-                            const displayNames = {
-                                'basic_data_clean': 'Data',
-                                'voice_clean': 'Voice',
-                                'message_clean': 'Messages',
-                                'tethering_gb': 'Tethering',
-                                'is_5g': '5G'
-                            };
-                            return displayNames[f] || f;
-                        }),
-                        datasets: [
-                            {
-                                label: 'Unique Feature Values',
-                                data: uniqueValues,
-                                backgroundColor: 'rgba(52, 152, 219, 0.6)',
-                                borderColor: 'rgba(52, 152, 219, 1)',
-                                borderWidth: 2,
-                                yAxisID: 'y'
-                            },
-                            {
-                                label: 'Total Plans Available',
-                                data: totalPlans,
-                                backgroundColor: 'rgba(46, 204, 113, 0.6)',
-                                borderColor: 'rgba(46, 204, 113, 1)',
-                                borderWidth: 2,
-                                yAxisID: 'y1'
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                position: 'top'
-                            },
-                            title: {
-                                display: true,
-                                text: 'Data Quality: Feature Diversity in Frontier Plans'
-                            }
-                        },
-                        scales: {
-                            x: {
-                                title: {
-                                    display: true,
-                                    text: 'Features'
-                                }
-                            },
-                            y: {
-                                type: 'linear',
-                                display: true,
-                                position: 'left',
-                                title: {
-                                    display: true,
-                                    text: 'Unique Values'
-                                }
-                            },
-                            y1: {
-                                type: 'linear',
-                                display: true,
-                                position: 'right',
-                                title: {
-                                    display: true,
-                                    text: 'Total Plans'
-                                },
-                                grid: {
-                                    drawOnChartArea: false,
-                                }
-                            }
-                        }
-                    }
-                });
-            }
+            // Multi-Feature chart functions removed per user request
             
             // Linear Decomposition Chart Functions removed per user request
             
@@ -1829,6 +1675,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     html = html.replace('{method_info_html}', method_info_html)
     html = html.replace('{comparison_info_html}', comparison_info_html)
     html = html.replace('{multi_frontier_chart_html}', advanced_analysis_chart_html)
+    html = html.replace('{feature_rates_table_html}', feature_rates_table_html)
     # Linear decomposition chart removed per user request
     html = html.replace('{all_plans_html}', all_plans_html)
 

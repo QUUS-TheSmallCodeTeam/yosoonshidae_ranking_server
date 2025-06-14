@@ -580,7 +580,7 @@ async def process_data(request: Request):
         # Extract options
         feature_set = options.get('featureSet', 'basic')
         fee_column = options.get('feeColumn', 'fee')  # Fee column to use for comparison
-        method = options.get('method', 'multi_frontier')  # Default to multi-frontier method
+        method = options.get('method', 'fixed_rates')  # Default to fixed rates method for ranking table
         tolerance = options.get('tolerance', 500)  # Optimization tolerance
         include_comparison = options.get('includeComparison', False)  # Include frontier comparison
         

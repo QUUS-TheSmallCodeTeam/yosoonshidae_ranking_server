@@ -8,7 +8,7 @@
 - **Multi-frontier regression methodology**: Successfully implemented and fully operational
 - **Chart visualization**: Advanced charts now calculated asynchronously in background
 - **API response time**: Immediate response from /process endpoint, charts calculated separately
-- **Default method**: Changed to `multi_frontier` for new analysis approach
+- **Default method**: Changed to `fixed_rates` for new ranking table calculation approach
 - **Chart data format**: Fixed JavaScript functions to handle nested cost structure objects properly
 - **Marginal Cost Frontier Charts**: Successfully implemented feature-level trend visualization using pure marginal costs from multi-frontier regression
 - **✅ PIECEWISE LINEAR MODEL IMPLEMENTED**: Replaced simple linear model with realistic piecewise segments showing economies of scale
@@ -21,6 +21,8 @@
 - **✅ LINEAR DECOMPOSITION COMPLETELY REMOVED**: Removed all Linear Decomposition Analysis sections, functions, and references
 - **✅ CUMULATIVE COST CALCULATION FIXED**: Charts now plot cumulative costs instead of fixed marginal rates
 - **✅ PIECEWISE SEGMENTS PROPERLY IMPLEMENTED**: Using fit_cumulative_piecewise_linear for realistic cost accumulation
+- **✅ MULTI-FEATURE FRONTIER REGRESSION ANALYSIS REMOVED**: Deleted entire section from HTML and related calculation code per user request
+- **✅ FIXED RATES METHOD IMPLEMENTED**: New ranking calculation using pure coefficients for entire dataset without filtering
 
 ## 🎯 Key Achievements
 - **Cross-contamination problem solved**: Marginal Cost Frontier Charts show pure feature trends without contamination
@@ -35,9 +37,10 @@
 - **✅ CONSISTENT DATA POINTS**: Traditional and marginal frontier charts now show same number of actual market plans
 - **✅ COMPREHENSIVE DATASET USAGE**: Full dataset regression provides more accurate coefficients than frontier-only analysis
 - **✅ COMPLETE FEATURE COVERAGE**: All 5 core features (data, voice, messages, tethering, 5G) now analyzed
-- **✅ UI SIMPLIFICATION**: Linear Decomposition Analysis completely removed for cleaner interface
+- **✅ UI SIMPLIFICATION**: Both Linear Decomposition Analysis and Multi-Feature Frontier Regression Analysis sections removed for cleaner interface
 - **✅ PROPER COST ACCUMULATION**: Charts show cumulative costs building up through piecewise segments
 - **✅ REALISTIC MARGINAL COST STRUCTURE**: Piecewise segments displayed in coefficient table instead of fixed rates
+- **✅ FIXED RATES RANKING**: Ranking table now uses pure marginal coefficients from entire dataset for CS calculation
 
 ## 🔧 Technical Implementation
 - **Data preparation**: `prepare_granular_marginal_cost_frontier_data()` function uses entire dataset for regression analysis
@@ -50,15 +53,15 @@
 - **✅ UNLIMITED PROCESSING**: Separate handling of unlimited plans with proper categorical treatment
 - **✅ FLAG-BASED UNLIMITED**: Unlimited features stored separately from continuous analysis
 - **✅ COMPREHENSIVE FILTERING**: Uses entire dataset for analysis while maintaining data quality standards
-- **✅ CLEAN CODEBASE**: All Linear Decomposition functions and references removed from codebase
+- **✅ CLEAN CODEBASE**: All Linear Decomposition and Multi-Feature Frontier Regression functions and references removed from codebase
 - **✅ CUMULATIVE PIECEWISE CALCULATION**: Uses fit_cumulative_piecewise_linear for proper cost accumulation
 - **✅ CHART Y-AXIS FIX**: Charts plot cumulative_cost instead of marginal_cost for proper visualization
+- **✅ FIXED RATES CS CALCULATION**: New method calculates CS ratios using pure coefficients without frontier filtering
 
 ## 📈 Chart Types Available
 1. **Traditional Feature Frontier Charts**: Market-based trends (with contamination)
 2. **Marginal Cost Frontier Charts**: Full dataset coefficient-based trends (contamination-free) ⭐ NOW USING CUMULATIVE PIECEWISE COSTS
-3. **Multi-Frontier Analysis Charts**: Coefficient comparison and breakdown
-4. **Plan Efficiency Charts**: Value ratio analysis
+3. **Plan Efficiency Charts**: Value ratio analysis
 
 ## 🎨 User Experience
 - **Clear explanations**: Each chart section includes Korean explanations of methodology and interpretation
@@ -67,9 +70,10 @@
 - **Interactive features**: Hover tooltips and zoom capabilities for detailed analysis
 - **✅ FULL DATASET VISUALIZATION**: Charts show comprehensive analysis results from entire dataset
 - **✅ COMPLETE FEATURE SET**: All 5 core features visualized including 5G support
-- **✅ SIMPLIFIED INTERFACE**: Linear Decomposition Analysis removed for better focus
+- **✅ SIMPLIFIED INTERFACE**: Both Linear Decomposition Analysis and Multi-Feature Frontier Regression Analysis removed for better focus
 - **✅ PROPER COST VISUALIZATION**: Charts show realistic cumulative cost accumulation
 - **✅ PIECEWISE SEGMENT DISPLAY**: Coefficient table shows segment ranges instead of fixed rates
+- **✅ CLEAN RANKING TABLE**: Ranking now uses pure fixed rates from entire dataset analysis
 
 ## 🎯 User Requirements & Preferences
 - **No auto-refresh**: Manual refresh only, no constant polling
@@ -78,10 +82,12 @@
 - **Fresh content**: No caching, all content generated on-demand
 - **Comprehensive analysis**: Marginal cost frontier analysis using entire dataset
 - **No Linear Decomposition**: Linear Decomposition Analysis section completely removed per user request
+- **No Multi-Feature Frontier**: Multi-Feature Frontier Regression Analysis section completely removed per user request
 - **5G Feature Inclusion**: 5G support feature added to analysis scope
 - **Entire Dataset Usage**: Full dataset regression instead of frontier-only analysis
 - **Cumulative Cost Visualization**: Charts show proper cost accumulation, not fixed rates
 - **Piecewise Segment Structure**: Coefficient table displays segment ranges with varying rates
+- **Fixed Rates Ranking**: Ranking table uses pure marginal coefficients for entire dataset
 
 ## 🔧 Technical Implementation Details
 - **Infinite loop fix**: Added safety counters and division-by-zero checks in `prepare_feature_frontier_data`
@@ -89,12 +95,13 @@
 - **Chart data handling**: JavaScript functions handle full dataset analysis results
 - **Background processing**: Chart calculations run asynchronously without blocking API responses
 - **Full dataset regression**: FullDatasetMultiFeatureRegression provides comprehensive coefficient analysis
-- **Code cleanup**: All Linear Decomposition functions and references removed from codebase
+- **Code cleanup**: All Linear Decomposition and Multi-Feature Frontier Regression functions and references removed from codebase
 - **Cumulative cost calculation**: Fixed chart plotting to use cumulative_cost instead of marginal_cost
 - **Piecewise segment implementation**: Using fit_cumulative_piecewise_linear for realistic cost accumulation
+- **Fixed rates method**: New 'fixed_rates' method in calculate_cs_ratio_enhanced using FullDatasetMultiFeatureRegression
 
 ## 🎯 Working Methods
-- **Full dataset regression**: Uses entire dataset for more accurate coefficient extraction
+- **Fixed rates regression**: Uses FullDatasetMultiFeatureRegression for pure coefficient extraction on entire dataset
 - **Feature frontier charts**: Original logic maintained as requested
 - **Safety measures**: Infinite loop prevention implemented and working
 - **Numpy type conversion**: Comprehensive serialization fix for all data types
@@ -105,18 +112,19 @@
 - **Async chart calculation**: Background tasks for expensive visualizations
 - **Progressive status display**: Real-time progress indicators for chart generation
 - **Fallback mechanisms**: Basic HTML reports when charts fail or are in progress
-- **Method integration**: Full dataset methods integrated into existing cost_spec.py structure
+- **Method integration**: Fixed rates methods integrated into existing cost_spec.py structure
 - **Error handling**: Robust type conversion and safety measures
 - **Testing workflow**: Using raw data files from /data/raw/ directory
 - **Clean server startup**: Direct uvicorn command in Dockerfile, log monitoring via app.py startup event
 
 ## 📈 Data Flow
-- Raw data → Full dataset multi-feature regression → CS ratio calculation → Immediate API response
+- Raw data → Fixed rates multi-feature regression → CS ratio calculation → Immediate API response
 - Background: Chart generation → HTML report with visualizations → Cache update
 - Feature analysis for each core feature (data, voice, messages, tethering, 5G)
-- Comprehensive dataset utilization for accurate coefficient extraction
-- Cross-contamination eliminated through multi-feature regression approach using entire dataset
+- Comprehensive dataset utilization for accurate coefficient extraction without filtering
+- Cross-contamination eliminated through full dataset regression approach using entire dataset
 - Cumulative cost calculation through piecewise segments for realistic visualization
+- Pure coefficient calculation for ranking table using fixed marginal rates
 
 ## 시스템 정보
 - 운영체제: Linux 5.10.237-230.949.amzn2.x86_64
@@ -134,6 +142,7 @@
 - **실행 계획**: 4단계 점진적 개선 (기존 시스템 보존하면서 새 방법 추가)
 - **✅ 누적 비용 계산**: 구간별 한계비용을 누적하여 실제 총 비용 트렌드 시각화
 - **✅ 구간별 변화**: 고정 요율 대신 구간별로 다른 한계비용 적용
+- **✅ 고정 요율 랭킹**: 전체 데이터셋에서 순수 한계비용 계수를 사용한 랭킹 테이블
 
 ## Hugging Face Dev Mode 환경 ⭐ 중요
 - **현재 환경**: Hugging Face Space에서 Dev Mode 활성화 상태
@@ -245,3 +254,50 @@ cat /proc/$PID/fd/1
 - **서버 종료 금지**: Dev Mode 환경에서 서버 프로세스 절대 종료하지 말 것
 - **동시 실행**: 로그 모니터링과 테스트를 동시에 실행하여 실시간 피드백 확보
 - **완전한 테스트**: 단순 API 응답뿐만 아니라 웹 인터페이스까지 전체 확인
+
+# 현재 상태
+
+## 작업된 주요 기능
+- Cross-contamination 문제 해결: 순수 계수(pure coefficients) 기반 CS 비율 계산
+- Multi-Feature Frontier Regression Analysis 섹션 완전 제거
+- Fixed rates 방식으로 전체 데이터셋 기반 CS 계산 구현
+- Plan Value Efficiency Analysis 섹션이 ranking table과 동일한 fixed_rates 방식 사용 확인
+- 기능별 한계비용 계수 테이블 추가: 랭킹 테이블 위에 각 기능의 한계비용 표시
+- **Double counting 문제 해결**: 무제한 기능의 연속값을 0으로 설정하여 이중 계산 방지
+- **Unlimited type flags 구현**: 3가지 데이터 소진 후 상태를 별도 플래그로 분리
+
+## 기술적 구현
+- calculate_cs_ratio_enhanced()에 'fixed_rates' 방식 추가
+- FullDatasetMultiFeatureRegression으로 전체 데이터셋에서 순수 계수 추출
+- prepare_plan_efficiency_data() 함수가 모든 계산 방식(linear_decomposition, frontier, fixed_rates, multi_frontier) 올바르게 처리
+- app.py의 기본 방식을 'fixed_rates'로 변경
+- generate_feature_rates_table_html() 함수로 기능별 한계비용 테이블 생성
+- **무제한 기능 전처리 수정**: unlimited 플래그가 1인 경우 연속값을 0으로 설정
+- **Unlimited type flags**: data_stops_after_quota, data_throttled_after_quota, data_unlimited_speed
+
+## 데이터 처리 방식
+- 무제한 기능: 불린 플래그와 3배 승수 값으로 처리
+- **Double counting 방지**: 무제한 플래그가 있는 기능의 연속값은 0으로 설정
+- 필터링 없이 전체 데이터셋 처리
+- 순수 계수 기반 baseline cost / original fee로 CS 비율 계산
+- 계수 분석 결과를 시각화와 호환되도록 저장
+
+## 기능별 한계비용 현황 (최신 데이터 기준)
+- 데이터 소진 후 속도제한: ₩10,838 (고정)
+- 5G 지원: ₩6,627 (고정)
+- Daily Data: ₩4,628/unit
+- 소진 후 속도: ₩2,292/Mbps
+- 테더링: ₩84.31/GB
+- 데이터: ₩75.86/GB (무제한 시 0으로 설정)
+- 추가 통화: 계수값/unit
+- 음성통화: ₩0.0000/분 (무제한 시 0으로 설정)
+- 데이터 소진 후 중단: 계수값 (기준)
+- 데이터 무제한: 계수값 (고정)
+- 문자메시지: ₩3.19/건 (무제한 시 0으로 설정)
+
+## 테스트 환경
+- 로컬 테스트 시 data/raw 폴더의 최신 JSON 파일 사용
+- curl -X POST http://localhost:7860/process -H "Content-Type: application/json" -d @$(ls -t data/raw/*.json | head -1)
+- 모든 기능이 정상 작동 중
+- Double counting 문제 해결 완료
+- Unlimited type flags 정상 작동

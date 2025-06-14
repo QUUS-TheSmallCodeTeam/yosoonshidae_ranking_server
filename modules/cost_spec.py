@@ -23,7 +23,8 @@ FEATURE_SETS = {
         'voice_clean', 'voice_unlimited',
         'message_clean', 'message_unlimited',
         'additional_call', 'is_5g',
-        'tethering_gb', 'has_throttled_data',
+        'tethering_gb', 
+        'data_stops_after_quota', 'data_throttled_after_quota', 'data_unlimited_speed',
         'has_unlimited_speed', 'speed_when_exhausted'
     ]
 }
@@ -407,7 +408,7 @@ def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame,
             else:
                 # Frontier is empty, add this as first point
                 actual_frontier_stack.append(candidate)
-                if current_value > 0:
+                if current_value > 0:  # Only disable zero point if we have a non-zero value
                     should_add_zero_point = False
         else:
             # First candidate point
@@ -733,7 +734,7 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
     
     Args:
         df: DataFrame with plan data
-        method: Calculation method ('frontier' or 'linear_decomposition')
+        method: Calculation method ('frontier', 'linear_decomposition', 'multi_frontier', or 'fixed_rates')
         feature_set: Name of the feature set to use
         fee_column: Column containing the fee to use
         **method_kwargs: Additional arguments passed to specific methods
@@ -745,6 +746,83 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
         # Use existing frontier-based method
         return calculate_cs_ratio(df, feature_set, fee_column)
     
+    elif method == 'fixed_rates':
+        # Use fixed marginal rates from pure coefficients for entire dataset
+        logger.info("Starting fixed rates method using pure coefficients")
+        df_result = df.copy()
+        
+        # Get features for this feature set
+        if feature_set in FEATURE_SETS:
+            features = [f for f in FEATURE_SETS[feature_set] if f not in UNLIMITED_FLAGS.values()]
+        else:
+            raise ValueError(f"Unknown feature set: {feature_set}")
+        
+        # Get all features for this feature set (excluding unlimited flags)
+        if feature_set in FEATURE_SETS:
+            all_features = [f for f in FEATURE_SETS[feature_set] if f not in UNLIMITED_FLAGS.values()]
+        else:
+            # Fallback to safe features if feature_set not found
+            all_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb', 'is_5g']
+        
+        # Only use features that actually exist in the dataframe
+        analysis_features = [f for f in all_features if f in df.columns]
+        analysis_features = method_kwargs.get('features', analysis_features)
+        
+        logger.info(f"Fixed rates analysis features: {analysis_features}")
+        
+        try:
+            # Use FullDatasetMultiFeatureRegression to get pure coefficients
+            regressor = FullDatasetMultiFeatureRegression(features=analysis_features)
+            
+            # Solve for pure marginal costs using entire dataset (no filtering)
+            coefficients = regressor.solve_full_dataset_coefficients(df)
+            logger.info(f"Successfully solved fixed rate coefficients: {coefficients}")
+            
+            # Calculate baselines using pure coefficients for ALL plans
+            baselines = np.full(len(df), coefficients[0])  # Start with base cost
+            
+            for i, feature in enumerate(analysis_features):
+                if feature in df.columns:
+                    # Use the actual feature values (already zeroed out for unlimited plans in preprocessing)
+                    baselines += coefficients[i+1] * df[feature].values
+                else:
+                    logger.warning(f"Feature {feature} not found in data, treating as 0")
+            
+            # Add unlimited flag coefficients separately
+            for feature, unlimited_flag in UNLIMITED_FLAGS.items():
+                if feature in analysis_features and unlimited_flag in df.columns:
+                    # Find the coefficient index for the unlimited flag
+                    if unlimited_flag in analysis_features:
+                        flag_index = analysis_features.index(unlimited_flag)
+                        baselines += coefficients[flag_index+1] * df[unlimited_flag].values
+                    else:
+                        logger.warning(f"Unlimited flag {unlimited_flag} not found in analysis features")
+            
+            # Add results to dataframe
+            df_result['B_fixed_rates'] = baselines
+            df_result['CS_fixed_rates'] = baselines / df_result[fee_column]
+            
+            # Set primary columns to fixed rates values
+            df_result['B'] = df_result['B_fixed_rates']
+            df_result['CS'] = df_result['CS_fixed_rates']
+            
+            # Add coefficient breakdown for visualization
+            coefficient_breakdown = regressor.get_coefficient_breakdown()
+            df_result.attrs['fixed_rates_breakdown'] = coefficient_breakdown
+            df_result.attrs['cost_structure'] = coefficient_breakdown  # For compatibility
+            
+            logger.info(f"Created fixed rates breakdown: {coefficient_breakdown}")
+            logger.info(f"Processed {len(df_result)} plans using fixed marginal rates")
+            
+            return df_result
+            
+        except Exception as e:
+            logger.error(f"Fixed rates method failed: {str(e)}")
+            logger.error(f"Error type: {type(e).__name__}")
+            # Fallback to frontier method
+            logger.info("Falling back to frontier method")
+            return calculate_cs_ratio(df, feature_set, fee_column)
+
     elif method == 'linear_decomposition':
         # Use linear decomposition method
         logger.info("Starting linear decomposition method")
@@ -760,10 +838,15 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
         
         # Initialize linear decomposition
         tolerance = method_kwargs.get('tolerance', 500)
-        # Use safe, commonly available features for decomposition
-        safe_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb', 'is_5g']
+        # Get all features for this feature set (excluding unlimited flags)
+        if feature_set in FEATURE_SETS:
+            all_features = [f for f in FEATURE_SETS[feature_set] if f not in UNLIMITED_FLAGS.values()]
+        else:
+            # Fallback to safe features if feature_set not found
+            all_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb', 'is_5g']
+        
         # Only use features that actually exist in the dataframe
-        decomp_features = [f for f in safe_features if f in df.columns]
+        decomp_features = [f for f in all_features if f in df.columns]
         if len(decomp_features) < 3:
             logger.warning(f"Not enough valid features for decomposition: {decomp_features}")
             logger.info("Falling back to frontier method due to insufficient features")
@@ -837,9 +920,15 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
         else:
             raise ValueError(f"Unknown feature set: {feature_set}")
         
-        # Use safe, commonly available features
-        safe_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb', 'is_5g']
-        analysis_features = [f for f in safe_features if f in df.columns]
+        # Get all features for this feature set (excluding unlimited flags)
+        if feature_set in FEATURE_SETS:
+            all_features = [f for f in FEATURE_SETS[feature_set] if f not in UNLIMITED_FLAGS.values()]
+        else:
+            # Fallback to safe features if feature_set not found
+            all_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb', 'is_5g']
+        
+        # Only use features that actually exist in the dataframe
+        analysis_features = [f for f in all_features if f in df.columns]
         analysis_features = method_kwargs.get('features', analysis_features)
         
         logger.info(f"Multi-frontier analysis features: {analysis_features}")
@@ -901,7 +990,7 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
             return calculate_cs_ratio(df, feature_set, fee_column)
     
     else:
-        raise ValueError(f"Unknown method: {method}. Supported methods: 'frontier', 'linear_decomposition', 'multi_frontier'")
+        raise ValueError(f"Unknown method: {method}. Supported methods: 'frontier', 'linear_decomposition', 'multi_frontier', 'fixed_rates'")
 
 def rank_plans_by_cs_enhanced(df: pd.DataFrame, method: str = 'frontier',
                             feature_set: str = 'basic', fee_column: str = 'fee',

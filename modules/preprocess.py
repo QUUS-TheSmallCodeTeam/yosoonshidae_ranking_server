@@ -113,9 +113,19 @@ def prepare_features(df):
     
     print(f"Maximum values: basic_data={max_basic_data}, daily_data={max_daily_data}")
     
-    # Replace special values with maximum observed values for modeling
-    processed_df['basic_data_clean'] = processed_df['basic_data'].replace({999: max_basic_data, 9999: max_basic_data, -1: 0})
-    processed_df['daily_data_clean'] = processed_df['daily_data'].replace({999: max_daily_data, 9999: max_daily_data, -1: 0}).fillna(0)
+    # FIXED: Zero out unlimited feature values to prevent double counting
+    # For unlimited plans, set continuous value to 0 since we have separate unlimited flags
+    processed_df['basic_data_clean'] = np.where(
+        processed_df['basic_data_unlimited'] == 1,
+        0,  # Set to 0 for unlimited plans to prevent double counting
+        processed_df['basic_data'].replace({-1: 0})  # Keep actual values for limited plans
+    )
+    
+    processed_df['daily_data_clean'] = np.where(
+        processed_df['daily_data_unlimited'] == 1,
+        0,  # Set to 0 for unlimited plans to prevent double counting
+        processed_df['daily_data'].replace({-1: 0}).fillna(0)  # Keep actual values for limited plans
+    )
     
     # Add binary feature for presence of daily data allocation
     processed_df['has_daily_allocation'] = (processed_df['daily_data_clean'] > 0).astype(int)
@@ -179,6 +189,13 @@ def prepare_features(df):
             )
         )
     )
+    
+    # Create separate binary flags for each unlimited type (for regression equation)
+    # These replace the problematic has_throttled_data binary feature
+    processed_df['data_stops_after_quota'] = (processed_df['unlimited_type_numeric'] == 0).astype(int)      # Baseline (₩0)
+    processed_df['data_throttled_after_quota'] = (processed_df['unlimited_type_numeric'] == 2).astype(int)  # Medium premium
+    processed_df['data_unlimited_speed'] = (processed_df['unlimited_type_numeric'] == 3).astype(int)        # High premium
+    # Note: unlimited_type_numeric == 1 (unlimited_with_throttling) is rare and handled by throttled flag
     
     # 4. Additional feature for throttled speed - higher values are better
     # Create a normalized speed value (0-1 range) for throttled plans
@@ -249,18 +266,20 @@ def prepare_features(df):
             # Create flag for not applicable
             processed_df[f'{col}_na'] = (processed_df[col] == -1).astype(int)
             
-            # Clean values for modeling - replace special values
-            # For unlimited, use maximum observed values
-            # For not applicable (-1), use 0
-            # All other values are kept as is
-            max_val = max_voice if col == 'voice' else max_message
-            processed_df[f'{col}_clean'] = processed_df[col].copy()
-            # Replace unlimited markers with max value
+            # FIXED: Zero out unlimited feature values to prevent double counting
+            # For unlimited plans, set continuous value to 0 since we have separate unlimited flags
             unlimited_mask = processed_df[col].apply(is_unlimited_marker)
-            processed_df.loc[unlimited_mask, f'{col}_clean'] = max_val
-            # Replace NA with 0
             na_mask = (processed_df[col] == -1)
-            processed_df.loc[na_mask, f'{col}_clean'] = 0
+            
+            processed_df[f'{col}_clean'] = np.where(
+                unlimited_mask,
+                0,  # Set to 0 for unlimited plans to prevent double counting
+                np.where(
+                    na_mask,
+                    0,  # Set to 0 for not applicable
+                    processed_df[col]  # Keep actual values for limited plans
+                )
+            )
     
     # 7. USIM fee status processing
     # Create binary features to distinguish between zero fees due to being unsupported vs. free

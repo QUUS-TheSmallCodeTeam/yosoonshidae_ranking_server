@@ -1,56 +1,53 @@
-# 📋 할일 목록 (Todolist)
+# 📋 할 일 목록
 
 ## ✅ 완료된 작업
-1. **Linear Decomposition Analysis 완전 제거**: HTML 템플릿, JavaScript 함수, app.py 참조 모두 제거 완료
-2. **5G 기능 추가**: core_continuous_features에 is_5g 추가하여 완전한 기능 커버리지 확보
-3. **전체 데이터셋 분석 구현**: 프론티어 포인트 대신 전체 데이터셋을 사용한 회귀 분석으로 전환 완료
-4. **Marginal Cost Frontier Analysis 렌더링 수정**: JavaScript 함수와 데이터 구조 간 호환성 완료
-5. **JavaScript 함수 업데이트**: createMarginalCostFrontierCharts 함수를 새로운 전체 데이터셋 구조에 맞게 수정 완료
-6. **코드베이스 정리**: app.py에서 linear_decomposition 차트 타입 및 관련 함수 제거 완료
-7. **🔥 CRITICAL FIX - 누적 비용 계산 수정**: 고정 요율 대신 구간별 누적 비용 계산으로 수정
-8. **🔥 CRITICAL FIX - 차트 Y축 수정**: marginal_cost 대신 cumulative_cost 플롯으로 변경
-9. **🔥 CRITICAL FIX - 구간별 계수 테이블**: 고정 요율 대신 구간별 한계비용 구조 표시
+- Multi-Feature Frontier Regression Analysis 섹션 완전 제거
+- Fixed rates 방식으로 전체 요금제 랭킹 테이블 계산 변경
+- Plan Value Efficiency Analysis가 ranking table과 동일한 방식 사용하도록 수정
+- 기능별 한계비용 계수 테이블 추가 (랭킹 테이블 위에 표시)
+- **Double counting 문제 해결**: 무제한 기능의 연속값을 0으로 설정하여 이중 계산 방지
+- **Unlimited type flags 구현**: 3가지 데이터 소진 후 상태를 별도 플래그로 분리
+  - data_stops_after_quota (서비스 중단)
+  - data_throttled_after_quota (속도 제한)
+  - data_unlimited_speed (무제한 속도)
 
-## 🎯 목표 달성 상태
-- ✅ Linear Decomposition Analysis 완전 제거 완료
-- ✅ 5G 기능 추가 완료  
-- ✅ 전체 데이터셋 분석 구현 완료
-- ✅ Marginal Cost Frontier Analysis 렌더링 수정 완료
-- ✅ 누적 비용 계산 및 구간별 시각화 완료
+## 🎯 현재 상태
+- 모든 주요 기능이 정상 작동 중
+- Cross-contamination 문제 해결 완료
+- Fixed rates 방식으로 순수 한계비용 기반 CS 계산 구현
+- Double counting 문제 해결로 더 정확한 CS 비율 계산
+- 사용자 인터페이스에서 계산 기준이 명확히 표시됨
+- 11개 기능의 한계비용이 정확히 계산되고 표시됨
 
-## 📊 시스템 현재 상태
-- **전체 데이터셋 분석**: 2,294개 모바일 플랜 전체를 사용한 회귀 분석
-- **5개 핵심 기능 분석**: basic_data_clean, voice_clean, message_clean, tethering_gb, is_5g
-- **구간별 누적 비용 시각화**: 고정 요율이 아닌 구간별로 누적되는 실제 비용 트렌드
-- **UI 단순화**: Linear Decomposition 제거로 집중도 향상
-- **완전한 기능 커버리지**: 5G 지원 포함한 모든 주요 기능 분석
-- **구간별 한계비용 구조**: 계수 테이블에서 구간별 요율 변화 표시
+## 💡 제안사항 (향후 개선)
+- 구글/페이스북 로그인 추가 (다음 단계)
+- 추가 기능 분석 (예: 국제로밍, 부가서비스)
+- 모바일 최적화 개선
+- 데이터 시각화 차트 추가 개선
 
-## 📝 사용자 요구사항 달성 현황
-1. ✅ **Linear Decomposition Analysis 제거**: HTML, JavaScript, Python 코드에서 완전 제거
-2. ✅ **Marginal Cost Frontier Analysis 렌더링 문제 해결**: 전체 데이터셋 구조에 맞게 수정
-3. ✅ **5G 기능 추가**: core_continuous_features에 is_5g 추가
-4. ✅ **전체 데이터셋 사용**: 프론티어 포인트 대신 전체 데이터셋으로 분석 전환
-5. ✅ **누적 비용 계산 수정**: 고정 요율 문제 해결, 구간별 누적 비용으로 변경
-6. ✅ **구간별 한계비용 표시**: 계수 테이블에서 구간별 요율 구조 표시
+## 🚨 Issues to Monitor
 
-## 🔧 핵심 기술적 수정사항
-- **fit_cumulative_piecewise_linear 사용**: 구간별 누적 한계비용 계산
-- **cumulative_cost 플롯**: 차트에서 누적 비용 시각화 (marginal_cost 대신)
-- **구간별 계수 테이블**: 고정 요율 대신 구간별 한계비용 구조 표시
-- **JavaScript 데이터셋 수정**: y축에 cumulative_cost 사용
-- **툴팁 정보 개선**: 누적 비용과 구간별 한계비용 모두 표시
+### System Health
+- 🔍 **Memory Usage**: Monitor memory consumption with full dataset processing
+- 🔍 **Response Times**: Ensure API remains responsive under load
+- 🔍 **Error Rates**: Track any calculation errors or edge cases
+- 🔍 **Log Quality**: Ensure logging provides adequate debugging information
 
-## 🔄 다음 단계 (선택사항)
-- **성능 최적화**: 전체 데이터셋 사용으로 인한 계산 시간 최적화 검토
-- **추가 기능**: 사용자 요청 시 새로운 분석 기능 추가
-- **UI 개선**: 사용자 피드백 기반 인터페이스 개선
+### Data Quality
+- 🔍 **Coefficient Stability**: Monitor coefficient consistency across different datasets
+- 🔍 **Outlier Detection**: Watch for data quality issues affecting calculations
+- 🔍 **Edge Cases**: Handle plans with unusual feature combinations
 
-## 📈 성과 요약
-- **데이터 범위**: 프론티어 포인트 → 전체 2,294개 플랜 분석
-- **기능 범위**: 4개 기능 → 5개 기능 (5G 추가)
-- **분석 정확도**: 전체 데이터셋 사용으로 더 정확한 계수 추출
-- **UI 집중도**: Linear Decomposition 제거로 핵심 분석에 집중
-- **시스템 안정성**: 모든 변경사항 통합 및 검증 완료
-- **🔥 비용 계산 정확성**: 고정 요율 → 구간별 누적 비용으로 현실적 시각화
-- **🔥 차트 정확성**: Y축 데이터 포인트 정렬 문제 해결, 실제 누적 비용 트렌드 표시
+## 📊 Success Metrics
+
+### Performance Targets
+- ✅ API response time < 500ms (excluding chart generation)
+- ✅ Chart generation completion < 30 seconds
+- ✅ Memory usage < 2GB for typical datasets
+- ✅ Error rate < 1% for valid input data
+
+### User Experience Goals
+- ✅ Intuitive ranking system using pure coefficients
+- ✅ Clean, simplified interface without overpriced plan analysis
+- ✅ Accurate CS ratios reflecting true feature values
+- ✅ Comprehensive dataset coverage without filtering bias
