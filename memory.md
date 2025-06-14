@@ -211,19 +211,21 @@ cat /proc/$PID/fd/1
    - **목적**: `/process` 엔드포인트가 전체 코드베이스의 핵심 기능
    - **⚠️ 로그 모니터링 동시 실행**: 테스트하면서 반드시 서버 로그 확인
    
-   **방법 1** (선호): Supabase 함수 사용 (실제 데이터셋 테스트)
+   **방법 1** (선호): 로컬 실제 데이터 테스트
    ```bash
    # 터미널 1: 필터링된 로그 모니터링 시작했는지 체크 (필수!)
    ./simple_log_monitor.sh &
    # 1개만 실행하도록!
 
-   # 터미널 2: 실제 데이터셋으로 테스트
-   curl -X POST https://zqoybuhwasuppzjqnllm.supabase.co/functions/v1/submit-data
+   # 터미널 2: 최신 raw 데이터 파일로 테스트 (동적으로 가장 최근 파일 사용)
+   curl -X POST http://localhost:7860/process -H "Content-Type: application/json" -d @$(ls -t data/raw/*.json | head -1)
    ```
 
-   **방법 2**: 로컬 테스트 (간단한 검증)
+   **방법 2**: Supabase 함수 사용 (service_role 인증 필요)
    ```bash
-   curl -X POST http://localhost:7860/process -H "Content-Type: application/json" -d '{"test": true}'
+   # .env.local에서 service_role 키 사용
+   curl -X POST https://zqoybuhwasuppzjqnllm.supabase.co/functions/v1/submit-data \
+     -H "Authorization: Bearer $(grep service_role .env.local | cut -d'=' -f2)"
    ```
 
 ### 4. **웹 인터페이스 확인** (필수)

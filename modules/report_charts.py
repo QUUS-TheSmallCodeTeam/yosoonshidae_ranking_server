@@ -831,33 +831,50 @@ def fit_piecewise_linear_segments(feature_values, costs, change_points):
         if len(seg_features) < 2:
             continue
         
-        # Calculate marginal rate for this segment using linear regression
-        # This gives us the best fit rate for all points in this segment
+        # Calculate marginal rate for this segment using ROBUST method
+        # LinearRegression is sensitive to outliers, use safer approach
         from sklearn.linear_model import LinearRegression
         import numpy as np
         
         X = seg_features.reshape(-1, 1)
         y = seg_costs
         
-        try:
-            reg = LinearRegression().fit(X, y)
-            segment_marginal_rate = reg.coef_[0]
-            segment_intercept = reg.intercept_
-        except:
-            # Fallback to simple slope calculation
-            feature_diff = seg_features[-1] - seg_features[0]
-            cost_diff = seg_costs[-1] - seg_costs[0]
-            
-            if feature_diff == 0:
-                segment_marginal_rate = 0
-            else:
-                segment_marginal_rate = cost_diff / feature_diff
+        # Calculate simple slope as primary method (more robust)
+        feature_diff = seg_features[-1] - seg_features[0]
+        cost_diff = seg_costs[-1] - seg_costs[0]
+        
+        if feature_diff == 0 or len(seg_features) < 2:
+            segment_marginal_rate = 0
+            segment_intercept = seg_costs[0] if len(seg_costs) > 0 else 0
+        else:
+            # Use simple slope calculation (more robust than LinearRegression for small segments)
+            segment_marginal_rate = cost_diff / feature_diff
             segment_intercept = seg_costs[0] - segment_marginal_rate * seg_features[0]
+            
+            # Validate with LinearRegression only if we have enough points and reasonable slope
+            if len(seg_features) >= 3 and abs(segment_marginal_rate) < 100000:  # Sanity check
+                try:
+                    reg = LinearRegression().fit(X, y)
+                    lr_rate = reg.coef_[0]
+                    lr_intercept = reg.intercept_
+                    
+                    # Use LinearRegression result only if it's reasonable
+                    if abs(lr_rate) < 100000 and abs(lr_rate - segment_marginal_rate) / max(abs(segment_marginal_rate), 1) < 2.0:
+                        segment_marginal_rate = lr_rate
+                        segment_intercept = lr_intercept
+                except:
+                    # Keep simple slope calculation
+                    pass
         
         # Ensure positive marginal rate (negative rates don't make economic sense)
         if segment_marginal_rate < 0:
             logger.warning(f"Negative marginal rate in segment {i}: {segment_marginal_rate:.2f}, setting to 0")
             segment_marginal_rate = 0
+            
+        # Cap extremely high rates (likely calculation errors)
+        if segment_marginal_rate > 50000:  # ₩50,000/unit is unrealistic
+            logger.warning(f"Extremely high marginal rate in segment {i}: ₩{segment_marginal_rate:.0f}, capping to ₩10,000")
+            segment_marginal_rate = 10000
         
         # Calculate segment endpoints
         start_feature = seg_features[0]
@@ -1053,7 +1070,7 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
             logger.info(f"Detected {len(change_points)} change points in sorted raw market data for {feature}")
             
             # Step 3: Fit piecewise linear segments on sorted raw market data
-            segments = fit_piecewise_linear(raw_features, raw_costs, change_points)
+            segments = fit_piecewise_linear_segments(raw_features, raw_costs, change_points)
             logger.info(f"Fitted {len(segments)} segments on sorted raw market data for {feature}")
             
             # Step 4: Create filtered trendline ONLY for visualization (after segments are calculated!)
@@ -1084,12 +1101,12 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
                 
                 for seg_idx, segment in enumerate(segments):
                     if segment['start_feature'] <= feature_val <= segment['end_feature']:
-                        segment_marginal_cost = segment['marginal_cost']
+                        segment_marginal_cost = segment['marginal_rate']
                         segment_info = {
                             'index': seg_idx,
                             'start': float(segment['start_feature']),
                             'end': float(segment['end_feature']),
-                            'slope': float(segment['marginal_cost']),
+                            'slope': float(segment['marginal_rate']),
                             'range': f"{segment['start_feature']:.1f}-{segment['end_feature']:.1f}"
                         }
                         break
@@ -1100,12 +1117,12 @@ def prepare_marginal_cost_frontier_data(df, multi_frontier_breakdown, core_conti
                     if prev_seg['end_feature'] < feature_val:
                         # Full segment contribution
                         seg_length = prev_seg['end_feature'] - prev_seg['start_feature']
-                        avg_cost = prev_seg['marginal_cost']
+                        avg_cost = prev_seg['marginal_rate']
                         cumulative_cost += seg_length * avg_cost
                     elif prev_seg['start_feature'] <= feature_val <= prev_seg['end_feature']:
                         # Partial segment contribution
                         seg_length = feature_val - prev_seg['start_feature']
-                        avg_cost = prev_seg['marginal_cost']
+                        avg_cost = prev_seg['marginal_rate']
                         cumulative_cost += seg_length * avg_cost
                         break
                 
@@ -1597,23 +1614,29 @@ def prepare_granular_marginal_cost_frontier_data(df, multi_frontier_breakdown, c
                             segment_info = f"Segment {seg_idx+1}: {segment['start_feature']:.1f}-{segment['end_feature']:.1f}"
                             break
                     
-                    # Calculate cumulative cost by going through segments up to target
+                    # Calculate PROPER cumulative cost by accumulating through segments
+                    current_position = 0
+                    
                     for seg_idx, segment in enumerate(segments):
                         segment_start = segment['start_feature']
                         segment_end = segment['end_feature']
                         segment_rate = segment['marginal_rate']
                         
-                        if feature_val <= segment_start:
-                            # We don't reach this segment
-                            break
-                        elif feature_val >= segment_end:
-                            # We use the entire segment
-                            segment_contribution = (segment_end - segment_start) * segment_rate
+                        # Calculate the actual usage range within this segment
+                        usage_start = max(segment_start, current_position)
+                        usage_end = min(segment_end, feature_val)
+                        
+                        if usage_end > usage_start:
+                            # We use part or all of this segment
+                            usage_in_segment = usage_end - usage_start
+                            segment_contribution = usage_in_segment * segment_rate
                             total_feature_cost += segment_contribution
-                        else:
-                            # We use part of this segment (this is our target segment)
-                            segment_contribution = (feature_val - segment_start) * segment_rate
-                            total_feature_cost += segment_contribution
+                            current_position = usage_end
+                            
+                            logger.debug(f"Segment {seg_idx+1}: {usage_start:.1f}-{usage_end:.1f} GB × ₩{segment_rate:.0f} = ₩{segment_contribution:.0f}")
+                        
+                        # Stop if we've reached our target feature value
+                        if current_position >= feature_val:
                             break
                     
                     # Final cumulative cost
