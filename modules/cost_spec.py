@@ -23,9 +23,9 @@ FEATURE_SETS = {
         'voice_clean', 'voice_unlimited',
         'message_clean', 'message_unlimited',
         'additional_call', 'is_5g',
-        'tethering_gb', 
-        'data_stops_after_quota', 'data_throttled_after_quota', 'data_unlimited_speed',
-        'has_unlimited_speed', 'speed_when_exhausted'
+        'tethering_gb', 'speed_when_exhausted',
+        'data_throttled_after_quota', 'data_unlimited_speed', 'has_unlimited_speed'
+        # REMOVED: only 'data_stops_after_quota' per user request
     ]
 }
 
@@ -1173,9 +1173,6 @@ class MultiFeatureFrontierRegression:
         X = np.array(X_data)
         y = np.array(y_data)
         
-        # Add intercept column
-        X = np.column_stack([np.ones(len(X)), X])
-        
         # Step 4: Solve constrained regression (all coefficients ≥ 0)
         def objective(beta):
             return np.sum((X @ beta - y) ** 2)
@@ -1255,19 +1252,67 @@ class FullDatasetMultiFeatureRegression:
     """
     Alternative to MultiFeatureFrontierRegression that uses ALL plans in the dataset
     instead of just frontier plans. This captures market-wide pricing patterns
-    but requires careful outlier handling.
+    but requires careful outlier handling and multicollinearity detection.
     """
     
-    def __init__(self, features=None, outlier_threshold=3.0):
+    def __init__(self, features=None, outlier_threshold=3.0, alpha=1.0):
         # Use the correct feature set from FEATURE_SETS
         if features is None:
             features = FEATURE_SETS['basic']
         self.features = features
         self.outlier_threshold = outlier_threshold  # Standard deviations for outlier detection
+        self.alpha = alpha  # Ridge regression regularization parameter
         self.coefficients = None
         self.all_plans = None
         self.outliers_removed = 0
+        self.correlation_matrix = None
+        self.multicollinearity_detected = False
         
+    def detect_multicollinearity(self, X: np.ndarray, feature_names: List[str], threshold: float = 0.8) -> Dict:
+        """
+        Detect multicollinearity using correlation matrix and variance inflation factor.
+        
+        Args:
+            X: Feature matrix (without intercept)
+            feature_names: List of feature names
+            threshold: Correlation threshold for detecting multicollinearity
+            
+        Returns:
+            Dictionary with multicollinearity analysis results
+        """
+        # Calculate correlation matrix
+        corr_matrix = np.corrcoef(X, rowvar=False)
+        self.correlation_matrix = pd.DataFrame(corr_matrix, 
+                                             index=feature_names, 
+                                             columns=feature_names)
+        
+        # Find high correlations
+        high_correlations = []
+        for i in range(len(feature_names)):
+            for j in range(i+1, len(feature_names)):
+                corr_val = corr_matrix[i, j]
+                if abs(corr_val) > threshold:
+                    high_correlations.append({
+                        'feature1': feature_names[i],
+                        'feature2': feature_names[j],
+                        'correlation': corr_val
+                    })
+        
+        self.multicollinearity_detected = len(high_correlations) > 0
+        
+        analysis = {
+            'high_correlations': high_correlations,
+            'multicollinearity_detected': self.multicollinearity_detected,
+            'correlation_matrix': self.correlation_matrix
+        }
+        
+        if self.multicollinearity_detected:
+            logger.warning(f"Multicollinearity detected: {len(high_correlations)} high correlations found")
+            for hc in high_correlations:
+                logger.warning(f"  {hc['feature1']} ↔ {hc['feature2']}: {hc['correlation']:.3f}")
+        
+        return analysis
+
     def remove_outliers(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Remove obvious pricing outliers that would skew regression.
@@ -1296,7 +1341,7 @@ class FullDatasetMultiFeatureRegression:
         
     def solve_full_dataset_coefficients(self, df: pd.DataFrame) -> np.ndarray:
         """
-        Solve for coefficients using ALL plans in the dataset after outlier removal.
+        Solve for coefficients using ALL plans in the dataset with multicollinearity handling.
         
         Args:
             df: DataFrame with plan data
@@ -1336,23 +1381,84 @@ class FullDatasetMultiFeatureRegression:
         X = np.array(X_data)
         y = np.array(y_data)
         
-        # Add intercept column
-        X = np.column_stack([np.ones(len(X)), X])
+        # Step 3: Detect multicollinearity
+        multicollinearity_analysis = self.detect_multicollinearity(X, analysis_features)
         
-        # Step 3: Solve constrained regression (all coefficients ≥ 0)
+        # Step 4: Always use constrained regression (Ridge disabled per user request)
+        if self.multicollinearity_detected:
+            logger.info("Multicollinearity detected but using constrained regression (Ridge disabled per user request)")
+        else:
+            logger.info("Using constrained least squares (no multicollinearity)")
+        
+        # Always use constrained regression
+        coefficients = self._solve_constrained_regression(X, y, analysis_features)
+        
+        self.coefficients = coefficients
+        
+        # Validation logging (no intercept)
+        predicted = X @ self.coefficients[1:]  # Skip intercept (which is 0)
+        actual = y
+        mae = np.mean(np.abs(predicted - actual))
+        max_error = np.max(np.abs(predicted - actual))
+        rmse = np.sqrt(np.mean((predicted - actual) ** 2))
+        
+        logger.info(f"Full dataset multi-feature regression solved successfully:")
+        logger.info(f"  Base cost (β₀): ₩{self.coefficients[0]:,.0f}")
+        for i, feature in enumerate(analysis_features):
+            logger.info(f"  {feature} cost: ₩{self.coefficients[i+1]:,.2f}")
+        logger.info(f"  Used {len(df_clean)} plans (removed {self.outliers_removed} outliers)")
+        logger.info(f"  Method: Constrained (Ridge disabled)")
+        logger.info(f"  Mean absolute error: ₩{mae:,.0f}")
+        logger.info(f"  Root mean square error: ₩{rmse:,.0f}")
+        logger.info(f"  Max absolute error: ₩{max_error:,.0f}")
+        
+        return self.coefficients
+    
+    def _solve_constrained_regression(self, X: np.ndarray, y: np.ndarray, features: List[str]) -> np.ndarray:
+        """
+        Solve using constrained optimization.
+        No intercept - regression forced through origin.
+        """
+        # NO intercept column - force regression through origin
+        X_matrix = X
+        
         def objective(beta):
-            return np.sum((X @ beta - y) ** 2)
+            return np.sum((X_matrix @ beta - y) ** 2)
         
-        # Bounds: all coefficients non-negative
-        bounds = [(0, None)] * len(X[0])
+        # Selective bounds: usage-based features non-negative, unlimited features reasonable range
+        # NOTE: additional_call removed from usage_based constraints due to multicollinearity with unlimited features
+        usage_based_features = [
+            'basic_data_clean', 'daily_data_clean', 'voice_clean', 'message_clean', 
+            'tethering_gb', 'speed_when_exhausted'
+        ]
         
-        # Initial guess using OLS
+        bounds = []  # No intercept bound
+        for feature in features:
+            if feature in usage_based_features:
+                # Usage-based features must be positive (minimum ₩1 per unit)
+                bounds.append((1.0, None))
+            elif feature == 'is_5g':
+                # 5G premium feature: minimum ₩100
+                bounds.append((100.0, None))
+            elif feature == 'additional_call':
+                # Additional call feature: minimum ₩1 per unit
+                bounds.append((1.0, None))
+            else:
+                # Unlimited/boolean features: non-negative reasonable range
+                bounds.append((0, 20000))
+        
+        # Initial guess
         try:
-            beta_ols = np.linalg.lstsq(X, y, rcond=None)[0]
-            initial_guess = np.maximum(beta_ols, 0)
+            beta_ols = np.linalg.lstsq(X_matrix, y, rcond=None)[0]
+            initial_guess = beta_ols.copy()
+            # Respect bounds in initial guess
+            for i, (lower, upper) in enumerate(bounds):
+                if lower is not None and initial_guess[i] < lower:
+                    initial_guess[i] = lower
+                if upper is not None and initial_guess[i] > upper:
+                    initial_guess[i] = upper
         except:
-            avg_cost = np.mean(y)
-            initial_guess = [avg_cost * 0.1] + [100.0] * len(analysis_features)
+            initial_guess = [100.0] * len(features)  # No intercept guess
         
         # Solve optimization
         from scipy.optimize import minimize
@@ -1365,29 +1471,15 @@ class FullDatasetMultiFeatureRegression:
         )
         
         if not result.success:
-            logger.error(f"Full dataset multi-feature regression failed: {result.message}")
-            raise RuntimeError("Failed to solve full dataset multi-feature regression")
+            logger.error(f"Constrained regression failed: {result.message}")
+            # Fallback to Ridge regression
+            logger.info("Falling back to Ridge regression")
+            return self._solve_ridge_regression(X, y, features)
         
-        self.coefficients = result.x
-        
-        # Validation logging
-        predicted = X @ self.coefficients
-        actual = y
-        mae = np.mean(np.abs(predicted - actual))
-        max_error = np.max(np.abs(predicted - actual))
-        rmse = np.sqrt(np.mean((predicted - actual) ** 2))
-        
-        logger.info(f"Full dataset multi-feature regression solved successfully:")
-        logger.info(f"  Base cost (β₀): ₩{self.coefficients[0]:,.0f}")
-        for i, feature in enumerate(analysis_features):
-            logger.info(f"  {feature} cost: ₩{self.coefficients[i+1]:,.2f}")
-        logger.info(f"  Used {len(df_clean)} plans (removed {self.outliers_removed} outliers)")
-        logger.info(f"  Mean absolute error: ₩{mae:,.0f}")
-        logger.info(f"  Root mean square error: ₩{rmse:,.0f}")
-        logger.info(f"  Max absolute error: ₩{max_error:,.0f}")
-        
-        return self.coefficients
-        
+        # Add zero intercept at the beginning to match expected format
+        beta_with_intercept = np.concatenate([[0.0], result.x])
+        return beta_with_intercept
+
     def get_coefficient_breakdown(self) -> dict:
         """
         Get coefficient breakdown for visualization.

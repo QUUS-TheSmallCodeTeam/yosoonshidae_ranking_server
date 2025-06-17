@@ -499,23 +499,43 @@ async def root(basic: bool = False):
             return HTMLResponse(content=error_html)
         
         else:
-            # Charts are ready - generate fresh HTML report
-            method = getattr(df_with_rankings, 'method', 'multi_frontier')
-            cost_structure = getattr(df_with_rankings, 'cost_structure', None) or getattr(df_with_rankings, 'multi_frontier_breakdown', None)
+            # Charts are ready - generate fresh HTML report with FRESH coefficient calculation
+            method = getattr(df_with_rankings, 'method', 'fixed_rates')  # Use fixed_rates for fresh calculation
             
-            method_name = {
-                # "linear_decomposition": "Linear Decomposition", # Removed per user request
-                "multi_frontier": "Multi-Feature Frontier Regression",
-                "frontier": "Frontier-Based"
-            }.get(method, "Enhanced Cost-Spec")
+            # Force fresh coefficient calculation by re-running the ranking with fixed_rates method
+            from modules import rank_plans_by_cs_enhanced
+            
+            # Extract the original DataFrame without rankings to recalculate coefficients
+            df_for_recalc = df_with_rankings.copy()
+            
+            # Remove any existing ranking/coefficient columns to force fresh calculation
+            columns_to_remove = ['rank', 'rank_number', 'B', 'CS', 'coefficient_breakdown']
+            for col in columns_to_remove:
+                if col in df_for_recalc.columns:
+                    df_for_recalc = df_for_recalc.drop(columns=[col])
+            
+            # Force fresh coefficient calculation with fixed_rates method (no caching)
+            df_fresh = rank_plans_by_cs_enhanced(
+                df_for_recalc,
+                method='fixed_rates',  # Always use fixed_rates for consistent, fresh results
+                feature_set='basic',
+                fee_column='fee',
+                tolerance=500,
+                include_comparison=False
+            )
+            
+            # Update the cost structure from fresh calculation
+            cost_structure = getattr(df_fresh, 'attrs', {}).get('cost_structure', None)
+            
+            method_name = "Fixed Rates (Fresh Calculation)"
             title = f"Enhanced Cost-Spec Rankings ({method_name})"
             
             html_report = generate_html_report(
-                df_with_rankings, 
+                df_fresh, 
                 datetime.now(), 
                 is_cs=True, 
                 title=title,
-                method=method,
+                method='fixed_rates',
                 cost_structure=cost_structure
             )
             return HTMLResponse(content=html_report)
