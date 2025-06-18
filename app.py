@@ -321,224 +321,38 @@ class PlanInput(BaseModel):
 @app.get("/")
 async def root(basic: bool = False):
     """
-    Root endpoint that shows either:
-    1. Visual status indicators if charts are calculating or failed
-    2. Full HTML report if charts are ready
-    3. Basic report if basic=true parameter is provided
+    Root endpoint that always shows the full HTML report.
+    Individual chart sections show loading status if not ready.
     """
     global df_with_rankings, chart_calculation_statuses
     
     try:
-        # If basic report requested, generate simple HTML without charts
-        if basic:
-            if df_with_rankings is not None:
-                html_report = generate_html_report(
-                    df_with_rankings, 
-                    datetime.now(), 
-                    is_cs=True, 
-                    title="Basic Cost-Spec Rankings (No Charts)",
-                    method="basic",
-                    cost_structure=None
-                )
-                return HTMLResponse(content=html_report)
-            else:
-                return HTMLResponse(content="<h1>No data available. Please process data first via /process endpoint.</h1>")
-        
         # Check if we have data
         if df_with_rankings is None:
             return HTMLResponse(content="<h1>No data available. Please process data first via /process endpoint.</h1>")
         
-        # Check chart calculation status - show individual chart progress
+        # Always generate the full HTML report with chart loading states
+        method = getattr(df_with_rankings, 'method', 'fixed_rates')
+        cost_structure = getattr(df_with_rankings, 'cost_structure', None)
+        
+        method_name = "Fixed Rates"
+        title = f"Enhanced Cost-Spec Rankings ({method_name})"
+        
+        # Pass chart statuses to the HTML generator for individual chart loading states
         with chart_calculation_lock:
-            statuses = chart_calculation_statuses.copy()
+            chart_statuses = chart_calculation_statuses.copy()
         
-        total_charts = len(chart_types)
-        ready_charts = sum(1 for status in statuses.values() if status['status'] == 'ready')
-        calculating_charts = sum(1 for status in statuses.values() if status['status'] == 'calculating')
-        
-        if calculating_charts > 0 or ready_charts < total_charts:
-            # Generate individual chart status HTML
-            chart_status_items = []
-            for chart_type, status in statuses.items():
-                chart_name = {
-                    'feature_frontier': 'Feature Frontier Charts',
-                    'marginal_cost_frontier': 'Marginal Cost Frontier Charts',
-                    'multi_frontier_analysis': 'Multi-Frontier Analysis',
-                    # 'linear_decomposition': 'Linear Decomposition Charts', # Removed per user request
-                    'plan_efficiency': 'Plan Efficiency Matrix'
-                }.get(chart_type, chart_type.replace('_', ' ').title())
-                
-                if status['status'] == 'calculating':
-                    icon = '⚙️'
-                    text = f"Calculating... {status['calculation_progress']}%"
-                    color = '#007bff'
-                elif status['status'] == 'ready':
-                    icon = '✅'
-                    text = 'Ready'
-                    color = '#28a745'
-                elif status['status'] == 'error':
-                    icon = '❌'
-                    text = f"Error: {status['error_message'][:50]}..."
-                    color = '#dc3545'
-                else:
-                    icon = '⏳'
-                    text = 'Waiting...'
-                    color = '#6c757d'
-                
-                chart_status_items.append(f"""
-                    <div class="chart-status-item" style="border-left: 4px solid {color};">
-                        <span class="chart-icon">{icon}</span>
-                        <span class="chart-name">{chart_name}</span>
-                        <span class="chart-status" style="color: {color};">{text}</span>
-                    </div>
-                """)
-            
-            overall_progress = (ready_charts / total_charts) * 100 if total_charts > 0 else 0
-            
-            progress_html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Charts Processing...</title>
-                <meta http-equiv="refresh" content="5">
-                <style>
-                    body {{ 
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-                        margin: 0; padding: 20px; background: #f8f9fa; 
-                    }}
-                    .container {{ max-width: 800px; margin: 0 auto; }}
-                    .header {{ text-align: center; margin-bottom: 30px; }}
-                    .progress-bar {{ 
-                        width: 100%; height: 20px; background: #e9ecef; 
-                        border-radius: 10px; overflow: hidden; margin: 20px 0; 
-                    }}
-                    .progress-fill {{ 
-                        height: 100%; background: linear-gradient(90deg, #007bff, #28a745); 
-                        width: {overall_progress}%; transition: width 0.5s ease; 
-                    }}
-                    .chart-status-grid {{ 
-                        display: grid; gap: 15px; margin: 30px 0; 
-                    }}
-                    .chart-status-item {{ 
-                        background: white; padding: 20px; border-radius: 8px; 
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; 
-                        align-items: center; gap: 15px; 
-                    }}
-                    .chart-icon {{ font-size: 24px; }}
-                    .chart-name {{ flex: 1; font-weight: 600; }}
-                    .chart-status {{ font-size: 14px; }}
-                    .actions {{ text-align: center; margin-top: 30px; }}
-                    .btn {{ 
-                        display: inline-block; padding: 10px 20px; 
-                        background: #007bff; color: white; text-decoration: none; 
-                        border-radius: 5px; margin: 0 10px; 
-                    }}
-                    .btn:hover {{ background: #0056b3; }}
-                    .btn-secondary {{ background: #6c757d; }}
-                    .btn-secondary:hover {{ background: #5a6268; }}
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <h1>📊 Chart Generation in Progress</h1>
-                        <p>Processing multi-threaded chart calculations...</p>
-                        <div class="progress-bar">
-                            <div class="progress-fill"></div>
-                        </div>
-                        <p><strong>{ready_charts}/{total_charts} charts ready</strong> ({overall_progress:.1f}%)</p>
-                    </div>
-                    
-                    <div class="chart-status-grid">
-                        {''.join(chart_status_items)}
-                    </div>
-                    
-                    <div class="actions">
-                        <a href="/" class="btn">🔄 Refresh Status</a>
-                        <a href="/?basic=true" class="btn btn-secondary">📄 View Basic Report</a>
-                        <a href="/chart-status" class="btn btn-secondary">🔍 API Status</a>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
-            return HTMLResponse(content=progress_html)
-        
-        elif any(status['error_message'] for status in chart_calculation_statuses.values()):
-            # Show error status
-            error_html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Chart Generation Failed</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; }}
-                    .status-card {{ 
-                        background: #fff0f0; 
-                        border: 2px solid #f44336; 
-                        border-radius: 10px; 
-                        padding: 30px; 
-                        margin: 20px auto; 
-                        max-width: 500px; 
-                    }}
-                    .error-icon {{ font-size: 48px; margin-bottom: 20px; }}
-                    .error-msg {{ font-size: 14px; color: #666; background: #f5f5f5; padding: 10px; border-radius: 5px; }}
-                </style>
-            </head>
-            <body>
-                <div class="status-card">
-                    <div class="error-icon">❌</div>
-                    <h2>Chart Generation Failed</h2>
-                    <p>There was an error generating the charts.</p>
-                    <div class="error-msg">{', '.join(status['error_message'] for status in chart_calculation_statuses.values() if status['error_message'])}</div>
-                    <p><a href="/">Try again</a> | <a href="/?basic=true">View basic report</a></p>
-                </div>
-            </body>
-            </html>
-            """
-            return HTMLResponse(content=error_html)
-        
-        else:
-            # Charts are ready - generate fresh HTML report with FRESH coefficient calculation
-            method = getattr(df_with_rankings, 'method', 'fixed_rates')  # Use fixed_rates for fresh calculation
-            
-            # Force fresh coefficient calculation by re-running the ranking with fixed_rates method
-            from modules import rank_plans_by_cs_enhanced
-            
-            # Extract the original DataFrame without rankings to recalculate coefficients
-            df_for_recalc = df_with_rankings.copy()
-            
-            # Remove any existing ranking/coefficient columns to force fresh calculation
-            columns_to_remove = ['rank', 'rank_number', 'B', 'CS', 'coefficient_breakdown']
-            for col in columns_to_remove:
-                if col in df_for_recalc.columns:
-                    df_for_recalc = df_for_recalc.drop(columns=[col])
-            
-            # Force fresh coefficient calculation with fixed_rates method (no caching)
-            df_fresh = rank_plans_by_cs_enhanced(
-                df_for_recalc,
-                method='fixed_rates',  # Always use fixed_rates for consistent, fresh results
-                feature_set='basic',
-                fee_column='fee',
-                tolerance=500,
-                include_comparison=False
-            )
-            
-            # Update the cost structure from fresh calculation
-            cost_structure = getattr(df_fresh, 'attrs', {}).get('cost_structure', None)
-            
-            method_name = "Fixed Rates (Fresh Calculation)"
-            title = f"Enhanced Cost-Spec Rankings ({method_name})"
-            
-            html_report = generate_html_report(
-                df_fresh, 
-                datetime.now(), 
-                is_cs=True, 
-                title=title,
-                method='fixed_rates',
-                cost_structure=cost_structure
-            )
-            return HTMLResponse(content=html_report)
+        # Use existing data and include chart statuses for individual section loading
+        html_report = generate_html_report(
+            df_with_rankings, 
+            datetime.now(), 
+            is_cs=True, 
+            title=title,
+            method=method,
+            cost_structure=cost_structure,
+            chart_statuses=chart_statuses  # Pass chart statuses for individual loading
+        )
+        return HTMLResponse(content=html_report)
             
     except Exception as e:
         logger.error(f"Error in root endpoint: {str(e)}")
@@ -778,10 +592,10 @@ async def process_data(request: Request):
             "all_ranked_plans": convert_numpy_types(all_ranked_plans)
         }
         
-        # Start chart calculation in the background (non-blocking)
+        # Start chart calculation in the background (non-blocking for fast ranking response)
         import asyncio
         try:
-            # Create background task for chart calculation
+            # Create background task for chart calculation - don't await!
             loop = asyncio.get_event_loop()
             chart_calculation_task = loop.create_task(
                 calculate_charts_async(df_ranked, method, cost_structure, request_id)

@@ -1,5 +1,26 @@
 # 📋 MVNO Plan Ranking Model - Todo List
 
+## 🚨 **URGENT: Current Issues**
+
+### **1. Coefficient Table Not Displaying** ⭐ **CRITICAL**
+- [ ] **Debug cost_structure data flow**
+  - Issue: HTML coefficient table not showing despite correct calculation
+  - Added logging to `generate_feature_rates_table_html()` for debugging
+  - Need to verify cost_structure parameter vs DataFrame attrs priority
+  - Test with actual data processing to see debug logs
+
+### **2. Multicollinearity Causing Zero Coefficients** ⭐ **CRITICAL**  
+- [ ] **Fix voice_unlimited ↔ message_unlimited correlation (96.8%)**
+  - Issue: One coefficient approaches zero due to high correlation
+  - Solution: Implement fair coefficient redistribution 
+  - Added `_fix_multicollinearity_coefficients()` method to redistribute total value equally
+  - Need to test redistribution logic with actual data
+
+### **3. Feature Merging vs Fair Distribution** ⭐ **CLARIFIED**
+- [x] **User clarification received**: Don't merge features, redistribute values fairly
+- [x] **Implementation approach**: Calculate total value, divide equally between correlated features
+- [ ] **Test redistribution**: Verify both features get meaningful coefficients
+
 ## ✅ **ALL MAJOR ISSUES RESOLVED - SYSTEM FULLY OPERATIONAL**
 
 ### **🎯 Recently Completed - All Critical Issues Fixed**
@@ -231,3 +252,67 @@
 - [ ] No zero coefficients due to missing data
 - [ ] Coefficient signs align with economic expectations
 - [ ] System logs confirm preprocessing pipeline execution
+
+## ✅ 완료된 작업
+- **차트 트리거 구조 확인**: /process 엔드포인트에서 새 데이터 기반 차트 계산 트리거 확인 완료
+- **응답 속도 최적화**: /process는 즉시 랭킹 응답, 차트는 백그라운드 비동기 처리
+- **/ 엔드포인트 최적화**: 기존 계산된 데이터만 사용, heavy calculation 제거
+- **HTML 템플릿에서 불필요한 차트 제거**: piecewise graphing 등 제거하여 속도 개선
+- **문자 무제한 0원 문제**: unlimited features의 bounds 설정 개선 (1000원 → 100원)
+- **Has Unlimited Speed 고정 표시**: feature_units 매핑에 추가 완료
+
+## 🎯 제안사항 (선택적)
+- **Google/Facebook 로그인**: 카카오 소셜 로그인 완료 후 추가 고려
+- **UI/UX 개선**: 더 나은 사용자 경험을 위한 인터페이스 개선
+- **성능 모니터링**: 차트 계산 시간 최적화를 위한 모니터링 시스템
+
+## ✅ Completed Tasks
+- **Performance Optimization**: /process endpoint now returns ranking data immediately while charts calculate asynchronously in background
+- **Individual Chart Loading**: Modified HTML to show loading states per chart section instead of full-page blocking
+- **Cost Calculation Fix**: Updated bounds in `_solve_constrained_regression()` to prevent convergence to 0 for unlimited features
+- **UI/UX Enhancement**: Added proper "KRW (고정)" unit display for has_unlimited_speed feature
+- **Chart Calculation Optimization**: Removed heavy piecewise calculations from / endpoint, kept background processing
+- **Template Loading System**: Implemented individual chart section loading overlays with JavaScript hideLoadingOverlay function
+- **Feature Coefficient Enhancement**: Added unconstrained vs constrained coefficient comparison in `generate_feature_rates_table_html()`
+
+## 🚨 Current Priority Issues
+
+### 1. **Feature Coefficient Table Not Displaying**
+**Issue**: Enhanced coefficient table with unconstrained/constrained comparison is not appearing in HTML output
+**Cause**: `cost_structure` may be empty or not properly passed from coefficient calculation to HTML generation
+**Investigation needed**:
+- Verify if `cost_structure` contains `feature_costs` data after `/process` request
+- Check if `FullDatasetMultiFeatureRegression.get_coefficient_breakdown()` is being called
+- Confirm data flow from coefficient calculation to `generate_html_report()` function
+- Test if empty cost_structure causes `generate_feature_rates_table_html()` to return empty string
+
+**Debug steps**:
+1. Add logging to `generate_feature_rates_table_html()` to see input cost_structure
+2. Verify cost_structure is properly stored in global df_with_rankings.cost_structure
+3. Check if coefficient calculation is successfully completing with new unconstrained coefficient storage
+
+### 2. **Data Flow Verification**
+**Investigation**: Ensure coefficient data with unconstrained/constrained values flows properly through:
+- `rank_plans_by_cs_enhanced()` → coefficient calculation
+- `FullDatasetMultiFeatureRegression.get_coefficient_breakdown()` → enhanced data structure
+- Global storage → `df_with_rankings.cost_structure`
+- HTML generation → `generate_feature_rates_table_html(cost_structure)`
+
+## 🎯 Enhancement Goals
+- **Coefficient Comparison Display**: Show both raw OLS and bounded optimization results side-by-side
+- **Adjustment Visualization**: Color-coded indicators (green/red/gray) for constraint impacts
+- **Economic Insight**: Help users understand how bounds affect final coefficient values
+- **Transparency**: Complete visibility into coefficient calculation process
+
+## 📊 Feature Specifications
+- **Table Format**: 5-column layout (Feature, Unconstrained, Constrained, Difference, Unit)
+- **Color Coding**: Green for positive adjustments, red for negative, gray for minimal changes
+- **Number Formatting**: Proper KRW formatting with commas and appropriate decimal places
+- **Responsive Design**: Table adapts to different screen sizes
+- **Explanatory Text**: Clear descriptions of what each column represents
+
+## 🔍 Testing Requirements
+- Verify table displays when coefficient data is available
+- Confirm color coding works correctly for different adjustment types
+- Test table responsiveness across different data sizes
+- Validate number formatting and Korean text display

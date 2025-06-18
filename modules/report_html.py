@@ -221,6 +221,7 @@ def prepare_plan_efficiency_data(df, method):
 def generate_feature_rates_table_html(cost_structure):
     """
     Generate HTML table showing feature rates/coefficients used in CS calculations.
+    Shows both unconstrained (raw) and constrained (final) values for comparison.
     
     Args:
         cost_structure: Dictionary containing feature_costs and other cost data
@@ -228,19 +229,29 @@ def generate_feature_rates_table_html(cost_structure):
     Returns:
         HTML string for the feature rates table
     """
-    if not cost_structure or not cost_structure.get('feature_costs'):
+    # DEBUG: Add logging to see what we receive
+    logger.info(f"generate_feature_rates_table_html called with cost_structure: {cost_structure}")
+    
+    if not cost_structure:
+        logger.warning("generate_feature_rates_table_html: cost_structure is None or empty")
+        return ""
+    
+    if not cost_structure.get('feature_costs'):
+        logger.warning(f"generate_feature_rates_table_html: feature_costs not found in cost_structure. Keys: {list(cost_structure.keys())}")
         return ""
     
     feature_costs = cost_structure.get('feature_costs', {})
+    logger.info(f"generate_feature_rates_table_html: feature_costs = {feature_costs}")
     
-    # Handle different feature_costs structures
     if isinstance(feature_costs, list):
         # Convert list format to dict format
         features_data = {
             item['feature']: {
                 'coefficient': item.get('coefficient', 0),
+                'unconstrained_coefficient': item.get('unconstrained_coefficient'),
                 'display_name': item.get('display_name', item['feature']),
-                'unit': item.get('unit', '')
+                'unit': item.get('unit', ''),
+                'bounds': item.get('bounds', {})
             }
             for item in feature_costs
         }
@@ -253,19 +264,61 @@ def generate_feature_rates_table_html(cost_structure):
             features_data = {
                 feature: {
                     'coefficient': coeff,
+                    'unconstrained_coefficient': None,
                     'display_name': feature.replace('_clean', '').replace('_', ' ').title(),
-                    'unit': 'KRW/unit'
+                    'unit': 'KRW/unit',
+                    'bounds': {}
                 }
                 for feature, coeff in feature_costs.items()
             }
     else:
         return ""
     
+    # Check if we have unconstrained data
+    has_unconstrained_data = any(
+        isinstance(data, dict) and data.get('unconstrained_coefficient') is not None 
+        for data in features_data.values()
+    )
+    
     # Create table HTML
     table_html = """
     <div class="metrics">
         <h3>기능별 한계비용 계수 (Feature Marginal Cost Coefficients)</h3>
-        <p>아래 표는 CS 비율 계산에 사용되는 각 기능의 한계비용을 보여줍니다.</p>
+        <p>아래 표는 CS 비율 계산에 사용되는 각 기능의 한계비용을 보여줍니다."""
+    
+    if has_unconstrained_data:
+        table_html += " 보정 전 값, 적용된 제약 조건, 그리고 실제 계산 과정을 통해 최종 값이 어떻게 결정되었는지 확인할 수 있습니다."
+    
+    table_html += "</p>"
+    
+    if has_unconstrained_data:
+        table_html += """
+        <p><strong>계산 과정 설명:</strong></p>
+        <ul style="font-size: 0.9em; margin-left: 20px;">
+            <li><span style="color: green;">제약 없음</span>: 원래 계산된 값이 제약 범위 내에 있어 그대로 사용</li>
+            <li><span style="color: orange; font-weight: bold;">min/max 적용</span>: 원래 값이 제약 범위를 벗어나 최소/최대값으로 조정됨</li>
+            <li><span style="color: blue;">직접 계산</span>: 제약 없이 직접 계산된 값</li>
+        </ul>
+        """
+    
+    # Column headers based on whether we have unconstrained data
+    if has_unconstrained_data:
+        table_html += """
+        <table style="width: 100%; max-width: 1400px; margin: 0 auto;">
+            <thead>
+                <tr>
+                    <th>기능 (Feature)</th>
+                    <th>보정 전 값<br>(Unconstrained)</th>
+                    <th>적용된 제약<br>(Applied Bounds)</th>
+                    <th>최종 값<br>(Final Value)</th>
+                    <th>계산 과정<br>(Calculation Process)</th>
+                    <th>단위 (Unit)</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+    else:
+        table_html += """
         <table style="width: 100%; max-width: 800px; margin: 0 auto;">
             <thead>
                 <tr>
@@ -275,7 +328,7 @@ def generate_feature_rates_table_html(cost_structure):
                 </tr>
             </thead>
             <tbody>
-    """
+        """
     
     # Feature display names mapping
     feature_names = {
@@ -291,6 +344,7 @@ def generate_feature_rates_table_html(cost_structure):
         'voice_unlimited': '음성 무제한 (Voice Unlimited)',
         'message_unlimited': '문자 무제한 (Message Unlimited)',
         'has_throttled_data': '속도제한 데이터 (Throttled Data)',
+        'has_unlimited_speed': '데이터 무제한 (Data Unlimited)',
         'additional_call': '추가 통화 (Additional Call)',
         'speed_when_exhausted': '소진 후 속도 (Speed When Exhausted)'
     }
@@ -309,41 +363,110 @@ def generate_feature_rates_table_html(cost_structure):
         'voice_unlimited': 'KRW (고정)',
         'message_unlimited': 'KRW (고정)',
         'has_throttled_data': 'KRW (고정)',
+        'has_unlimited_speed': 'KRW (고정)',
         'additional_call': 'KRW/unit',
         'speed_when_exhausted': 'KRW/Mbps'
     }
     
-    # Sort features by coefficient value (highest first)
+    # Helper function to format coefficient values
+    def format_coefficient(value):
+        if value is None:
+            return "N/A"
+        if abs(value) >= 1000:
+            return f"₩{value:,.0f}"
+        elif abs(value) >= 1:
+            return f"₩{value:.2f}"
+        else:
+            return f"₩{value:.4f}"
+    
+    # Sort features by final coefficient value (highest first)
     sorted_features = sorted(features_data.items(), 
                            key=lambda x: x[1].get('coefficient', 0), 
                            reverse=True)
     
     for feature, data in sorted_features:
         coefficient = data.get('coefficient', 0)
+        unconstrained_coeff = data.get('unconstrained_coefficient')
         display_name = feature_names.get(feature, feature.replace('_clean', '').replace('_', ' ').title())
         unit = feature_units.get(feature, 'KRW/unit')
+        bounds = data.get('bounds', {})
         
-        # Format coefficient with proper number formatting
-        if coefficient >= 1000:
-            coeff_str = f"₩{coefficient:,.0f}"
-        elif coefficient >= 1:
-            coeff_str = f"₩{coefficient:.2f}"
-        else:
-            coeff_str = f"₩{coefficient:.4f}"
-        
-        table_html += f"""
+        if has_unconstrained_data:
+            # Generate bounds display
+            bounds_text = ""
+            if bounds:
+                lower = bounds.get('lower')
+                upper = bounds.get('upper')
+                if lower is not None and upper is not None:
+                    bounds_text = f"[{format_coefficient(lower)}, {format_coefficient(upper)}]"
+                elif lower is not None:
+                    bounds_text = f"≥ {format_coefficient(lower)}"
+                elif upper is not None:
+                    bounds_text = f"≤ {format_coefficient(upper)}"
+                else:
+                    bounds_text = "무제한"
+            else:
+                bounds_text = "무제한"
+            
+            # Generate calculation process
+            calculation_process = ""
+            process_color = ""
+            if unconstrained_coeff is not None:
+                if bounds:
+                    lower = bounds.get('lower')
+                    upper = bounds.get('upper')
+                    
+                    # Check if adjustment was made
+                    if lower is not None and unconstrained_coeff < lower:
+                        calculation_process = f"max({format_coefficient(unconstrained_coeff)}, {format_coefficient(lower)}) = {format_coefficient(coefficient)}"
+                        process_color = "color: orange; font-weight: bold;"
+                    elif upper is not None and unconstrained_coeff > upper:
+                        calculation_process = f"min({format_coefficient(unconstrained_coeff)}, {format_coefficient(upper)}) = {format_coefficient(coefficient)}"
+                        process_color = "color: orange; font-weight: bold;"
+                    else:
+                        calculation_process = f"{format_coefficient(unconstrained_coeff)} (제약 없음)"
+                        process_color = "color: green;"
+                else:
+                    calculation_process = f"{format_coefficient(unconstrained_coeff)} (제약 없음)"
+                    process_color = "color: green;"
+            else:
+                calculation_process = f"{format_coefficient(coefficient)} (직접 계산)"
+                process_color = "color: blue;"
+            
+            table_html += f"""
                 <tr>
                     <td style="text-align: left; font-weight: bold;">{display_name}</td>
-                    <td style="text-align: right; font-family: monospace;">{coeff_str}</td>
+                    <td style="text-align: right; font-family: monospace;">{format_coefficient(unconstrained_coeff)}</td>
+                    <td style="text-align: center; font-family: monospace; font-size: 0.9em;">{bounds_text}</td>
+                    <td style="text-align: right; font-family: monospace; font-weight: bold;">{format_coefficient(coefficient)}</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.9em; {process_color}">{calculation_process}</td>
                     <td style="text-align: center;">{unit}</td>
                 </tr>
-        """
+            """
+        else:
+            table_html += f"""
+                <tr>
+                    <td style="text-align: left; font-weight: bold;">{display_name}</td>
+                    <td style="text-align: right; font-family: monospace;">{format_coefficient(coefficient)}</td>
+                    <td style="text-align: center;">{unit}</td>
+                </tr>
+            """
     
     table_html += """
             </tbody>
         </table>
         <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
             * 이 계수들은 전체 데이터셋에서 추출된 순수 한계비용으로, cross-contamination이 제거된 값입니다.<br>
+    """
+    
+    if has_unconstrained_data:
+        table_html += """
+            * 보정 전 값: 제약 조건 없는 OLS 회귀 결과<br>
+            * 최종 값: 경제학적 제약 조건(양수, 최소값 등)을 적용한 결과<br>
+            * 차이: 제약 조건에 의한 조정량 (녹색: 상향조정, 빨간색: 하향조정)<br>
+        """
+    
+    table_html += """
             * CS 비율 = 기준비용(이 계수들로 계산) / 실제 요금
         </p>
     </div>
@@ -351,7 +474,7 @@ def generate_feature_rates_table_html(cost_structure):
     
     return table_html
 
-def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings", is_cs=True, title=None, method=None, cost_structure=None):
+def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings", is_cs=True, title=None, method=None, cost_structure=None, chart_statuses=None):
     """
     Generate a full HTML report with plan rankings and feature frontier charts.
     
@@ -363,10 +486,112 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
         title: Alternative title (for backward compatibility)
         method: Cost-Spec method used ('linear_decomposition' or 'frontier')
         cost_structure: Cost structure dictionary from linear decomposition
+        chart_statuses: Dictionary with individual chart statuses for loading states
         
     Returns:
         HTML string for the complete report
     """
+    # Helper function to get chart status HTML
+    def get_chart_status_html(chart_type, chart_div_id):
+        """Generate loading/error status HTML for individual chart sections"""
+        if not chart_statuses:
+            return ""  # No status info, show chart normally
+            
+        status_info = chart_statuses.get(chart_type, {})
+        status = status_info.get('status', 'ready')
+        
+        if status == 'calculating':
+            progress = status_info.get('calculation_progress', 0)
+            return f"""
+            <div class="chart-loading-overlay" id="{chart_div_id}_loading">
+                <div class="loading-content">
+                    <div class="spinner">⚙️</div>
+                    <p>차트 계산 중... {progress}%</p>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {progress}%"></div>
+                    </div>
+                </div>
+            </div>
+            <style>
+            .chart-loading-overlay {{
+                position: relative;
+                min-height: 300px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #f8f9fa;
+                border: 1px dashed #dee2e6;
+                border-radius: 8px;
+                margin: 20px 0;
+            }}
+            .loading-content {{
+                text-align: center;
+                padding: 40px;
+            }}
+            .spinner {{
+                font-size: 48px;
+                animation: spin 2s linear infinite;
+                margin-bottom: 20px;
+            }}
+            @keyframes spin {{
+                0% {{ transform: rotate(0deg); }}
+                100% {{ transform: rotate(360deg); }}
+            }}
+            .progress-bar {{
+                width: 200px;
+                height: 8px;
+                background: #e9ecef;
+                border-radius: 4px;
+                overflow: hidden;
+                margin: 10px auto;
+            }}
+            .progress-fill {{
+                height: 100%;
+                background: linear-gradient(90deg, #007bff, #28a745);
+                transition: width 0.3s ease;
+            }}
+            </style>
+            """
+        elif status == 'error':
+            error_msg = status_info.get('error_message', 'Unknown error')
+            return f"""
+            <div class="chart-error-overlay" id="{chart_div_id}_error">
+                <div class="error-content">
+                    <div class="error-icon">❌</div>
+                    <p>차트 생성 실패</p>
+                    <details>
+                        <summary>오류 세부사항</summary>
+                        <pre>{error_msg[:200]}...</pre>
+                    </details>
+                    <button onclick="location.reload()">새로고침</button>
+                </div>
+            </div>
+            <style>
+            .chart-error-overlay {{
+                position: relative;
+                min-height: 300px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #fff5f5;
+                border: 1px solid #fed7d7;
+                border-radius: 8px;
+                margin: 20px 0;
+            }}
+            .error-content {{
+                text-align: center;
+                padding: 40px;
+                color: #e53e3e;
+            }}
+            .error-icon {{
+                font-size: 48px;
+                margin-bottom: 20px;
+            }}
+            </style>
+            """
+        else:
+            return ""  # Chart is ready, show normally
+
     # Use title parameter if provided (for backward compatibility)
     if title:
         report_title = title
@@ -490,6 +715,13 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     # Check if we have multi-frontier breakdown data
     multi_frontier_breakdown = getattr(df, 'attrs', {}).get('multi_frontier_breakdown')
     linear_decomp_cost_structure = getattr(df, 'attrs', {}).get('cost_structure')
+    
+    # Use cost_structure parameter first, then fallback to DataFrame attrs
+    if not cost_structure:
+        cost_structure = linear_decomp_cost_structure or multi_frontier_breakdown
+        logger.info(f"Using cost_structure from DataFrame attrs: {cost_structure}")
+    else:
+        logger.info(f"Using cost_structure from parameter: {cost_structure}")
     
     # Multi-Feature Frontier Regression Analysis section removed per user request
     
@@ -731,7 +963,8 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 <div class="note">
                     <p>이 차트는 각 기능에 대한 비용 프론티어를 보여줍니다. 프론티어에 있는 플랜은 다양한 수준에서 해당 기능에 대한 최상의 가치를 제공합니다.</p>
                 </div>
-                <div id="featureCharts" class="chart-grid"></div>
+                {get_chart_status_html('feature_frontier', 'featureCharts')}
+                <div id="featureCharts" class="chart-grid" style="{'display:none;' if get_chart_status_html('feature_frontier', 'featureCharts') else ''}"></div>
             </div>
             
             <!-- Marginal Cost Frontier Charts -->
@@ -742,7 +975,8 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     <p><strong>핵심 개선사항:</strong> 기존 프론티어 차트의 교차 오염 문제를 해결하여, 각 기능의 실제 가치만을 반영한 순수 한계비용을 시각화합니다.</p>
                     <p><strong>해석:</strong> 파란색 선은 순수 한계비용 트렌드, 빨간색 점은 실제 시장 요금제와의 비교를 보여줍니다.</p>
                 </div>
-                <div id="marginalCostFrontierCharts" class="chart-grid"></div>
+                {get_chart_status_html('marginal_cost_frontier', 'marginalCostFrontierCharts')}
+                <div id="marginalCostFrontierCharts" class="chart-grid" style="{'display:none;' if get_chart_status_html('marginal_cost_frontier', 'marginalCostFrontierCharts') else ''}"></div>
             </div>
             
             <!-- Plan Value Efficiency Matrix -->
@@ -751,10 +985,11 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 <div class="note">
                     <p>이 차트는 각 요금제의 실제 비용 대비 계산된 기준 비용을 보여줍니다. 대각선 아래(녹색 영역)는 가성비가 좋은 요금제, 위(빨간색 영역)는 과가격 요금제입니다.</p>
                 </div>
-                <div class="chart-container" style="width: 100%; height: 600px;">
+                {get_chart_status_html('plan_efficiency', 'planEfficiencyChart')}
+                <div class="chart-container" style="width: 100%; height: 600px; {'display:none;' if get_chart_status_html('plan_efficiency', 'planEfficiencyChart') else ''}">
                     <canvas id="planEfficiencyChart"></canvas>
                 </div>
-                <p style="text-align: center; margin-top: 10px; color: #666; font-size: 0.9em;">
+                <p style="text-align: center; margin-top: 10px; color: #666; font-size: 0.9em; {'display:none;' if get_chart_status_html('plan_efficiency', 'planEfficiencyChart') else ''}">
                     🟢 녹색 = 가성비 좋은 요금제 (CS > 1.0) | 🔴 빨간색 = 과가격 요금제 (CS < 1.0)<br>
                     대각선 = 완벽한 효율성 기준선 | 버블 크기 = 총 기능 수준
                 </p>
@@ -792,6 +1027,23 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 otherPoints: 'rgba(201, 203, 207, 0.6)'  // Gray for other
             };
             
+            // Helper function to remove loading overlay when chart is ready
+            function hideLoadingOverlay(chartType, chartDivId) {
+                const loadingElement = document.getElementById(chartDivId + '_loading');
+                const errorElement = document.getElementById(chartDivId + '_error');
+                const chartElement = document.getElementById(chartDivId);
+                
+                if (loadingElement) {
+                    loadingElement.style.display = 'none';
+                }
+                if (errorElement) {
+                    errorElement.style.display = 'none';
+                }
+                if (chartElement) {
+                    chartElement.style.display = '';
+                }
+            }
+
             // Create charts for each feature
             document.addEventListener('DOMContentLoaded', () => {
                 const chartsContainer = document.getElementById('featureCharts');
@@ -933,6 +1185,9 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     charts.push(chart);
                 }
                 
+                // Hide loading overlay for feature frontier charts
+                hideLoadingOverlay('feature_frontier', 'featureCharts');
+                
                 // Debug: Log the data to console
                 console.log('Cost Structure Data:', costStructureData);
                 console.log('Plan Efficiency Data:', planEfficiencyData);
@@ -949,6 +1204,8 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 if (planEfficiencyData && planEfficiencyData !== null) {
                     console.log('Creating plan efficiency chart...');
                     createPlanEfficiencyChart(planEfficiencyData);
+                    // Hide loading overlay for plan efficiency chart
+                    hideLoadingOverlay('plan_efficiency', 'planEfficiencyChart');
                 } else {
                     console.log('No plan efficiency data available');
                 }
@@ -1647,6 +1904,8 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 
                 // Create marginal cost frontier charts
                 createMarginalCostFrontierCharts(marginalCostFrontierData);
+                // Hide loading overlay for marginal cost frontier charts
+                hideLoadingOverlay('marginal_cost_frontier', 'marginalCostFrontierCharts');
                 
                 // Create plan efficiency chart
                 createPlanEfficiencyChart(planEfficiencyData);

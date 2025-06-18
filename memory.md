@@ -26,6 +26,7 @@
 - **✅ FIXED RATES METHOD IMPLEMENTED**: New ranking calculation using pure coefficients for entire dataset without filtering
 - **✅ UNLIMITED FLAGS IN REGRESSION**: voice_unlimited and message_unlimited now properly included in Feature Marginal Cost Coefficients table
 - **✅ MULTICOLLINEARITY ISSUE RESOLVED**: Removed problematic features from coefficient calculation pipeline ('data_stops_after_quota' and other highly correlated features), switched from Ridge to LinearRegression, enforced positive coefficient bounds for key features
+- **✅ ENHANCED COEFFICIENT TABLE**: Added unconstrained (raw OLS) vs constrained (bounded) coefficient comparison with color-coded adjustments
 
 ## 🎯 Key Achievements
 - **Cross-contamination problem solved**: Marginal Cost Frontier Charts show pure feature trends without contamination
@@ -45,6 +46,27 @@
 - **✅ REALISTIC MARGINAL COST STRUCTURE**: Piecewise segments displayed in coefficient table instead of fixed rates
 - **✅ FIXED RATES RANKING**: Ranking table now uses pure marginal coefficients from entire dataset for CS calculation
 - **✅ COMPREHENSIVE COEFFICIENT INVESTIGATION**: Systematic analysis of negative coefficient causes completed with definitive root cause identification
+- **✅ COEFFICIENT COMPARISON ENHANCEMENT**: Feature coefficient table now shows both unconstrained (raw) and constrained (bounded) values with difference calculation
+
+## 🔌 Endpoint Architecture
+**/ endpoint (Root HTML Interface)**:
+- **Purpose**: Visual interface for users to view processed rankings and charts
+- **Requirements**: Must have data processed via /process first
+- **Content**: Complete HTML report with ranking table, charts, and feature coefficient table
+- **Chart Status**: Shows individual loading states for each chart section if still calculating
+- **Data Source**: Uses global df_with_rankings from previous /process call
+- **Response**: Always returns HTML (immediate, never blocks for calculations)
+
+**/process endpoint (Data Processing API)**:
+- **Purpose**: Processes raw mobile plan data and calculates rankings using Cost-Spec analysis
+- **Input**: JSON array of mobile plan data
+- **Processing**: Preprocessing → Feature extraction → Coefficient calculation → Ranking → Store results
+- **Chart Calculation**: Triggers background async chart calculations (non-blocking)
+- **Response**: Immediate JSON with ranked plans and CS ratios
+- **Side Effect**: Populates global state for / endpoint to display
+
+**Testing Workflow**: `/process` for data processing → `/` for visual verification of results
+**Development Pattern**: Use `/process` endpoint for testing core functionality, check HTML results via `/` endpoint
 
 ## 🔧 Technical Implementation
 - **Data preparation**: `prepare_granular_marginal_cost_frontier_data()` function uses entire dataset for regression analysis
@@ -62,6 +84,24 @@
 - **✅ CHART Y-AXIS FIX**: Charts plot cumulative_cost instead of marginal_cost for proper visualization
 - **✅ FIXED RATES CS CALCULATION**: New method calculates CS ratios using pure coefficients without frontier filtering
 - **✅ DATA PIPELINE ANALYSIS**: Comprehensive investigation framework for diagnosing coefficient calculation issues
+- **✅ COEFFICIENT ENHANCEMENT**: `generate_feature_rates_table_html()` function shows unconstrained vs constrained coefficients with color-coded adjustment indicators
+
+## 🚨 Current Issues
+- **Feature coefficient table not displaying**: Table generation is working but cost_structure may be empty in the current data flow
+- **Data source verification needed**: Need to verify if cost_structure is being properly passed from coefficient calculation to HTML generation
+- **Multicollinearity issue**: voice_unlimited ↔ message_unlimited showing 96.8% correlation causing one coefficient to approach zero
+- **Coefficient redistribution**: Need to implement fair distribution of total value between highly correlated features
+
+## 📝 Feature Enhancement Details
+- **Unconstrained coefficients**: Raw OLS regression results without bounds constraints
+- **Constrained coefficients**: Final values after applying economic bounds (non-negative, minimum values)
+- **Adjustment display**: Green for upward adjustments, red for downward adjustments, gray for minimal changes
+- **Comparison format**: Side-by-side table with separate columns for before/after values and difference
+
+## 🔍 Information Sources
+- **User feedback**: Request for coefficient table with both raw and adjusted values for comparison
+- **Code enhancement**: Modified `_solve_constrained_regression()` to store unconstrained coefficients
+- **UI improvement**: Enhanced `generate_feature_rates_table_html()` with expanded table format
 
 ## 📈 Chart Types Available
 1. **Traditional Feature Frontier Charts**: Market-based trends (with contamination)

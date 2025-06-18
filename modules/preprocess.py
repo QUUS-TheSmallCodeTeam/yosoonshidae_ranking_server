@@ -75,9 +75,17 @@ def prepare_features(df):
     # Special values: 999, 9999 = unlimited, -1 = not applicable
     
     # Manual check before isin() operation to ensure they're compared as numbers
-    processed_df['basic_data_unlimited'] = processed_df['basic_data'].isin([999, 9999]).astype(int)
+    # Handle both raw 'basic_data' and already processed 'basic_data_clean' columns
+    if 'basic_data' in processed_df.columns:
+        processed_df['basic_data_unlimited'] = processed_df['basic_data'].isin([999, 9999]).astype(int)
+    elif 'basic_data_unlimited' not in processed_df.columns:
+        # If neither exists, create default unlimited flags
+        processed_df['basic_data_unlimited'] = 0
     # Extra safety for daily_data - ensure it's not None before comparison
-    processed_df['daily_data_unlimited'] = processed_df['daily_data'].fillna(0).isin([999, 9999]).astype(int)
+    if 'daily_data' in processed_df.columns:
+        processed_df['daily_data_unlimited'] = processed_df['daily_data'].fillna(0).isin([999, 9999]).astype(int)
+    elif 'daily_data_unlimited' not in processed_df.columns:
+        processed_df['daily_data_unlimited'] = 0
     
     print(f"Found {processed_df['basic_data_unlimited'].sum()} plans with unlimited basic data")
     print(f"Found {processed_df['daily_data_unlimited'].sum()} plans with unlimited daily data")
@@ -86,19 +94,29 @@ def prepare_features(df):
     # These will be used as replacements for unlimited values
     # Use extra safety to avoid errors with mixed types
     try:
-        max_basic_data = processed_df.loc[~processed_df['basic_data'].isin([999, 9999]), 'basic_data'].max()
+        if 'basic_data' in processed_df.columns:
+            max_basic_data = processed_df.loc[~processed_df['basic_data'].isin([999, 9999]), 'basic_data'].max()
+        elif 'basic_data_clean' in processed_df.columns:
+            max_basic_data = processed_df['basic_data_clean'].max()
+        else:
+            max_basic_data = 100
     except Exception as e:
         print(f"Error getting max_basic_data: {e}")
         max_basic_data = 100  # Default value
     
     try:
-        # Explicitly exclude nulls and handle with maximum care 
-        valid_daily_data = processed_df.loc[
-            (~processed_df['daily_data'].isin([999, 9999])) & 
-            (processed_df['daily_data'].notna()), 
-            'daily_data'
-        ]
-        max_daily_data = valid_daily_data.max() if not valid_daily_data.empty else 10
+        if 'daily_data' in processed_df.columns:
+            # Explicitly exclude nulls and handle with maximum care 
+            valid_daily_data = processed_df.loc[
+                (~processed_df['daily_data'].isin([999, 9999])) & 
+                (processed_df['daily_data'].notna()), 
+                'daily_data'
+            ]
+            max_daily_data = valid_daily_data.max() if not valid_daily_data.empty else 10
+        elif 'daily_data_clean' in processed_df.columns:
+            max_daily_data = processed_df['daily_data_clean'].max()
+        else:
+            max_daily_data = 10
     except Exception as e:
         print(f"Error getting max_daily_data: {e}")
         max_daily_data = 10  # Default value
@@ -115,17 +133,27 @@ def prepare_features(df):
     
     # FIXED: Zero out unlimited feature values to prevent double counting
     # For unlimited plans, set continuous value to 0 since we have separate unlimited flags
-    processed_df['basic_data_clean'] = np.where(
-        processed_df['basic_data_unlimited'] == 1,
-        0,  # Set to 0 for unlimited plans to prevent double counting
-        processed_df['basic_data'].replace({-1: 0})  # Keep actual values for limited plans
-    )
+    if 'basic_data_clean' not in processed_df.columns:
+        if 'basic_data' in processed_df.columns:
+            processed_df['basic_data_clean'] = np.where(
+                processed_df['basic_data_unlimited'] == 1,
+                0,  # Set to 0 for unlimited plans to prevent double counting
+                processed_df['basic_data'].replace({-1: 0})  # Keep actual values for limited plans
+            )
+        else:
+            # Data already processed, basic_data_clean should exist
+            if 'basic_data_clean' not in processed_df.columns:
+                processed_df['basic_data_clean'] = 0
     
-    processed_df['daily_data_clean'] = np.where(
-        processed_df['daily_data_unlimited'] == 1,
-        0,  # Set to 0 for unlimited plans to prevent double counting
-        processed_df['daily_data'].replace({-1: 0}).fillna(0)  # Keep actual values for limited plans
-    )
+    if 'daily_data_clean' not in processed_df.columns:
+        if 'daily_data' in processed_df.columns:
+            processed_df['daily_data_clean'] = np.where(
+                processed_df['daily_data_unlimited'] == 1,
+                0,  # Set to 0 for unlimited plans to prevent double counting
+                processed_df['daily_data'].replace({-1: 0}).fillna(0)  # Keep actual values for limited plans
+            )
+        else:
+            processed_df['daily_data_clean'] = 0
     
     # Add binary feature for presence of daily data allocation
     processed_df['has_daily_allocation'] = (processed_df['daily_data_clean'] > 0).astype(int)
@@ -231,7 +259,16 @@ def prepare_features(df):
     # - Other values are treated as actual quotas
     
     # Convert voice and message to numeric if they're strings
-    for col in ['voice', 'message']:
+    # Handle both raw and already processed columns
+    raw_cols = []
+    for base_col in ['voice', 'message']:
+        if base_col in processed_df.columns:
+            raw_cols.append(base_col)
+        elif f'{base_col}_clean' in processed_df.columns:
+            # Already processed, skip conversion
+            continue
+    
+    for col in raw_cols:
         if col in processed_df.columns and processed_df[col].dtype == 'object':
             # Try to convert strings to float/int, keeping NaN values
             try:
@@ -255,12 +292,29 @@ def prepare_features(df):
         return '999' in str(int(value))
     
     # Find maximum finite values for voice and message (excluding unlimited markers)
-    max_voice = processed_df.loc[~processed_df['voice'].apply(is_unlimited_marker) & (processed_df['voice'] != -1), 'voice'].max()
-    max_message = processed_df.loc[~processed_df['message'].apply(is_unlimited_marker) & (processed_df['message'] != -1), 'message'].max()
+    max_voice = 1000  # Default
+    max_message = 1000  # Default
+    
+    if 'voice' in processed_df.columns:
+        try:
+            max_voice = processed_df.loc[~processed_df['voice'].apply(is_unlimited_marker) & (processed_df['voice'] != -1), 'voice'].max()
+        except:
+            max_voice = 1000
+    elif 'voice_clean' in processed_df.columns:
+        max_voice = processed_df['voice_clean'].max()
+    
+    if 'message' in processed_df.columns:
+        try:
+            max_message = processed_df.loc[~processed_df['message'].apply(is_unlimited_marker) & (processed_df['message'] != -1), 'message'].max()
+        except:
+            max_message = 1000
+    elif 'message_clean' in processed_df.columns:
+        max_message = processed_df['message_clean'].max()
     
     # Create flags for unlimited and not applicable
     for col in ['voice', 'message']:
         if col in processed_df.columns:
+            # Process raw columns
             # Create flag for unlimited (anything with 999 in it)
             processed_df[f'{col}_unlimited'] = processed_df[col].apply(is_unlimited_marker).astype(int)
             # Create flag for not applicable
@@ -280,6 +334,11 @@ def prepare_features(df):
                     processed_df[col]  # Keep actual values for limited plans
                 )
             )
+        elif f'{col}_clean' not in processed_df.columns:
+            # If neither raw nor processed column exists, create defaults
+            processed_df[f'{col}_unlimited'] = 0
+            processed_df[f'{col}_na'] = 0
+            processed_df[f'{col}_clean'] = 0
     
     # 7. USIM fee status processing
     # Create binary features to distinguish between zero fees due to being unsupported vs. free

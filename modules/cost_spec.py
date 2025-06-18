@@ -776,8 +776,8 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
             coefficients = regressor.solve_full_dataset_coefficients(df)
             logger.info(f"Successfully solved fixed rate coefficients: {coefficients}")
             
-            # Calculate baselines using pure coefficients for ALL plans
-            baselines = np.full(len(df), coefficients[0])  # Start with base cost
+            # Calculate baselines using pure coefficients for ALL plans (no base cost)
+            baselines = np.zeros(len(df))  # Start from 0 (no base cost)
             
             for i, feature in enumerate(analysis_features):
                 if feature in df.columns:
@@ -1173,59 +1173,147 @@ class MultiFeatureFrontierRegression:
         X = np.array(X_data)
         y = np.array(y_data)
         
-        # Step 4: Solve constrained regression (all coefficients ≥ 0)
-        def objective(beta):
-            return np.sum((X @ beta - y) ** 2)
+        # Step 4: Solve constrained regression (Ridge disabled per user request)
+        if self.multicollinearity_detected:
+            logger.info("Multicollinearity detected but using constrained regression (Ridge disabled per user request)")
+        else:
+            logger.info("Using constrained least squares (no multicollinearity)")
         
-        # Bounds: all coefficients non-negative
-        bounds = [(0, None)] * len(X[0])
+        # Always use constrained regression
+        coefficients = self._solve_constrained_regression(X, y, analysis_features)
         
-        # Initial guess
-        try:
-            beta_ols = np.linalg.lstsq(X, y, rcond=None)[0]
-            initial_guess = np.maximum(beta_ols, 0)
-        except:
-            avg_cost = np.mean(y)
-            initial_guess = [avg_cost * 0.4] + [avg_cost * 0.1] * len(analysis_features)
+        # MULTICOLLINEARITY FIX: Handle high correlations by redistributing coefficients
+        if self.multicollinearity_detected and hasattr(self, 'correlation_matrix'):
+            coefficients = self._fix_multicollinearity_coefficients(coefficients, analysis_features)
         
-        # Solve optimization
-        from scipy.optimize import minimize
-        result = minimize(
-            objective,
-            x0=initial_guess,
-            method='trust-constr',
-            bounds=bounds,
-            options={'disp': False, 'maxiter': 1000}
-        )
-        
-        if not result.success:
-            logger.error(f"Multi-feature frontier regression failed: {result.message}")
-            raise RuntimeError("Failed to solve multi-feature frontier regression")
-        
-        self.coefficients = result.x
-        
-        # Validation logging
-        predicted = X @ self.coefficients
-        actual = y
-        mae = np.mean(np.abs(predicted - actual))
-        max_error = np.max(np.abs(predicted - actual))
-        
-        logger.info(f"Multi-feature frontier regression solved successfully:")
-        logger.info(f"  Base cost (β₀): ₩{self.coefficients[0]:,.0f}")
-        for i, feature in enumerate(analysis_features):
-            logger.info(f"  {feature} pure cost: ₩{self.coefficients[i+1]:,.2f}")
-        logger.info(f"  Used {len(frontier_plans)} frontier plans for regression")
-        logger.info(f"  Mean absolute error: ₩{mae:,.0f}")
-        logger.info(f"  Max absolute error: ₩{max_error:,.0f}")
+        self.coefficients = coefficients
         
         return self.coefficients
+
+    def _solve_constrained_regression(self, X: np.ndarray, y: np.ndarray, features: List[str]) -> np.ndarray:
+        """
+        Solve using constrained optimization.
+        No intercept - regression forced through origin.
+        """
+        # NO intercept column - force regression through origin
+        X_matrix = X
+        
+        def objective(beta):
+            return np.sum((X_matrix @ beta - y) ** 2)
+        
+        # First, solve unconstrained OLS for comparison
+        try:
+            from sklearn.linear_model import LinearRegression
+            ols_model = LinearRegression(fit_intercept=False)
+            ols_model.fit(X_matrix, y)
+            self.unconstrained_coefficients = ols_model.coef_
+            logger.info("Unconstrained OLS coefficients calculated for comparison")
+        except Exception as e:
+            logger.warning(f"Could not calculate unconstrained coefficients: {e}")
+            self.unconstrained_coefficients = None
+        
+        # Simplified bounds for faster convergence
+        usage_based_features = [
+            'basic_data_clean', 'daily_data_clean', 'voice_clean', 'message_clean', 
+            'tethering_gb', 'speed_when_exhausted'
+        ]
+        
+        bounds = []  # No intercept bound
+        for feature in features:
+            if feature in usage_based_features:
+                # Usage-based features: minimum ₩0.1 per unit (reduced for speed)
+                bounds.append((0.1, None))
+            elif feature == 'is_5g':
+                # 5G premium feature: minimum ₩100
+                bounds.append((100.0, None))
+            elif feature == 'additional_call':
+                # Additional call: minimum ₩0.1
+                bounds.append((0.1, None))
+            elif 'unlimited' in feature or 'throttled' in feature or 'has_unlimited' in feature:
+                # Unlimited/throttled features: minimum ₩100 (reduced from 1000 for speed)
+                bounds.append((100.0, 20000.0))
+            else:
+                # All other features: non-negative
+                bounds.append((0.0, None))
+        
+        # Store bounds for later reference
+        self.coefficient_bounds = bounds
+        
+        # Solve with bounds
+        try:
+            from scipy.optimize import minimize
+            
+            # Use initial guess of small positive values for faster convergence
+            initial_guess = np.ones(len(features)) * 10.0
+            
+            result = minimize(
+                objective, 
+                initial_guess, 
+                bounds=bounds,
+                method='L-BFGS-B',
+                options={'maxiter': 1000, 'ftol': 1e-6}  # Relaxed tolerance for speed
+            )
+            
+            if result.success:
+                # Return coefficients WITHOUT base cost (no intercept)
+                # Add 0 as base cost for compatibility with existing code structure
+                return np.concatenate([[0.0], result.x])
+            else:
+                raise ValueError(f"Optimization failed: {result.message}")
+                
+        except Exception as e:
+            raise ValueError(f"Constrained regression failed: {str(e)}")
+
+    def _fix_multicollinearity_coefficients(self, coefficients: np.ndarray, features: List[str]) -> np.ndarray:
+        """
+        Fix multicollinearity by redistributing coefficients for highly correlated features.
+        
+        Args:
+            coefficients: Original coefficients [β₀, β₁, β₂, ...]
+            features: List of feature names
+            
+        Returns:
+            Adjusted coefficients with redistributed values
+        """
+        if not hasattr(self, 'correlation_matrix') or self.correlation_matrix is None:
+            return coefficients
+        
+        fixed_coefficients = coefficients.copy()
+        
+        # Find high correlation pairs (threshold 0.8)
+        for i in range(len(features)):
+            for j in range(i+1, len(features)):
+                feature1 = features[i]
+                feature2 = features[j]
+                
+                if feature1 in self.correlation_matrix.index and feature2 in self.correlation_matrix.columns:
+                    corr_val = abs(self.correlation_matrix.loc[feature1, feature2])
+                    
+                    if corr_val > 0.8:  # High correlation
+                        # Get current coefficients (skip base cost at index 0)
+                        coeff1 = fixed_coefficients[i+1]
+                        coeff2 = fixed_coefficients[j+1]
+                        
+                        # Calculate total value and redistribute equally
+                        total_value = coeff1 + coeff2
+                        redistributed_value = total_value / 2
+                        
+                        logger.info(f"Redistributing coefficients for {feature1} ↔ {feature2} (correlation: {corr_val:.3f})")
+                        logger.info(f"  Before: {feature1}=₩{coeff1:,.2f}, {feature2}=₩{coeff2:,.2f}")
+                        logger.info(f"  After: {feature1}=₩{redistributed_value:,.2f}, {feature2}=₩{redistributed_value:,.2f}")
+                        
+                        # Apply redistribution
+                        fixed_coefficients[i+1] = redistributed_value
+                        fixed_coefficients[j+1] = redistributed_value
+        
+        return fixed_coefficients
     
     def get_coefficient_breakdown(self) -> dict:
         """
         Get coefficient breakdown for visualization.
         
         Returns:
-            Dictionary with coefficient information
+            Dictionary with coefficient information including both raw and constrained values
         """
         if self.coefficients is None:
             raise ValueError("Must solve coefficients first")
@@ -1235,16 +1323,33 @@ class MultiFeatureFrontierRegression:
         breakdown = {
             'base_cost': self.coefficients[0],
             'feature_costs': {},
-            'total_frontier_plans': len(self.frontier_plans) if self.frontier_plans is not None else 0,
-            'features_analyzed': len(analysis_features)
+            'total_plans_used': len(self.frontier_plans) if self.frontier_plans is not None else 0,
+            'outliers_removed': 0,
+            'features_analyzed': len(analysis_features),
+            'method': 'multi_frontier'
         }
         
+        # Include both unconstrained and constrained coefficients
         for i, feature in enumerate(analysis_features):
-            breakdown['feature_costs'][feature] = {
+            feature_data = {
                 'coefficient': self.coefficients[i+1],
-                'min_increment': self.min_increments.get(feature, 1),
                 'cost_per_unit': self.coefficients[i+1]
             }
+            
+            # Add unconstrained coefficient if available
+            if hasattr(self, 'unconstrained_coefficients') and self.unconstrained_coefficients is not None:
+                feature_data['unconstrained_coefficient'] = self.unconstrained_coefficients[i]
+            
+            # Add bounds information if available
+            if hasattr(self, 'coefficient_bounds') and self.coefficient_bounds is not None:
+                if i < len(self.coefficient_bounds):
+                    lower_bound, upper_bound = self.coefficient_bounds[i]
+                    feature_data['bounds'] = {
+                        'lower': lower_bound,
+                        'upper': upper_bound
+                    }
+            
+            breakdown['feature_costs'][feature] = feature_data
         
         return breakdown
 
@@ -1393,17 +1498,21 @@ class FullDatasetMultiFeatureRegression:
         # Always use constrained regression
         coefficients = self._solve_constrained_regression(X, y, analysis_features)
         
+        # MULTICOLLINEARITY FIX: Handle high correlations by redistributing coefficients
+        if self.multicollinearity_detected and hasattr(self, 'correlation_matrix'):
+            coefficients = self._fix_multicollinearity_coefficients(coefficients, analysis_features)
+        
         self.coefficients = coefficients
         
         # Validation logging (no intercept)
-        predicted = X @ self.coefficients[1:]  # Skip intercept (which is 0)
+        predicted = X @ self.coefficients[1:]  # Skip base cost (which is 0)
         actual = y
         mae = np.mean(np.abs(predicted - actual))
         max_error = np.max(np.abs(predicted - actual))
         rmse = np.sqrt(np.mean((predicted - actual) ** 2))
         
         logger.info(f"Full dataset multi-feature regression solved successfully:")
-        logger.info(f"  Base cost (β₀): ₩{self.coefficients[0]:,.0f}")
+        logger.info(f"  No base cost (β₀ = 0) - regression through origin")
         for i, feature in enumerate(analysis_features):
             logger.info(f"  {feature} cost: ₩{self.coefficients[i+1]:,.2f}")
         logger.info(f"  Used {len(df_clean)} plans (removed {self.outliers_removed} outliers)")
@@ -1425,8 +1534,18 @@ class FullDatasetMultiFeatureRegression:
         def objective(beta):
             return np.sum((X_matrix @ beta - y) ** 2)
         
-        # Selective bounds: usage-based features non-negative, unlimited features reasonable range
-        # NOTE: additional_call removed from usage_based constraints due to multicollinearity with unlimited features
+        # First, solve unconstrained OLS for comparison
+        try:
+            from sklearn.linear_model import LinearRegression
+            ols_model = LinearRegression(fit_intercept=False)
+            ols_model.fit(X_matrix, y)
+            self.unconstrained_coefficients = ols_model.coef_
+            logger.info("Unconstrained OLS coefficients calculated for comparison")
+        except Exception as e:
+            logger.warning(f"Could not calculate unconstrained coefficients: {e}")
+            self.unconstrained_coefficients = None
+        
+        # Simplified bounds for faster convergence
         usage_based_features = [
             'basic_data_clean', 'daily_data_clean', 'voice_clean', 'message_clean', 
             'tethering_gb', 'speed_when_exhausted'
@@ -1435,57 +1554,99 @@ class FullDatasetMultiFeatureRegression:
         bounds = []  # No intercept bound
         for feature in features:
             if feature in usage_based_features:
-                # Usage-based features must be positive (minimum ₩1 per unit)
-                bounds.append((1.0, None))
+                # Usage-based features: minimum ₩0.1 per unit (reduced for speed)
+                bounds.append((0.1, None))
             elif feature == 'is_5g':
                 # 5G premium feature: minimum ₩100
                 bounds.append((100.0, None))
             elif feature == 'additional_call':
-                # Additional call feature: minimum ₩1 per unit
-                bounds.append((1.0, None))
+                # Additional call: minimum ₩0.1
+                bounds.append((0.1, None))
+            elif 'unlimited' in feature or 'throttled' in feature or 'has_unlimited' in feature:
+                # Unlimited/throttled features: minimum ₩100 (reduced from 1000 for speed)
+                bounds.append((100.0, 20000.0))
             else:
-                # Unlimited/boolean features: non-negative reasonable range
-                bounds.append((0, 20000))
+                # All other features: non-negative
+                bounds.append((0.0, None))
         
-        # Initial guess
+        # Store bounds for later reference
+        self.coefficient_bounds = bounds
+        
+        # Solve with bounds
         try:
-            beta_ols = np.linalg.lstsq(X_matrix, y, rcond=None)[0]
-            initial_guess = beta_ols.copy()
-            # Respect bounds in initial guess
-            for i, (lower, upper) in enumerate(bounds):
-                if lower is not None and initial_guess[i] < lower:
-                    initial_guess[i] = lower
-                if upper is not None and initial_guess[i] > upper:
-                    initial_guess[i] = upper
-        except:
-            initial_guess = [100.0] * len(features)  # No intercept guess
-        
-        # Solve optimization
-        from scipy.optimize import minimize
-        result = minimize(
-            objective,
-            x0=initial_guess,
-            method='trust-constr',
-            bounds=bounds,
-            options={'disp': False, 'maxiter': 1000}
-        )
-        
-        if not result.success:
-            logger.error(f"Constrained regression failed: {result.message}")
-            # Fallback to Ridge regression
-            logger.info("Falling back to Ridge regression")
-            return self._solve_ridge_regression(X, y, features)
-        
-        # Add zero intercept at the beginning to match expected format
-        beta_with_intercept = np.concatenate([[0.0], result.x])
-        return beta_with_intercept
+            from scipy.optimize import minimize
+            
+            # Use initial guess of small positive values for faster convergence
+            initial_guess = np.ones(len(features)) * 10.0
+            
+            result = minimize(
+                objective, 
+                initial_guess, 
+                bounds=bounds,
+                method='L-BFGS-B',
+                options={'maxiter': 1000, 'ftol': 1e-6}  # Relaxed tolerance for speed
+            )
+            
+            if result.success:
+                # Return coefficients WITHOUT base cost (no intercept)
+                # Add 0 as base cost for compatibility with existing code structure
+                return np.concatenate([[0.0], result.x])
+            else:
+                raise ValueError(f"Optimization failed: {result.message}")
+                
+        except Exception as e:
+            raise ValueError(f"Constrained regression failed: {str(e)}")
 
+    def _fix_multicollinearity_coefficients(self, coefficients: np.ndarray, features: List[str]) -> np.ndarray:
+        """
+        Fix multicollinearity by redistributing coefficients for highly correlated features.
+        
+        Args:
+            coefficients: Original coefficients [β₀, β₁, β₂, ...]
+            features: List of feature names
+            
+        Returns:
+            Adjusted coefficients with redistributed values
+        """
+        if not hasattr(self, 'correlation_matrix') or self.correlation_matrix is None:
+            return coefficients
+        
+        fixed_coefficients = coefficients.copy()
+        
+        # Find high correlation pairs (threshold 0.8)
+        for i in range(len(features)):
+            for j in range(i+1, len(features)):
+                feature1 = features[i]
+                feature2 = features[j]
+                
+                if feature1 in self.correlation_matrix.index and feature2 in self.correlation_matrix.columns:
+                    corr_val = abs(self.correlation_matrix.loc[feature1, feature2])
+                    
+                    if corr_val > 0.8:  # High correlation
+                        # Get current coefficients (skip base cost at index 0)
+                        coeff1 = fixed_coefficients[i+1]
+                        coeff2 = fixed_coefficients[j+1]
+                        
+                        # Calculate total value and redistribute equally
+                        total_value = coeff1 + coeff2
+                        redistributed_value = total_value / 2
+                        
+                        logger.info(f"Redistributing coefficients for {feature1} ↔ {feature2} (correlation: {corr_val:.3f})")
+                        logger.info(f"  Before: {feature1}=₩{coeff1:,.2f}, {feature2}=₩{coeff2:,.2f}")
+                        logger.info(f"  After: {feature1}=₩{redistributed_value:,.2f}, {feature2}=₩{redistributed_value:,.2f}")
+                        
+                        # Apply redistribution
+                        fixed_coefficients[i+1] = redistributed_value
+                        fixed_coefficients[j+1] = redistributed_value
+        
+        return fixed_coefficients
+    
     def get_coefficient_breakdown(self) -> dict:
         """
         Get coefficient breakdown for visualization.
         
         Returns:
-            Dictionary with coefficient information
+            Dictionary with coefficient information including both raw and constrained values
         """
         if self.coefficients is None:
             raise ValueError("Must solve coefficients first")
@@ -1493,7 +1654,7 @@ class FullDatasetMultiFeatureRegression:
         analysis_features = [f for f in self.features if f in self.all_plans.columns]
         
         breakdown = {
-            'base_cost': self.coefficients[0],
+            'base_cost': 0.0,  # No base cost - regression through origin
             'feature_costs': {},
             'total_plans_used': len(self.all_plans) if self.all_plans is not None else 0,
             'outliers_removed': self.outliers_removed,
@@ -1501,10 +1662,26 @@ class FullDatasetMultiFeatureRegression:
             'method': 'full_dataset'
         }
         
+        # Include both unconstrained and constrained coefficients
         for i, feature in enumerate(analysis_features):
-            breakdown['feature_costs'][feature] = {
+            feature_data = {
                 'coefficient': self.coefficients[i+1],
                 'cost_per_unit': self.coefficients[i+1]
             }
+            
+            # Add unconstrained coefficient if available
+            if hasattr(self, 'unconstrained_coefficients') and self.unconstrained_coefficients is not None:
+                feature_data['unconstrained_coefficient'] = self.unconstrained_coefficients[i]
+            
+            # Add bounds information if available
+            if hasattr(self, 'coefficient_bounds') and self.coefficient_bounds is not None:
+                if i < len(self.coefficient_bounds):
+                    lower_bound, upper_bound = self.coefficient_bounds[i]
+                    feature_data['bounds'] = {
+                        'lower': lower_bound,
+                        'upper': upper_bound
+                    }
+            
+            breakdown['feature_costs'][feature] = feature_data
         
         return breakdown 
