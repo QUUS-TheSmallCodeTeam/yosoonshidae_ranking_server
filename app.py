@@ -33,8 +33,7 @@ from modules import (
     rank_plans_by_cs_enhanced
 )
 
-# Import validation functions
-from modules.cost_spec import calculate_multiple_coefficient_sets
+# Validation imports removed
 
 # Initialize FastAPI
 app = FastAPI(title="Moyo Plan Ranking Model Server - Enhanced Cost-Spec Method")
@@ -70,6 +69,22 @@ def start_log_monitoring():
 @app.on_event("startup")
 async def startup_event():
     """Initialize monitoring on app startup"""
+    # Load existing chart data if available
+    try:
+        from modules import data_storage
+        _, _, _, existing_charts = data_storage.load_rankings_data()
+        if existing_charts:
+            # Update chart_calculation_statuses with existing data
+            for chart_type in chart_types:
+                if chart_type in existing_charts and existing_charts[chart_type] is not None:
+                    update_chart_status(chart_type, status='ready', progress=100, data=existing_charts[chart_type])
+                    logger.info(f"Loaded existing chart data for {chart_type}")
+            logger.info(f"Successfully loaded existing charts: {[k for k, v in existing_charts.items() if v is not None]}")
+        else:
+            logger.info("No existing chart data found")
+    except Exception as e:
+        logger.error(f"Failed to load existing chart data: {e}")
+    
     # Wait a moment for the server to fully start
     def delayed_start():
         time.sleep(3)  # Wait 3 seconds for server to be ready
@@ -81,7 +96,7 @@ async def startup_event():
 
 # Global variables for storing data (using config module instead of global variables)
 latest_logical_test_results_cache = None  # For storing logical test results
-validation_results_cache = None  # For storing validation results
+# Validation cache removed
 
 # Individual chart calculation statuses with threading
 from concurrent.futures import ThreadPoolExecutor
@@ -105,19 +120,11 @@ chart_calculation_statuses = {
     } for chart_type in chart_types
 }
 
-# Add validation status tracking
-validation_status = {
-    'is_calculating': False,
-    'last_calculation_time': None,
-    'calculation_progress': 0,
-    'error_message': None,
-    'validation_results': None,
-    'status': 'idle'  # idle, calculating, ready, error
-}
+# Validation status tracking removed
 
 chart_calculation_lock = threading.Lock()
 chart_executor = ThreadPoolExecutor(max_workers=len(chart_types), thread_name_prefix="chart_worker")
-validation_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="validation_worker")
+# Validation executor removed
 
 def update_chart_status(chart_type, status=None, progress=None, error=None, data=None):
     """Thread-safe update of chart status"""
@@ -257,24 +264,7 @@ async def calculate_charts_async(df_ranked, method, cost_structure, request_id):
         for chart_type in chart_types:
             update_chart_status(chart_type, error=str(e))
 
-def update_validation_status(status=None, progress=None, error=None, results=None):
-    """Thread-safe update of validation status"""
-    global validation_status, validation_results_cache
-    with chart_calculation_lock:
-        if status is not None:
-            validation_status['status'] = status
-            validation_status['is_calculating'] = (status == 'calculating')
-        if progress is not None:
-            validation_status['calculation_progress'] = progress
-        if error is not None:
-            validation_status['error_message'] = str(error)
-            validation_status['status'] = 'error'
-        if results is not None:
-            validation_status['validation_results'] = results
-            validation_results_cache = results
-        if status == 'ready':
-            validation_status['last_calculation_time'] = datetime.now()
-            validation_status['calculation_progress'] = 100
+# Validation status update function removed
 
 def calculate_and_save_charts_background(df_ranked, method, cost_structure, request_id):
     """
@@ -283,7 +273,36 @@ def calculate_and_save_charts_background(df_ranked, method, cost_structure, requ
     try:
         logger.info(f"[{request_id}] Starting background chart calculations...")
         
-        # Calculate charts data
+        # Start calculating each chart type and update their statuses
+        chart_types_list = ['feature_frontier', 'plan_efficiency']
+        
+        for i, chart_type in enumerate(chart_types_list):
+            try:
+                # Update status to calculating
+                update_chart_status(chart_type, status='calculating', progress=0)
+                logger.info(f"[{request_id}] Starting {chart_type} calculation...")
+                
+                # Calculate this specific chart
+                if chart_type == 'feature_frontier':
+                    from modules.report_charts import prepare_feature_frontier_data
+                    core_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb']
+                    chart_data = prepare_feature_frontier_data(df_ranked, core_features)
+                elif chart_type == 'plan_efficiency':
+                    from modules.report_html import prepare_plan_efficiency_data
+                    chart_data = prepare_plan_efficiency_data(df_ranked, method)
+                else:
+                    chart_data = None
+                
+                # Update progress
+                progress = int((i + 1) / len(chart_types_list) * 100)
+                update_chart_status(chart_type, status='ready', progress=progress, data=chart_data)
+                logger.info(f"[{request_id}] ✓ {chart_type} calculation completed")
+                
+            except Exception as e:
+                logger.error(f"[{request_id}] Failed to calculate {chart_type}: {str(e)}")
+                update_chart_status(chart_type, status='error', error=str(e))
+        
+        # Calculate all charts data for file storage
         charts_data = data_storage.calculate_and_save_charts(df_ranked, method, cost_structure)
         
         # Load existing data and update with charts
@@ -301,28 +320,11 @@ def calculate_and_save_charts_background(df_ranked, method, cost_structure, requ
             
     except Exception as e:
         logger.error(f"[{request_id}] Error in background chart calculation: {str(e)}")
+        # Update all chart statuses to error
+        for chart_type in ['feature_frontier', 'plan_efficiency']:
+            update_chart_status(chart_type, status='error', error=str(e))
 
-def calculate_validation_async(df, method, feature_set, fee_column, tolerance, request_id):
-    """Calculate validation in background"""
-    try:
-        update_validation_status(status='calculating', progress=10)
-        logger.info(f"[{request_id}] Started background validation calculation")
-        
-        update_validation_status(progress=30)
-        validation_results = calculate_multiple_coefficient_sets(
-            df,
-            method=method,
-            feature_set=feature_set,
-            fee_column=fee_column,
-            tolerance=tolerance
-        )
-        
-        update_validation_status(status='ready', progress=100, results=validation_results)
-        logger.info(f"[{request_id}] Background validation calculation completed")
-        
-    except Exception as e:
-        logger.error(f"[{request_id}] Error in background validation: {str(e)}")
-        update_validation_status(error=str(e), progress=0)
+# Validation system removed - only chart calculation in background
 
 # Data model for plan input 
 class PlanData(BaseModel):
@@ -678,25 +680,11 @@ def process_data(data: Any = Body(...)):
             },
             "top_10_plans": convert_numpy_types(top_10_plans),
             "all_ranked_plans": convert_numpy_types(all_ranked_plans),
-            "validation_status": "calculating",  # Validation started in background
             "chart_status": "calculating"  # Charts will be calculated in background
         }
         
-        # Start background tasks AFTER response is prepared (validation + charts)
-        import asyncio
+        # Start background chart calculation AFTER response is prepared
         try:
-            # Start validation calculation in background
-            validation_task = validation_executor.submit(
-                calculate_validation_async, 
-                processed_df.copy(), 
-                method, 
-                feature_set, 
-                fee_column, 
-                tolerance, 
-                request_id
-            )
-            logger.info(f"[{request_id}] Started background validation task")
-            
             # Start chart calculation in background and save to files when complete
             chart_calculation_task = chart_executor.submit(
                 calculate_and_save_charts_background,
@@ -708,8 +696,7 @@ def process_data(data: Any = Body(...)):
             logger.info(f"[{request_id}] Started background chart calculation task")
             
         except Exception as e:
-            logger.error(f"[{request_id}] Failed to start background tasks: {str(e)}")
-            response["validation_status"] = "failed_to_start"
+            logger.error(f"[{request_id}] Failed to start background chart task: {str(e)}")
             response["chart_status"] = "failed_to_start"
             response["background_error"] = str(e)
         
@@ -718,71 +705,59 @@ def process_data(data: Any = Body(...)):
         logger.exception(f"[{request_id}] Error in /process: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing data: {str(e)}")
 
-@app.get("/validation-status")
-def get_validation_status():
-    """
-    Get the current status of validation calculation.
-    """
-    global validation_status, validation_results_cache
-    with chart_calculation_lock:
-        status = validation_status.copy()
-    
-    # Add validation results if available
-    if validation_results_cache:
-        status['validation_results'] = validation_results_cache
-    
-    return status
-
-@app.get("/validation-results")
-def get_validation_results():
-    """
-    Get the validation results if ready.
-    """
-    global validation_status, validation_results_cache
-    with chart_calculation_lock:
-        status = validation_status.copy()
-    
-    if status['status'] != 'ready':
-        raise HTTPException(
-            status_code=409, 
-            detail=f"Validation is not ready. Current status: {status['status']}"
-        )
-    
-    return {
-        "status": status['status'],
-        "validation_results": validation_results_cache,
-        "last_calculation_time": status['last_calculation_time']
-    }
+# Validation endpoints removed
 
 @app.get("/chart-status")
 def get_chart_status():
     """
     Get the current status of all individual chart calculations.
     """
-    with chart_calculation_lock:
-        statuses = chart_calculation_statuses.copy()
-    
-    # Add summary information
-    total_charts = len(chart_types)
-    ready_charts = sum(1 for status in statuses.values() if status['status'] == 'ready')
-    calculating_charts = sum(1 for status in statuses.values() if status['status'] == 'calculating')
-    error_charts = sum(1 for status in statuses.values() if status['status'] == 'error')
-    
-    overall_progress = (ready_charts / total_charts) * 100 if total_charts > 0 else 0
-    
-    return {
-        "individual_charts": statuses,
-        "summary": {
-            "total_charts": total_charts,
-            "ready_charts": ready_charts,
-            "calculating_charts": calculating_charts,
-            "error_charts": error_charts,
-            "overall_progress": round(overall_progress, 1),
-            "all_ready": ready_charts == total_charts,
-            "any_calculating": calculating_charts > 0,
-            "any_errors": error_charts > 0
+    try:
+        with chart_calculation_lock:
+            statuses = chart_calculation_statuses.copy()
+        
+        # Convert datetime objects to strings for JSON serialization
+        for chart_type, status in statuses.items():
+            if status.get('last_calculation_time') and hasattr(status['last_calculation_time'], 'isoformat'):
+                statuses[chart_type]['last_calculation_time'] = status['last_calculation_time'].isoformat()
+        
+        # Add summary information
+        total_charts = len(chart_types)
+        ready_charts = sum(1 for status in statuses.values() if status['status'] == 'ready')
+        calculating_charts = sum(1 for status in statuses.values() if status['status'] == 'calculating')
+        error_charts = sum(1 for status in statuses.values() if status['status'] == 'error')
+        
+        overall_progress = (ready_charts / total_charts) * 100 if total_charts > 0 else 0
+        
+        return {
+            "individual_charts": statuses,
+            "summary": {
+                "total_charts": total_charts,
+                "ready_charts": ready_charts,
+                "calculating_charts": calculating_charts,
+                "error_charts": error_charts,
+                "overall_progress": round(overall_progress, 1),
+                "all_ready": ready_charts == total_charts,
+                "any_calculating": calculating_charts > 0,
+                "any_errors": error_charts > 0
+            }
         }
-    }
+    except Exception as e:
+        logger.error(f"Error in get_chart_status: {str(e)}")
+        return {
+            "individual_charts": {},
+            "summary": {
+                "total_charts": 0,
+                "ready_charts": 0,
+                "calculating_charts": 0,
+                "error_charts": 0,
+                "overall_progress": 0,
+                "all_ready": False,
+                "any_calculating": False,
+                "any_errors": True
+            },
+            "error": str(e)
+        }
 
 @app.get("/chart-status/{chart_type}")
 def get_single_chart_status(chart_type: str):
@@ -840,7 +815,7 @@ def get_status_page():
     
     status = {chart_type: status.copy() for chart_type, status in chart_calculation_statuses.items()}
     
-    if any(status['is_calculating'] for status in status.values()):
+    if any(status['status'] == 'calculating' for status in status.values()):
         status_icon = "⚙️"
         status_text = f"Calculating charts... {sum(status['calculation_progress'] for status in status.values())}%"
         status_color = "#007bff"

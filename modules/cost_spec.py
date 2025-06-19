@@ -2639,10 +2639,7 @@ def calculate_multiple_coefficient_sets(df: pd.DataFrame, method: str = 'fixed_r
             X = df[analysis_features].values
             y = df[fee_column].values
             
-            # 검증 수행
-            validation_report = regressor.comprehensive_model_validation(
-                df, X, y, coefficients, analysis_features, regressor.coefficient_bounds
-            )
+            # Validation removed - only coefficient calculation
             
             # 결과 저장
             coefficient_results[method_name] = {
@@ -2652,28 +2649,23 @@ def calculate_multiple_coefficient_sets(df: pd.DataFrame, method: str = 'fixed_r
                 'cost_breakdown': regressor.get_coefficient_breakdown()
             }
             
-            validation_results[method_name] = validation_report
+            # Validation results removed
             
-            score = validation_report.get('overall_score', {}).get('total_score', 0)
-            logger.info(f"  ✓ {method_name}: Score {score}/100 ({validation_report.get('overall_score', {}).get('grade', 'F')})")
+            logger.info(f"  ✓ {method_name}: Coefficients calculated successfully")
             
         except Exception as e:
             logger.error(f"  ✗ {method_name} failed: {str(e)}")
             coefficient_results[method_name] = {'error': str(e)}
-            validation_results[method_name] = {'error': str(e), 'overall_score': {'total_score': 0, 'grade': 'F'}}
     
-    # 최고 방법 선택
-    best_score = 0
+    # Select first successful method as default
     best_method = None
-    for method_name, validation in validation_results.items():
-        score = validation.get('overall_score', {}).get('total_score', 0)
-        if score > best_score:
-            best_score = score
+    for method_name, result in coefficient_results.items():
+        if 'coefficients' in result and 'error' not in result:
             best_method = method_name
+            break
     
     multiple_results['best_method'] = best_method
     multiple_results['method_comparisons'] = coefficient_results
-    multiple_results['validation_comparisons'] = validation_results
     
     # Consensus coefficients 계산 (성공한 방법들의 평균)
     successful_methods = [name for name, result in coefficient_results.items() 
@@ -2749,6 +2741,6 @@ def calculate_multiple_coefficient_sets(df: pd.DataFrame, method: str = 'fixed_r
         
         multiple_results['method_correlations'] = correlation_matrix
     
-    logger.info(f"🏆 Best performing method: {best_method} (Score: {best_score}/100)")
+    logger.info(f"🏆 Selected method: {best_method}")
     
     return multiple_results

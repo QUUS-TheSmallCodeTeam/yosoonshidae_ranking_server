@@ -1131,7 +1131,12 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
         <div class="container">
             <h1>모바일 요금제 랭킹</h1>
             <h2>Cost-Spec Ratio 모델</h2>
-            <p>생성일: {timestamp_str}</p>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
+                <p style="margin: 0;">생성일: {timestamp_str}</p>
+                <button onclick="refreshPage()" style="background-color: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-size: 14px;">
+                    🔄 새로고침
+                </button>
+            </div>
             
             {no_data_message}
             
@@ -1168,18 +1173,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 <div id="featureCharts" class="chart-grid" style="{'display:none;' if get_chart_status_html('feature_frontier', 'featureCharts') else ''}"></div>
             </div>
             
-            <!-- Model Validation Results -->
-            <div class="charts-wrapper">
-                <h2>🔬 Model Validation & Reliability Analysis</h2>
-                <div class="note">
-                    <p><strong>종합적 검증:</strong> 여러 계수 계산 방법으로 모델의 신뢰성과 경제적 타당성을 종합 검증합니다.</p>
-                    <p><strong>검증 항목:</strong> 최적화 일관성, 경제적 논리, 예측력, 잔차 품질을 각각 분석하여 0-100점으로 평가합니다.</p>
-                    <p><strong>신뢰도 분석:</strong> 다중 방법간 계수 일치도를 통해 결과의 안정성을 확인합니다.</p>
-                </div>
-                <div id="validationResults">
-                    <!-- Validation results will be filled by JavaScript -->
-                </div>
-            </div>
+            <!-- Model Validation section removed -->
             
             <!-- Plan Value Efficiency Matrix -->
             <div class="charts-wrapper">
@@ -1208,8 +1202,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
             // Feature frontier data from Python
             const featureFrontierData = __FEATURE_FRONTIER_JSON__;
             
-            // Validation results data from Python
-            const validationResultsData = __VALIDATION_RESULTS_JSON__;
+            // Validation results data removed
             
             // Cost structure data from Python (multi-frontier method)
             const advancedAnalysisData = __ADVANCED_ANALYSIS_JSON__;
@@ -1412,248 +1405,10 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     console.log('No plan efficiency data available');
                 }
                 
-                // Create validation results display
-                if (validationResultsData && validationResultsData !== null) {
-                    console.log('Creating validation results display...');
-                    displayValidationResults(validationResultsData);
-                } else {
-                    console.log('No validation results data available');
-                    const validationContainer = document.getElementById('validationResults');
-                    if (validationContainer) {
-                        validationContainer.innerHTML = '<p style="text-align: center; color: #666; padding: 40px;">검증 결과가 아직 준비되지 않았습니다.</p>';
-                    }
-                }
+                // Validation results display removed
             });
             
-            // Function to display validation results
-            function displayValidationResults(data) {
-                console.log('displayValidationResults called with data:', data);
-                
-                const container = document.getElementById('validationResults');
-                if (!container) {
-                    console.log('Validation results container not found');
-                    return;
-                }
-                
-                let html = '';
-                
-                // Overall summary
-                const bestMethod = data.best_method;
-                const overallReliability = data.overall_reliability_score || 0;
-                
-                html += `
-                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
-                        <h3 style="margin: 0 0 10px 0;">🏆 종합 검증 결과</h3>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                            <div>
-                                <div style="font-size: 1.2em; font-weight: bold;">최고 성능 방법</div>
-                                <div style="font-size: 1.5em;">${bestMethod || 'N/A'}</div>
-                            </div>
-                            <div>
-                                <div style="font-size: 1.2em; font-weight: bold;">계수 신뢰도</div>
-                                <div style="font-size: 1.5em;">${overallReliability.toFixed(1)}/100</div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                
-                // Method comparison table
-                if (data.validation_comparisons) {
-                    html += `
-                        <div style="margin-bottom: 30px;">
-                            <h3>📊 방법별 성능 비교</h3>
-                            <div style="overflow-x: auto;">
-                                <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
-                                    <thead>
-                                        <tr style="background-color: #f8f9fa;">
-                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: left;">방법</th>
-                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">총점</th>
-                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">등급</th>
-                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">최적화</th>
-                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">경제성</th>
-                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">예측력</th>
-                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">잔차</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                    `;
-                    
-                    for (const [method, validation] of Object.entries(data.validation_comparisons)) {
-                        const overall = validation.overall_score || {};
-                        const totalScore = overall.total_score || 0;
-                        const grade = overall.grade || 'F';
-                        const breakdown = overall.score_breakdown || {};
-                        
-                        const gradeColor = grade === 'A' ? '#28a745' : 
-                                         grade === 'B' ? '#17a2b8' : 
-                                         grade === 'C' ? '#ffc107' : 
-                                         grade === 'D' ? '#fd7e14' : '#dc3545';
-                        
-                        html += `
-                            <tr style="${method === bestMethod ? 'background-color: #fff3cd;' : ''}">
-                                <td style="padding: 12px; border: 1px solid #ddd; font-weight: ${method === bestMethod ? 'bold' : 'normal'};">
-                                    ${method}${method === bestMethod ? ' 🏆' : ''}
-                                </td>
-                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: bold;">
-                                    ${totalScore.toFixed(1)}
-                                </td>
-                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
-                                    <span style="background-color: ${gradeColor}; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;">
-                                        ${grade}
-                                    </span>
-                                </td>
-                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
-                                    ${breakdown.optimization_consistency || 'N/A'}
-                                </td>
-                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
-                                    ${breakdown.economic_logic || 'N/A'}
-                                </td>
-                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
-                                    ${breakdown.prediction_power || 'N/A'}
-                                </td>
-                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
-                                    ${breakdown.residual_quality || 'N/A'}
-                                </td>
-                            </tr>
-                        `;
-                    }
-                    
-                    html += `
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    `;
-                }
-                
-                // Consensus coefficients reliability
-                if (data.consensus_coefficients) {
-                    html += `
-                        <div style="margin-bottom: 30px;">
-                            <h3>🎯 계수 신뢰도 분석</h3>
-                            <div style="overflow-x: auto;">
-                                <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
-                                    <thead>
-                                        <tr style="background-color: #f8f9fa;">
-                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: left;">기능</th>
-                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">평균 계수</th>
-                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">표준편차</th>
-                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">변동계수</th>
-                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">일치도</th>
-                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">신뢰성</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                    `;
-                    
-                    for (const [feature, consensus] of Object.entries(data.consensus_coefficients)) {
-                        const reliability = data.reliability_analysis[feature] || {};
-                        const cv = consensus.coefficient_of_variation || 0;
-                        const reliabilityColor = cv < 0.05 ? '#28a745' : cv < 0.15 ? '#ffc107' : '#dc3545';
-                        
-                        html += `
-                            <tr>
-                                <td style="padding: 12px; border: 1px solid #ddd;">${feature}</td>
-                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
-                                    ₩${consensus.mean.toFixed(2)}
-                                </td>
-                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
-                                    ±${consensus.std.toFixed(2)}
-                                </td>
-                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
-                                    ${(cv * 100).toFixed(1)}%
-                                </td>
-                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
-                                    <span style="background-color: ${reliabilityColor}; color: white; padding: 4px 8px; border-radius: 4px;">
-                                        ${reliability.agreement_level || 'Unknown'}
-                                    </span>
-                                </td>
-                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
-                                    ${consensus.is_reliable ? '✅' : '❌'}
-                                </td>
-                            </tr>
-                        `;
-                    }
-                    
-                    html += `
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div style="font-size: 0.9em; color: #666; margin-top: 10px;">
-                                <p><strong>해석:</strong> 변동계수가 낮을수록 방법간 일치도가 높습니다. 5% 미만(녹색)은 매우 신뢰할만하고, 15% 이상(빨간색)은 주의가 필요합니다.</p>
-                            </div>
-                        </div>
-                    `;
-                }
-                
-                // Best method detailed analysis
-                if (bestMethod && data.validation_comparisons[bestMethod]) {
-                    const bestValidation = data.validation_comparisons[bestMethod];
-                    
-                    html += `
-                        <div style="margin-bottom: 30px;">
-                            <h3>🥇 최고 성능 방법 상세 분석: ${bestMethod}</h3>
-                    `;
-                    
-                    // Economic logic details
-                    if (bestValidation.economic_logic) {
-                        const econ = bestValidation.economic_logic;
-                        html += `
-                            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0;">
-                                <h4 style="margin: 0 0 10px 0;">💰 경제적 타당성 검증</h4>
-                        `;
-                        
-                        if (econ.scale_check) {
-                            const check = econ.scale_check;
-                            html += `
-                                <p><strong>스케일 검증:</strong> 
-                                    5G 프리미엄 (₩${check.fiveg_premium.toFixed(2)}) vs 데이터 1GB (₩${check.data_per_gb.toFixed(2)}) - 
-                                    ${check.makes_sense ? '✅ 합리적' : '❌ 문제있음'}
-                                </p>
-                            `;
-                        }
-                        
-                        if (econ.premium_check) {
-                            const check = econ.premium_check;
-                            html += `
-                                <p><strong>프리미엄 검증:</strong> 
-                                    테더링 (₩${check.tethering_per_gb.toFixed(2)}/GB) vs 음성 (₩${check.voice_per_min.toFixed(2)}/분) - 
-                                    ${check.makes_sense ? '✅ 합리적' : '❌ 문제있음'}
-                                </p>
-                            `;
-                        }
-                        
-                        if (econ.positive_check) {
-                            const check = econ.positive_check;
-                            html += `
-                                <p><strong>양수 검증:</strong> 
-                                    음수 계수 ${check.negative_count}개, 영 계수 ${check.zero_count}개 - 
-                                    ${check.all_positive ? '✅ 모든 계수 양수' : '❌ 문제 계수 존재'}
-                                </p>
-                            `;
-                        }
-                        
-                        html += '</div>';
-                    }
-                    
-                    // Prediction power details
-                    if (bestValidation.prediction_power) {
-                        const pred = bestValidation.prediction_power;
-                        html += `
-                            <div style="background-color: #e7f3ff; padding: 15px; border-radius: 8px; margin: 10px 0;">
-                                <h4 style="margin: 0 0 10px 0;">🎯 예측력 검증 (5-Fold Cross-Validation)</h4>
-                                <p><strong>평균 R² 점수:</strong> ${(pred.mean_r2 * 100).toFixed(1)}% (표준편차: ${(pred.std_r2 * 100).toFixed(1)}%)</p>
-                                <p><strong>평균 절대 오차:</strong> ₩${pred.mean_mae.toFixed(0)} (표준편차: ₩${pred.std_mae.toFixed(0)})</p>
-                                <p><strong>안정성:</strong> ${pred.is_stable ? '✅ 안정적' : '❌ 불안정'}</p>
-                            </div>
-                        `;
-                    }
-                    
-                    html += '</div>';
-                }
-                
-                container.innerHTML = html;
-            }
+            // All validation related JavaScript code removed
             
             // Function to create cost structure charts
             function createCostStructureCharts(data) {
@@ -2360,6 +2115,11 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
             });
             
             // Smart refresh functions to avoid unnecessary full page reloads
+            function refreshPage() {
+                console.log('Refreshing page to load latest data...');
+                window.location.reload();
+            }
+            
             function checkDataAndRefresh() {
                 console.log('Checking data status...');
                 // Simple reload - but user understands this is data checking, not automatic restart
@@ -2424,16 +2184,10 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     # Linear decomposition chart removed per user request
     html = html.replace('{all_plans_html}', all_plans_html)
 
-    # Prepare validation results JSON
-    validation_results_data = None
-    if df is not None and hasattr(df, 'attrs') and 'validation_report' in df.attrs:
-        validation_results_data = df.attrs['validation_report']
-    
-    validation_results_json = json.dumps(validation_results_data, ensure_ascii=False, cls=NumpyEncoder)
+    # Validation results JSON removed
     
     # Replace JSON placeholders safely
     html = html.replace('__FEATURE_FRONTIER_JSON__', feature_frontier_json)
-    html = html.replace('__VALIDATION_RESULTS_JSON__', validation_results_json)
     html = html.replace('__ADVANCED_ANALYSIS_JSON__', advanced_analysis_json)
     # Linear decomposition JSON removed per user request
     html = html.replace('__PLAN_EFFICIENCY_JSON__', plan_efficiency_json)
