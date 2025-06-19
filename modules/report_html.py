@@ -549,7 +549,7 @@ def generate_feature_rates_table_html(cost_structure):
     
     return table_html
 
-def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings", is_cs=True, title=None, method=None, cost_structure=None, chart_statuses=None):
+def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings", is_cs=True, title=None, method=None, cost_structure=None, chart_statuses=None, charts_data=None):
     """
     Generate a full HTML report with plan rankings and feature frontier charts.
     
@@ -562,6 +562,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
         method: Cost-Spec method used ('linear_decomposition' or 'frontier')
         cost_structure: Cost structure dictionary from linear decomposition
         chart_statuses: Dictionary with individual chart statuses for loading states
+        charts_data: Pre-calculated charts data from file storage
         
     Returns:
         HTML string for the complete report
@@ -605,6 +606,52 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
             </style>
             """
         
+        # Check if pre-calculated charts data is available
+        if charts_data and chart_type in charts_data and charts_data[chart_type] is not None:
+            return ""  # Chart data is ready, show chart normally
+        
+        # If no charts data but have ranking data, show calculating message
+        if not charts_data:
+            return f"""
+            <div class="chart-calculating-overlay" id="{chart_div_id}_calculating">
+                <div class="calculating-content">
+                    <div class="calculating-icon">⚙️</div>
+                    <p>차트 계산 중...</p>
+                    <p style="font-size: 0.9em; color: #666;">
+                        백그라운드에서 차트를 생성하고 있습니다. 잠시 후 새로고침해주세요.
+                    </p>
+                </div>
+            </div>
+            <style>
+            .chart-calculating-overlay {{
+                position: relative;
+                min-height: 300px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #f8f9fa;
+                border: 1px dashed #ffc107;
+                border-radius: 8px;
+                margin: 20px 0;
+            }}
+            .calculating-content {{
+                text-align: center;
+                padding: 40px;
+                color: #856404;
+            }}
+            .calculating-icon {{
+                font-size: 48px;
+                animation: spin 2s linear infinite;
+                margin-bottom: 20px;
+            }}
+            @keyframes spin {{
+                0% {{ transform: rotate(0deg); }}
+                100% {{ transform: rotate(360deg); }}
+            }}
+            </style>
+            """
+        
+        # Fallback to chart_statuses if no pre-calculated data
         if not chart_statuses:
             return ""  # No status info, show chart normally
             
@@ -860,7 +907,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     # Use all features from FEATURE_SETS['basic'] for comprehensive analysis
     core_continuous_features = CORE_FEATURES
     
-    # Prepare data for charts - handle no data case
+    # Prepare data for charts - use pre-calculated data if available, otherwise calculate on demand
     if df is None or df.empty:
         # Empty data for charts when no data available
         feature_frontier_data = {}
@@ -869,55 +916,72 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
         feature_rates_table_html = ""
         all_plans_html = "<p style='text-align: center; color: #666; padding: 40px;'>데이터 처리 후 요금제 목록이 여기에 표시됩니다.</p>"
     else:
-        # Normal data preparation when data is available
-        feature_frontier_data, all_chart_data, visual_frontiers_for_residual_table = prepare_feature_frontier_data(df, core_continuous_features)
-        
-        # Prepare marginal cost frontier charts (using pure coefficients from multi-frontier regression)
-        marginal_cost_frontier_data = {}
-        if cost_structure and cost_structure.get('feature_costs'):
-            # Create a mock multi_frontier_breakdown from cost_structure for compatibility
-            # Handle both list and dict feature_costs structures
-            feature_costs_raw = cost_structure.get('feature_costs', {})
+        # Priority 1: Use pre-calculated charts data from file storage
+        if charts_data:
+            feature_frontier_data = charts_data.get('feature_frontier', {})
+            marginal_cost_frontier_data = charts_data.get('marginal_cost_frontier', {})
+            plan_efficiency_data = charts_data.get('plan_efficiency')
+            logger.info("Using pre-calculated charts data from file storage")
             
-            # Convert feature_costs to dictionary format expected by prepare_marginal_cost_frontier_data
-            if isinstance(feature_costs_raw, list):
-                # Convert list format to dict format
-                simplified_feature_costs = {
-                    item['feature']: {
-                        'coefficient': item.get('coefficient', 0),
-                        'display_name': item.get('display_name', item['feature']),
-                        'unit': item.get('unit', '')
-                    }
-                    for item in feature_costs_raw
-                }
-            elif isinstance(feature_costs_raw, dict):
-                # Check if feature_costs has nested structure (from multi-frontier method)
-                if feature_costs_raw and isinstance(list(feature_costs_raw.values())[0], dict):
-                    # Extract coefficients from nested structure
-                    simplified_feature_costs = feature_costs_raw
-                else:
-                    # Already flat structure (from linear decomposition)
-                    simplified_feature_costs = {
-                        feature: {'coefficient': coeff}
-                        for feature, coeff in feature_costs_raw.items()
-                    }
+            # Extract all_chart_data and visual_frontiers for compatibility if needed
+            if isinstance(feature_frontier_data, tuple) and len(feature_frontier_data) >= 3:
+                all_chart_data = feature_frontier_data[1]
+                visual_frontiers_for_residual_table = feature_frontier_data[2]
+                feature_frontier_data = feature_frontier_data[0]
             else:
-                simplified_feature_costs = {}
+                all_chart_data = {}
+                visual_frontiers_for_residual_table = {}
+        else:
+            # Priority 2: Calculate on demand if no pre-calculated data available
+            logger.info("Calculating charts data on demand...")
+            feature_frontier_data, all_chart_data, visual_frontiers_for_residual_table = prepare_feature_frontier_data(df, core_continuous_features)
+            
+            # Prepare marginal cost frontier charts (using pure coefficients from multi-frontier regression)
+            marginal_cost_frontier_data = {}
+            if cost_structure and cost_structure.get('feature_costs'):
+                # Create a mock multi_frontier_breakdown from cost_structure for compatibility
+                # Handle both list and dict feature_costs structures
+                feature_costs_raw = cost_structure.get('feature_costs', {})
                 
-            mock_breakdown = {
-                'feature_costs': simplified_feature_costs,
-                'base_cost': cost_structure.get('base_cost', 0)
-            }
-            marginal_cost_frontier_data = prepare_granular_marginal_cost_frontier_data(df, mock_breakdown, core_continuous_features)
+                # Convert feature_costs to dictionary format expected by prepare_marginal_cost_frontier_data
+                if isinstance(feature_costs_raw, list):
+                    # Convert list format to dict format
+                    simplified_feature_costs = {
+                        item['feature']: {
+                            'coefficient': item.get('coefficient', 0),
+                            'display_name': item.get('display_name', item['feature']),
+                            'unit': item.get('unit', '')
+                        }
+                        for item in feature_costs_raw
+                    }
+                elif isinstance(feature_costs_raw, dict):
+                    # Check if feature_costs has nested structure (from multi-frontier method)
+                    if feature_costs_raw and isinstance(list(feature_costs_raw.values())[0], dict):
+                        # Extract coefficients from nested structure
+                        simplified_feature_costs = feature_costs_raw
+                    else:
+                        # Already flat structure (from linear decomposition)
+                        simplified_feature_costs = {
+                            feature: {'coefficient': coeff}
+                            for feature, coeff in feature_costs_raw.items()
+                        }
+                else:
+                    simplified_feature_costs = {}
+                    
+                mock_breakdown = {
+                    'feature_costs': simplified_feature_costs,
+                    'base_cost': cost_structure.get('base_cost', 0)
+                }
+                marginal_cost_frontier_data = prepare_granular_marginal_cost_frontier_data(df, mock_breakdown, core_continuous_features)
+            
+            # Prepare Plan Value Efficiency Matrix data
+            plan_efficiency_data = prepare_plan_efficiency_data(df_sorted, method)
         
         # Generate feature rates table HTML
         feature_rates_table_html = generate_feature_rates_table_html(cost_structure)
         
         # Generate table HTML
         all_plans_html = generate_all_plans_table_html(df_sorted)
-        
-        # Prepare Plan Value Efficiency Matrix data
-        plan_efficiency_data = prepare_plan_efficiency_data(df_sorted, method)
     
     # Convert to JSON for JavaScript
     feature_frontier_json = json.dumps(feature_frontier_data, cls=NumpyEncoder)

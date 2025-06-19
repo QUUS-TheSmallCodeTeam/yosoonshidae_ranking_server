@@ -40,6 +40,12 @@
 - **Process endpoint**: ✅ Working correctly - returns 1000+ ranked plans with CS ratios (JSON response successful) + saves to files
 - **Root endpoint**: ✅ Fixed - loads data from files instead of relying on global variables
 - **✅ ERROR LOG ANALYSIS COMPLETE**: 500+ line error.log contains only 1 actual error (empty data processing) and 500+ normal HF Space keep-alive polling logs
+- **✅ ENDPOINT LOGIC ANALYSIS COMPLETE**: Detailed code flow understanding for both / and /process endpoints for system documentation
+- **✅ PERFORMANCE OPTIMIZATION COMPLETE**: /process에서 랭킹 계산 즉시 완료 후 응답, 차트는 백그라운드에서 비동기 계산
+- **✅ BACKGROUND CHART CALCULATION**: Charts calculated asynchronously after response, saved to files when complete
+- **✅ FILE-BASED BACKGROUND SHARING**: Background tasks use file storage for data persistence and sharing
+- **✅ ALWAYS LATEST FILE ACCESS**: / endpoint always loads most recent files, never caches, always shows current data
+- **✅ DOCKER DIRECTORY SETUP**: Added /app/data/shared directory creation in Dockerfile for storage reliability
 
 ## 🎯 Key Achievements
 - **Cross-contamination problem solved**: Marginal Cost Frontier Charts show pure feature trends without contamination

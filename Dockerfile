@@ -21,7 +21,7 @@ COPY --chown=user . /app
 COPY --chown=user ./data/test/logical_model_test_set.json /app/data/test/logical_model_test_set.json
 
 # Create necessary directories (including templates and data/test)
-RUN mkdir -p /app/data/raw /app/data/processed /app/data/test /app/trained_models/xgboost/with_domain/basic/standard/model /app/trained_models/xgboost/with_domain/basic/standard/config /app/results/latest /app/results/archive
+RUN mkdir -p /app/data/raw /app/data/processed /app/data/test /app/data/shared /app/trained_models/xgboost/with_domain/basic/standard/model /app/trained_models/xgboost/with_domain/basic/standard/config /app/results/latest /app/results/archive
 
 # Set environment variables
 ENV PYTHONPATH=/app

@@ -276,6 +276,32 @@ def update_validation_status(status=None, progress=None, error=None, results=Non
             validation_status['last_calculation_time'] = datetime.now()
             validation_status['calculation_progress'] = 100
 
+def calculate_and_save_charts_background(df_ranked, method, cost_structure, request_id):
+    """
+    Calculate charts in background and save to files when complete
+    """
+    try:
+        logger.info(f"[{request_id}] Starting background chart calculations...")
+        
+        # Calculate charts data
+        charts_data = data_storage.calculate_and_save_charts(df_ranked, method, cost_structure)
+        
+        # Load existing data and update with charts
+        existing_df, existing_cost_structure, existing_method, _ = data_storage.load_rankings_data()
+        
+        if existing_df is not None:
+            # Save updated data with charts
+            save_success = data_storage.save_rankings_data(existing_df, existing_cost_structure, existing_method, charts_data)
+            if save_success:
+                logger.info(f"[{request_id}] Successfully saved charts data to files")
+            else:
+                logger.error(f"[{request_id}] Failed to save charts data to files")
+        else:
+            logger.error(f"[{request_id}] No existing data found to update with charts")
+            
+    except Exception as e:
+        logger.error(f"[{request_id}] Error in background chart calculation: {str(e)}")
+
 def calculate_validation_async(df, method, feature_set, fee_column, tolerance, request_id):
     """Calculate validation in background"""
     try:
@@ -384,7 +410,7 @@ def root(basic: bool = False):
     
     try:
         # Load data from files instead of using config module
-        df_to_use, cost_structure, method = data_storage.load_rankings_data()
+        df_to_use, cost_structure, method, charts_data = data_storage.load_rankings_data()
         
         logger.info(f"Root endpoint - loaded data is None: {df_to_use is None}")
         if df_to_use is not None:
@@ -399,11 +425,10 @@ def root(basic: bool = False):
         method_name = "Fixed Rates"
         title = f"Enhanced Cost-Spec Rankings ({method_name})"
         
-        # Pass chart statuses to the HTML generator for individual chart loading states
-        with chart_calculation_lock:
-            chart_statuses = chart_calculation_statuses.copy()
+        # Use pre-calculated charts data instead of calculating live
+        # Charts are now calculated synchronously in /process endpoint
         
-        # Use existing data and include chart statuses for individual section loading
+        # Use existing data and include pre-calculated charts
         html_report = generate_html_report(
             df_to_use, 
             datetime.now(), 
@@ -411,7 +436,7 @@ def root(basic: bool = False):
             title=title,
             method=method,
             cost_structure=cost_structure,
-            chart_statuses=chart_statuses  # Pass chart statuses for individual loading
+            charts_data=charts_data  # Pass pre-calculated charts data
         )
         return HTMLResponse(content=html_report)
             
@@ -538,7 +563,7 @@ def process_data(data: Any = Body(...)):
             cost_structure = df_ranked.attrs['multi_frontier_breakdown']
             logger.info(f"[{request_id}] Multi-frontier breakdown found in DataFrame attrs: {cost_structure}")
         
-        # Save data to files instead of storing in memory
+        # Save ranking data immediately (without charts - they will be calculated in background)
         save_success = data_storage.save_rankings_data(df_ranked, cost_structure, method)
         if save_success:
             logger.info(f"[{request_id}] Successfully saved rankings data to files")
@@ -654,10 +679,10 @@ def process_data(data: Any = Body(...)):
             "top_10_plans": convert_numpy_types(top_10_plans),
             "all_ranked_plans": convert_numpy_types(all_ranked_plans),
             "validation_status": "calculating",  # Validation started in background
-            "chart_status": "calculating"  # Charts also started in background
+            "chart_status": "calculating"  # Charts will be calculated in background
         }
         
-        # Start background tasks AFTER response is prepared (non-blocking)
+        # Start background tasks AFTER response is prepared (validation + charts)
         import asyncio
         try:
             # Start validation calculation in background
@@ -672,10 +697,13 @@ def process_data(data: Any = Body(...)):
             )
             logger.info(f"[{request_id}] Started background validation task")
             
-            # Create background task for chart calculation - don't await!
-            loop = asyncio.get_event_loop()
-            chart_calculation_task = loop.create_task(
-                calculate_charts_async(df_ranked, method, cost_structure, request_id)
+            # Start chart calculation in background and save to files when complete
+            chart_calculation_task = chart_executor.submit(
+                calculate_and_save_charts_background,
+                df_ranked.copy(),
+                method,
+                cost_structure,
+                request_id
             )
             logger.info(f"[{request_id}] Started background chart calculation task")
             

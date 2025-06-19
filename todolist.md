@@ -33,7 +33,24 @@
 
 ### **🎯 Recently Completed - All Critical Issues Fixed**
 
-#### **1. 계수 테이블 표시 개선 - COMPLETELY FIXED** ✅
+#### **1. 엔드포인트 코드 로직 분석 완료** ✅
+- **Task**: /process와 / 엔드포인트의 실행 플로우와 계산 로직 상세 분석
+- **Analysis Complete**: 전체 코드 플로우, 데이터 처리 과정, 파일 저장/로드 메커니즘 완전 분석 완료
+- **Result**: 시스템 아키텍처와 데이터 처리 파이프라인에 대한 완전한 이해 달성
+- **Status**: ✅ **FULLY RESOLVED** - 엔드포인트 로직 분석 완료
+
+#### **2. 성능 최적화 - 백그라운드 차트 계산** ✅
+- **Task**: /process에서 랭킹 계산 후 즉시 응답, 차트는 백그라운드에서 비동기 계산, / 엔드포인트는 항상 최신 파일 로드
+- **Implementation**: 
+  - /process 엔드포인트: 랭킹 계산 → 파일 저장 → 즉시 응답 → 백그라운드 차트 계산
+  - 백그라운드 차트 계산 완료 시 파일 업데이트
+  - / 엔드포인트는 매번 최신 파일을 로드하여 HTML 생성 (캐싱 없음)
+  - 차트 데이터 없을 시 "계산 중" 상태 표시
+  - Dockerfile에 /app/data/shared 디렉토리 생성 추가
+- **Result**: /process 빠른 응답, / 엔드포인트 항상 최신 데이터 표시, 백그라운드 작업과 분리된 안정적 시스템
+- **Status**: ✅ **FULLY RESOLVED** - 백그라운드 차트 계산 시스템 완료
+
+#### **3. 계수 테이블 표시 개선 - COMPLETELY FIXED** ✅
 - **Problem**: 중복된 기능 이름과 모호한 계산 과정 표시
 - **Root Cause**: feature_names 매핑에서 서로 다른 기능이 동일한 이름으로 표시됨, 계산 과정이 단순히 "제약 적용"으로만 표시
 - **Solution Implemented**: 
@@ -42,21 +59,21 @@
 - **Result**: 각 기능이 명확히 구분되고, 실제 적용된 수학적 제약 조건이 정확히 표시됨
 - **Status**: ✅ **FULLY RESOLVED** - 계수 테이블 표시 완전 개선
 
-#### **2. Refresh Button Error - COMPLETELY FIXED** ✅
+#### **4. Refresh Button Error - COMPLETELY FIXED** ✅
 - **Problem**: Refresh button throwing AttributeError when df_with_rankings was None
 - **Root Cause**: getattr() called on None object before any data processing
 - **Solution Implemented**: Added proper None check in root endpoint before accessing attributes
 - **Result**: Refresh button now works correctly in all states (before/after data processing)
 - **Status**: ✅ **FULLY RESOLVED** - Refresh functionality working perfectly
 
-#### **3. Base Cost (Intercept) Issue - COMPLETELY FIXED** ✅
+#### **5. Base Cost (Intercept) Issue - COMPLETELY FIXED** ✅
 - **Problem**: Unrealistic ₩19,823 base cost for basic USIM service
 - **Root Cause**: Regression included unnecessary intercept term
 - **Solution Implemented**: Modified regression to force intercept to ₩0 (regression through origin)
 - **Result**: Base cost now correctly ₩0, making coefficient analysis realistic
 - **Status**: ✅ **FULLY RESOLVED** - No more unrealistic base costs
 
-#### **4. Zero Coefficient Issue - COMPLETELY FIXED** ✅
+#### **6. Zero Coefficient Issue - COMPLETELY FIXED** ✅
 - **Problem**: `additional_call` and other features showing ₩0.0000 coefficients
 - **Root Cause**: Multicollinearity + non-negative constraints forcing coefficients to zero
 - **Solution Implemented**: 
@@ -69,13 +86,13 @@
   - All other features: Meaningful, realistic coefficients
 - **Status**: ✅ **FULLY RESOLVED** - Complete feature coefficient coverage
 
-#### **5. HTML Table vs Calculation Consistency - FIXED** ✅
+#### **7. HTML Table vs Calculation Consistency - FIXED** ✅
 - **Problem**: Discrepancy between logged coefficients and HTML table display
 - **Root Cause**: Confirmed to be display issue, not calculation issue
 - **Result**: HTML table now correctly shows all calculated coefficients
 - **Status**: ✅ **FULLY RESOLVED** - Perfect data source consistency
 
-#### **6. F-string Syntax Error - COMPLETELY FIXED** ✅
+#### **8. F-string Syntax Error - COMPLETELY FIXED** ✅
 - **Problem**: SyntaxError: f-string expression part cannot include a backslash at line 882
 - **Root Cause**: HTML JavaScript code in f-string was using backslashes (\\n) directly 
 - **Solution Implemented**: Moved backslash characters to variable (const newline = '\\n') and used template literals
