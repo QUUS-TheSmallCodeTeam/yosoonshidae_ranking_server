@@ -487,3 +487,33 @@ cat /proc/$PID/fd/1
 - **Statistical inadequacy**: High R² doesn't guarantee correct coefficients
 - **False precision**: Complex scoring system created illusion of accuracy
 - **Performance overhead**: Validation calculations added unnecessary complexity
+
+## 최근 해결된 주요 문제
+
+### 차트 표시 문제 (2025-06-19 완료)
+- **문제**: HTML에서 차트가 표시되지 않음 (display:none으로 숨겨짐)
+- **원인**: HTML 템플릿에서 `get_chart_status_html()` 함수가 실행되지 않고 문자열로 출력됨
+- **해결**: 
+  1. 차트 상태 변수를 사전에 계산하여 HTML 템플릿에 변수로 전달
+  2. replace() 메서드로 변수 치환 처리 추가
+  3. 차트 표시/숨김 로직을 올바르게 수정
+- **결과**: Feature Frontier와 Plan Efficiency 차트 모두 정상 표시
+
+### 차트 상태 API 문제 (이전에 해결됨)
+- **문제**: `/chart-status` API에서 500 Internal Server Error
+- **원인**: datetime 직렬화 오류, 필드명 불일치, 앱 시작 시 차트 데이터 로딩 누락
+- **해결**: 
+  1. datetime 안전 처리 로직 추가
+  2. 필드명 수정 (`is_calculating` → `status == 'calculating'`)
+  3. startup event에 차트 데이터 로딩 로직 추가
+
+## 현재 상태
+- **차트 시스템**: ✅ 완전히 정상 작동
+- **API 엔드포인트**: ✅ 모든 엔드포인트 정상
+- **데이터 로딩**: ✅ 앱 시작 시 자동 로딩
+- **HTML 표시**: ✅ 차트 정상 렌더링
+
+## 주의사항
+- HTML 템플릿 수정 시 변수 replace 처리 확인 필요
+- 차트 상태 함수 수정 시 HTML 변수 동기화 확인
+- datetime 객체 JSON 직렬화 시 안전 처리 적용

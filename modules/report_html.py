@@ -988,6 +988,14 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     marginal_cost_frontier_json = json.dumps(marginal_cost_frontier_data, cls=NumpyEncoder)
     plan_efficiency_json = json.dumps(plan_efficiency_data, cls=NumpyEncoder)
     
+    # Prepare chart status variables
+    feature_frontier_status_html = get_chart_status_html('feature_frontier', 'featureCharts')
+    plan_efficiency_status_html = get_chart_status_html('plan_efficiency', 'planEfficiencyChart')
+    
+    # Determine display styles based on chart status
+    feature_frontier_display_style = "display:none;" if feature_frontier_status_html else ""
+    plan_efficiency_display_style = "display:none;" if plan_efficiency_status_html else ""
+    
     # Main HTML template  
     html_template = """<!DOCTYPE html>
 <html lang="en">
@@ -1169,8 +1177,8 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 <div class="note">
                     <p>이 차트는 각 기능에 대한 비용 프론티어를 보여줍니다. 프론티어에 있는 플랜은 다양한 수준에서 해당 기능에 대한 최상의 가치를 제공합니다.</p>
                 </div>
-                {get_chart_status_html('feature_frontier', 'featureCharts')}
-                <div id="featureCharts" class="chart-grid" style="{'display:none;' if get_chart_status_html('feature_frontier', 'featureCharts') else ''}"></div>
+                {feature_frontier_status_html}
+                <div id="featureCharts" class="chart-grid" style="{feature_frontier_display_style}"></div>
             </div>
             
             <!-- Model Validation section removed -->
@@ -1181,11 +1189,11 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 <div class="note">
                     <p>이 차트는 각 요금제의 실제 비용 대비 계산된 기준 비용을 보여줍니다. 대각선 아래(녹색 영역)는 가성비가 좋은 요금제, 위(빨간색 영역)는 과가격 요금제입니다.</p>
                 </div>
-                {get_chart_status_html('plan_efficiency', 'planEfficiencyChart')}
-                <div class="chart-container" style="width: 100%; height: 600px; {'display:none;' if get_chart_status_html('plan_efficiency', 'planEfficiencyChart') else ''}">
+                {plan_efficiency_status_html}
+                <div class="chart-container" style="width: 100%; height: 600px; {plan_efficiency_display_style}">
                     <canvas id="planEfficiencyChart"></canvas>
                 </div>
-                <p style="text-align: center; margin-top: 10px; color: #666; font-size: 0.9em; {'display:none;' if get_chart_status_html('plan_efficiency', 'planEfficiencyChart') else ''}">
+                <p style="text-align: center; margin-top: 10px; color: #666; font-size: 0.9em; {plan_efficiency_display_style}">
                     🟢 녹색 = 가성비 좋은 요금제 (CS > 1.0) | 🔴 빨간색 = 과가격 요금제 (CS < 1.0)<br>
                     대각선 = 완벽한 효율성 기준선 | 버블 크기 = 총 기능 수준
                 </p>
@@ -2183,6 +2191,12 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     html = html.replace('{feature_rates_table_html}', feature_rates_table_html)
     # Linear decomposition chart removed per user request
     html = html.replace('{all_plans_html}', all_plans_html)
+    
+    # Replace chart status variables
+    html = html.replace('{feature_frontier_status_html}', feature_frontier_status_html)
+    html = html.replace('{plan_efficiency_status_html}', plan_efficiency_status_html)
+    html = html.replace('{feature_frontier_display_style}', feature_frontier_display_style)
+    html = html.replace('{plan_efficiency_display_style}', plan_efficiency_display_style)
 
     # Validation results JSON removed
     

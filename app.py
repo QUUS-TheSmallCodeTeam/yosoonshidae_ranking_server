@@ -712,12 +712,19 @@ def get_chart_status():
     """
     Get the current status of all individual chart calculations.
     """
+    logger.info("get_chart_status function called")
     try:
+        logger.info(f"chart_calculation_lock: {chart_calculation_lock}")
+        logger.info(f"chart_calculation_statuses keys: {list(chart_calculation_statuses.keys())}")
+        
         with chart_calculation_lock:
             statuses = chart_calculation_statuses.copy()
         
+        logger.info(f"Copied statuses: {[k for k in statuses.keys()]}")
+        
         # Convert datetime objects to strings for JSON serialization
         for chart_type, status in statuses.items():
+            logger.info(f"Processing {chart_type}: {status}")
             if status.get('last_calculation_time') and hasattr(status['last_calculation_time'], 'isoformat'):
                 statuses[chart_type]['last_calculation_time'] = status['last_calculation_time'].isoformat()
         
@@ -729,7 +736,7 @@ def get_chart_status():
         
         overall_progress = (ready_charts / total_charts) * 100 if total_charts > 0 else 0
         
-        return {
+        result = {
             "individual_charts": statuses,
             "summary": {
                 "total_charts": total_charts,
@@ -742,8 +749,14 @@ def get_chart_status():
                 "any_errors": error_charts > 0
             }
         }
+        
+        logger.info(f"Returning result: {type(result)}")
+        return result
+        
     except Exception as e:
         logger.error(f"Error in get_chart_status: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return {
             "individual_charts": {},
             "summary": {
@@ -893,6 +906,11 @@ def get_status_page():
 def test(request: dict = Body(...)):
     """Simple echo endpoint for testing (returns the provided data)."""
     return {"received": request}
+
+@app.get("/test-reload")
+def test_reload():
+    """Test endpoint to check if server is reloading code changes."""
+    return {"message": "Server is working and reloading changes!", "timestamp": "2025-06-19 10:07:00"}
 
 @app.get("/debug-global")
 def debug_global_state():
