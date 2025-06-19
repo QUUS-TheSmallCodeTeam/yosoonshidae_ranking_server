@@ -293,12 +293,17 @@ def generate_feature_rates_table_html(cost_structure):
     
     if has_unconstrained_data:
         table_html += """
-        <p><strong>계산 과정 설명:</strong></p>
+        <p><strong>수학적 계산 과정 설명:</strong></p>
         <ul style="font-size: 0.9em; margin-left: 20px;">
-            <li><span style="color: green;">제약 없음</span>: 원래 계산된 값이 제약 범위 내에 있어 그대로 사용</li>
-            <li><span style="color: orange; font-weight: bold;">min/max 적용</span>: 원래 값이 제약 범위를 벗어나 최소/최대값으로 조정됨</li>
-            <li><span style="color: blue;">직접 계산</span>: 제약 없이 직접 계산된 값</li>
+            <li><span style="color: blue; font-weight: bold;">OLS 회귀</span>: <code>β = (X'X)⁻¹X'y</code> - 무제약 최소제곱법으로 초기 계수 추정</li>
+            <li><span style="color: orange; font-weight: bold;">제약 조건</span>: <code>max(β, lower_bound)</code> 또는 <code>min(β, upper_bound)</code> - 경제적 타당성 확보</li>
+            <li><span style="color: blue; font-weight: bold;">다중공선성 보정</span>: 상관관계 >0.8인 변수들의 계수를 균등 재분배</li>
+            <li><span style="color: green;">✓ 제약 없음</span>: OLS 결과가 모든 제약 조건을 만족하여 그대로 사용</li>
+            <li><span style="color: blue;">제약 최적화</span>: <code>minimize ||Xβ - y||² subject to bounds</code> - L-BFGS-B 알고리즘</li>
         </ul>
+        <p style="font-size: 0.85em; color: #666; margin: 10px 0;">
+            <strong>기술적 세부사항:</strong> 회귀는 원점을 통과하도록 강제(절편=0), 이상치 제거(Z-score > 3), Ridge 회귀 비활성화
+        </p>
         """
     
     # Column headers based on whether we have unconstrained data
@@ -339,14 +344,16 @@ def generate_feature_rates_table_html(cost_structure):
         'is_5g': '5G 지원 (5G Support)',
         'data_stops_after_quota': '데이터 소진 후 중단 (Data Stops)',
         'data_throttled_after_quota': '데이터 소진 후 속도제한 (Data Throttled)',
-        'data_unlimited_speed': '데이터 무제한 (Data Unlimited)',
+        'data_unlimited_speed': '데이터 속도 무제한 (Data Speed Unlimited)',
         'basic_data_unlimited': '기본 데이터 무제한 (Basic Data Unlimited)',
         'voice_unlimited': '음성 무제한 (Voice Unlimited)',
         'message_unlimited': '문자 무제한 (Message Unlimited)',
-        'has_throttled_data': '속도제한 데이터 (Throttled Data)',
-        'has_unlimited_speed': '데이터 무제한 (Data Unlimited)',
+        'has_throttled_data': '속도제한 데이터 제공 (Has Throttled Data)',
+        'has_unlimited_speed': '데이터 무제한 속도 제공 (Has Unlimited Speed)',
         'additional_call': '추가 통화 (Additional Call)',
-        'speed_when_exhausted': '소진 후 속도 (Speed When Exhausted)'
+        'speed_when_exhausted': '소진 후 속도 (Speed When Exhausted)',
+        'daily_data_clean': 'Daily Data',
+        'daily_data_unlimited': 'Daily Data Unlimited'
     }
     
     # Feature units mapping
@@ -365,7 +372,9 @@ def generate_feature_rates_table_html(cost_structure):
         'has_throttled_data': 'KRW (고정)',
         'has_unlimited_speed': 'KRW (고정)',
         'additional_call': 'KRW/unit',
-        'speed_when_exhausted': 'KRW/Mbps'
+        'speed_when_exhausted': 'KRW/Mbps',
+        'daily_data_clean': 'KRW/unit',
+        'daily_data_unlimited': 'KRW/unit'
     }
     
     # Helper function to format coefficient values
@@ -408,29 +417,95 @@ def generate_feature_rates_table_html(cost_structure):
             else:
                 bounds_text = "무제한"
             
-            # Generate calculation process
+            # Generate calculation process with EXACT mathematical formulas
             calculation_process = ""
             process_color = ""
             if unconstrained_coeff is not None:
-                if bounds:
-                    lower = bounds.get('lower')
-                    upper = bounds.get('upper')
+                lower = bounds.get('lower') if bounds else None
+                upper = bounds.get('upper') if bounds else None
+                
+                # Calculate what the actual constraint application should be
+                unconstrained_val = float(unconstrained_coeff)
+                final_val = float(coefficient)
+                
+                # Check if multicollinearity fix was applied
+                multicollinearity_fix = data.get('multicollinearity_fix')
+                
+                # Show the EXACT mathematical process
+                # Step 1: Show the OLS regression result
+                ols_formula = f"OLS: β = (X'X)⁻¹X'y = {format_coefficient(unconstrained_coeff)}"
+                
+                # Step 2: Show constraint application
+                constraint_formula = ""
+                post_constraint_value = unconstrained_val
+                
+                if lower is not None and upper is not None:
+                    # Both bounds exist - use clip function
+                    post_constraint_value = max(lower, min(upper, unconstrained_val))
+                    constraint_formula = f"Constraint: min(max({format_coefficient(unconstrained_coeff)}, {format_coefficient(lower)}), {format_coefficient(upper)})"
+                    if unconstrained_val < lower:
+                        constraint_formula += f" = {format_coefficient(lower)}"
+                    elif unconstrained_val > upper:
+                        constraint_formula += f" = {format_coefficient(upper)}"
+                    else:
+                        constraint_formula += f" = {format_coefficient(unconstrained_coeff)} (no change)"
+                        
+                elif lower is not None:
+                    # Only lower bound - use max function
+                    post_constraint_value = max(lower, unconstrained_val)
+                    constraint_formula = f"Constraint: max({format_coefficient(unconstrained_coeff)}, {format_coefficient(lower)})"
+                    if unconstrained_val < lower:
+                        constraint_formula += f" = {format_coefficient(lower)}"
+                    else:
+                        constraint_formula += f" = {format_coefficient(unconstrained_coeff)} (no change)"
+                        
+                elif upper is not None:
+                    # Only upper bound - use min function
+                    post_constraint_value = min(upper, unconstrained_val)
+                    constraint_formula = f"Constraint: min({format_coefficient(unconstrained_coeff)}, {format_coefficient(upper)})"
+                    if unconstrained_val > upper:
+                        constraint_formula += f" = {format_coefficient(upper)}"
+                    else:
+                        constraint_formula += f" = {format_coefficient(unconstrained_coeff)} (no change)"
+                
+                # Step 3: Show multicollinearity fix if applied
+                multicollinearity_formula = ""
+                if multicollinearity_fix:
+                    paired_feature = multicollinearity_fix['paired_with']
+                    correlation = multicollinearity_fix['correlation']
+                    original_val = multicollinearity_fix['original_value']
+                    partner_val = multicollinearity_fix['partner_original_value']
+                    calc_formula = multicollinearity_fix['calculation_formula']
                     
-                    # Check if adjustment was made
-                    if lower is not None and unconstrained_coeff < lower:
-                        calculation_process = f"max({format_coefficient(unconstrained_coeff)}, {format_coefficient(lower)}) = {format_coefficient(coefficient)}"
-                        process_color = "color: orange; font-weight: bold;"
-                    elif upper is not None and unconstrained_coeff > upper:
-                        calculation_process = f"min({format_coefficient(unconstrained_coeff)}, {format_coefficient(upper)}) = {format_coefficient(coefficient)}"
+                    multicollinearity_formula = f"Multicollinearity fix with {paired_feature} (r={correlation:.3f}):<br>"
+                    multicollinearity_formula += f"Redistribution: {calc_formula}"
+                
+                # Combine all formulas
+                if multicollinearity_fix:
+                    # Multicollinearity redistribution occurred
+                    if constraint_formula:
+                        calculation_process = f"{ols_formula}<br>{constraint_formula}<br>{multicollinearity_formula}"
+                    else:
+                        calculation_process = f"{ols_formula}<br>{multicollinearity_formula}"
+                    process_color = "color: blue; font-weight: bold;"
+                elif abs(final_val - post_constraint_value) < 1e-6:
+                    # Only constraint applied (or no changes)
+                    if constraint_formula and abs(post_constraint_value - unconstrained_val) > 1e-6:
+                        calculation_process = f"{ols_formula}<br>{constraint_formula} ✓"
                         process_color = "color: orange; font-weight: bold;"
                     else:
-                        calculation_process = f"{format_coefficient(unconstrained_coeff)} (제약 없음)"
+                        calculation_process = f"{ols_formula}<br>No adjustments needed ✓"
                         process_color = "color: green;"
                 else:
-                    calculation_process = f"{format_coefficient(unconstrained_coeff)} (제약 없음)"
-                    process_color = "color: green;"
+                    # Unexpected difference - show as optimization
+                    if constraint_formula:
+                        calculation_process = f"{ols_formula}<br>{constraint_formula}<br>Additional optimization → {format_coefficient(coefficient)}"
+                    else:
+                        calculation_process = f"{ols_formula}<br>Optimization → {format_coefficient(coefficient)}"
+                    process_color = "color: blue; font-weight: bold;"
             else:
-                calculation_process = f"{format_coefficient(coefficient)} (직접 계산)"
+                # No unconstrained data - show optimization directly
+                calculation_process = f"Constrained optimization:<br>minimize ||Xβ - y||²<br>subject to bounds = {format_coefficient(coefficient)}"
                 process_color = "color: blue;"
             
             table_html += f"""
@@ -439,7 +514,7 @@ def generate_feature_rates_table_html(cost_structure):
                     <td style="text-align: right; font-family: monospace;">{format_coefficient(unconstrained_coeff)}</td>
                     <td style="text-align: center; font-family: monospace; font-size: 0.9em;">{bounds_text}</td>
                     <td style="text-align: right; font-family: monospace; font-weight: bold;">{format_coefficient(coefficient)}</td>
-                    <td style="text-align: left; font-family: monospace; font-size: 0.9em; {process_color}">{calculation_process}</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em; {process_color} white-space: pre-line; line-height: 1.3;">{calculation_process}</td>
                     <td style="text-align: center;">{unit}</td>
                 </tr>
             """
@@ -494,6 +569,42 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     # Helper function to get chart status HTML
     def get_chart_status_html(chart_type, chart_div_id):
         """Generate loading/error status HTML for individual chart sections"""
+        # If no data, always show waiting for data message
+        if df is None or df.empty:
+            return f"""
+            <div class="chart-waiting-overlay" id="{chart_div_id}_waiting">
+                <div class="waiting-content">
+                    <div class="waiting-icon">📊</div>
+                    <p>데이터 처리 대기 중...</p>
+                    <p style="font-size: 0.9em; color: #666;">
+                        <code>/process</code> 엔드포인트를 통해 데이터를 처리하면 차트가 표시됩니다.
+                    </p>
+                </div>
+            </div>
+            <style>
+            .chart-waiting-overlay {{
+                position: relative;
+                min-height: 300px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #f8f9fa;
+                border: 1px dashed #dee2e6;
+                border-radius: 8px;
+                margin: 20px 0;
+            }}
+            .waiting-content {{
+                text-align: center;
+                padding: 40px;
+                color: #6c757d;
+            }}
+            .waiting-icon {{
+                font-size: 48px;
+                margin-bottom: 20px;
+            }}
+            </style>
+            """
+        
         if not chart_statuses:
             return ""  # No status info, show chart normally
             
@@ -563,7 +674,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                         <summary>오류 세부사항</summary>
                         <pre>{error_msg[:200]}...</pre>
                     </details>
-                    <button onclick="location.reload()">새로고침</button>
+                    <button onclick="checkChartStatus()">상태 확인</button>
                 </div>
             </div>
             <style>
@@ -610,10 +721,25 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     
     timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
     
-    # Sort DataFrame by rank (CS ratio)
-    df_sorted = df.copy()
-    if 'CS' in df_sorted.columns:
-        df_sorted = df_sorted.sort_values(by='CS', ascending=False)
+    # Handle case when no data is available
+    if df is None or df.empty:
+        # Create empty DataFrame with default columns for display
+        df_sorted = pd.DataFrame(columns=['plan_name', 'CS', 'B', 'fee'])
+        no_data_message = """
+        <div class="summary">
+            <h3>📊 데이터 처리 대기 중</h3>
+            <p>아직 데이터가 처리되지 않았습니다. <code>/process</code> 엔드포인트를 통해 데이터를 처리해주세요.</p>
+            <button onclick="checkDataAndRefresh()" style="background-color: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 10px;">
+                🔄 데이터 확인
+            </button>
+        </div>
+        """
+    else:
+        # Sort DataFrame by rank (CS ratio)
+        df_sorted = df.copy()
+        if 'CS' in df_sorted.columns:
+            df_sorted = df_sorted.sort_values(by='CS', ascending=False)
+        no_data_message = ""
     
     # Add method and cost structure information to summary
     method_info_html = ""
@@ -734,59 +860,68 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     # Use all features from FEATURE_SETS['basic'] for comprehensive analysis
     core_continuous_features = CORE_FEATURES
     
-    # Prepare data for feature frontier charts
-    feature_frontier_data, all_chart_data, visual_frontiers_for_residual_table = prepare_feature_frontier_data(df, core_continuous_features)
-    
-    # Prepare marginal cost frontier charts (using pure coefficients from multi-frontier regression)
-    marginal_cost_frontier_data = {}
-    if cost_structure and cost_structure.get('feature_costs'):
-        # Create a mock multi_frontier_breakdown from cost_structure for compatibility
-        # Handle both list and dict feature_costs structures
-        feature_costs_raw = cost_structure.get('feature_costs', {})
+    # Prepare data for charts - handle no data case
+    if df is None or df.empty:
+        # Empty data for charts when no data available
+        feature_frontier_data = {}
+        marginal_cost_frontier_data = {}
+        plan_efficiency_data = None
+        feature_rates_table_html = ""
+        all_plans_html = "<p style='text-align: center; color: #666; padding: 40px;'>데이터 처리 후 요금제 목록이 여기에 표시됩니다.</p>"
+    else:
+        # Normal data preparation when data is available
+        feature_frontier_data, all_chart_data, visual_frontiers_for_residual_table = prepare_feature_frontier_data(df, core_continuous_features)
         
-        # Convert feature_costs to dictionary format expected by prepare_marginal_cost_frontier_data
-        if isinstance(feature_costs_raw, list):
-            # Convert list format to dict format
-            simplified_feature_costs = {
-                item['feature']: {
-                    'coefficient': item.get('coefficient', 0),
-                    'display_name': item.get('display_name', item['feature']),
-                    'unit': item.get('unit', '')
-                }
-                for item in feature_costs_raw
-            }
-        elif isinstance(feature_costs_raw, dict):
-            # Check if feature_costs has nested structure (from multi-frontier method)
-            if feature_costs_raw and isinstance(list(feature_costs_raw.values())[0], dict):
-                # Extract coefficients from nested structure
-                simplified_feature_costs = feature_costs_raw
-            else:
-                # Already flat structure (from linear decomposition)
-                simplified_feature_costs = {
-                    feature: {'coefficient': coeff}
-                    for feature, coeff in feature_costs_raw.items()
-                }
-        else:
-            simplified_feature_costs = {}
+        # Prepare marginal cost frontier charts (using pure coefficients from multi-frontier regression)
+        marginal_cost_frontier_data = {}
+        if cost_structure and cost_structure.get('feature_costs'):
+            # Create a mock multi_frontier_breakdown from cost_structure for compatibility
+            # Handle both list and dict feature_costs structures
+            feature_costs_raw = cost_structure.get('feature_costs', {})
             
-        mock_breakdown = {
-            'feature_costs': simplified_feature_costs,
-            'base_cost': cost_structure.get('base_cost', 0)
-        }
-        marginal_cost_frontier_data = prepare_granular_marginal_cost_frontier_data(df, mock_breakdown, core_continuous_features)
+            # Convert feature_costs to dictionary format expected by prepare_marginal_cost_frontier_data
+            if isinstance(feature_costs_raw, list):
+                # Convert list format to dict format
+                simplified_feature_costs = {
+                    item['feature']: {
+                        'coefficient': item.get('coefficient', 0),
+                        'display_name': item.get('display_name', item['feature']),
+                        'unit': item.get('unit', '')
+                    }
+                    for item in feature_costs_raw
+                }
+            elif isinstance(feature_costs_raw, dict):
+                # Check if feature_costs has nested structure (from multi-frontier method)
+                if feature_costs_raw and isinstance(list(feature_costs_raw.values())[0], dict):
+                    # Extract coefficients from nested structure
+                    simplified_feature_costs = feature_costs_raw
+                else:
+                    # Already flat structure (from linear decomposition)
+                    simplified_feature_costs = {
+                        feature: {'coefficient': coeff}
+                        for feature, coeff in feature_costs_raw.items()
+                    }
+            else:
+                simplified_feature_costs = {}
+                
+            mock_breakdown = {
+                'feature_costs': simplified_feature_costs,
+                'base_cost': cost_structure.get('base_cost', 0)
+            }
+            marginal_cost_frontier_data = prepare_granular_marginal_cost_frontier_data(df, mock_breakdown, core_continuous_features)
+        
+        # Generate feature rates table HTML
+        feature_rates_table_html = generate_feature_rates_table_html(cost_structure)
+        
+        # Generate table HTML
+        all_plans_html = generate_all_plans_table_html(df_sorted)
+        
+        # Prepare Plan Value Efficiency Matrix data
+        plan_efficiency_data = prepare_plan_efficiency_data(df_sorted, method)
     
     # Convert to JSON for JavaScript
     feature_frontier_json = json.dumps(feature_frontier_data, cls=NumpyEncoder)
     marginal_cost_frontier_json = json.dumps(marginal_cost_frontier_data, cls=NumpyEncoder)
-    
-    # Generate feature rates table HTML
-    feature_rates_table_html = generate_feature_rates_table_html(cost_structure)
-    
-    # Generate table HTML
-    all_plans_html = generate_all_plans_table_html(df_sorted)
-    
-    # Prepare Plan Value Efficiency Matrix data
-    plan_efficiency_data = prepare_plan_efficiency_data(df_sorted, method)
     plan_efficiency_json = json.dumps(plan_efficiency_data, cls=NumpyEncoder)
     
     # Main HTML template  
@@ -934,7 +1069,9 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
             <h2>Cost-Spec Ratio 모델</h2>
             <p>생성일: {timestamp_str}</p>
             
-            <div class="summary">
+            {no_data_message}
+            
+            <div class="summary" style="{'display:none;' if no_data_message else ''}">
                 <h2>요약 통계</h2>
                 <ul>
                     <li>분석된 요금제 수: <strong>{len_df_sorted:,}개</strong></li>
@@ -967,16 +1104,17 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 <div id="featureCharts" class="chart-grid" style="{'display:none;' if get_chart_status_html('feature_frontier', 'featureCharts') else ''}"></div>
             </div>
             
-            <!-- Marginal Cost Frontier Charts -->
+            <!-- Model Validation Results -->
             <div class="charts-wrapper">
-                <h2>📈 Marginal Cost Frontier Analysis</h2>
+                <h2>🔬 Model Validation & Reliability Analysis</h2>
                 <div class="note">
-                    <p><strong>Pure Marginal Cost Trends:</strong> 이 차트는 Multi-Feature Frontier Regression에서 추출된 순수 한계비용을 사용하여 각 기능의 비용 트렌드를 보여줍니다.</p>
-                    <p><strong>핵심 개선사항:</strong> 기존 프론티어 차트의 교차 오염 문제를 해결하여, 각 기능의 실제 가치만을 반영한 순수 한계비용을 시각화합니다.</p>
-                    <p><strong>해석:</strong> 파란색 선은 순수 한계비용 트렌드, 빨간색 점은 실제 시장 요금제와의 비교를 보여줍니다.</p>
+                    <p><strong>종합적 검증:</strong> 여러 계수 계산 방법으로 모델의 신뢰성과 경제적 타당성을 종합 검증합니다.</p>
+                    <p><strong>검증 항목:</strong> 최적화 일관성, 경제적 논리, 예측력, 잔차 품질을 각각 분석하여 0-100점으로 평가합니다.</p>
+                    <p><strong>신뢰도 분석:</strong> 다중 방법간 계수 일치도를 통해 결과의 안정성을 확인합니다.</p>
                 </div>
-                {get_chart_status_html('marginal_cost_frontier', 'marginalCostFrontierCharts')}
-                <div id="marginalCostFrontierCharts" class="chart-grid" style="{'display:none;' if get_chart_status_html('marginal_cost_frontier', 'marginalCostFrontierCharts') else ''}"></div>
+                <div id="validationResults">
+                    <!-- Validation results will be filled by JavaScript -->
+                </div>
             </div>
             
             <!-- Plan Value Efficiency Matrix -->
@@ -1006,8 +1144,8 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
             // Feature frontier data from Python
             const featureFrontierData = __FEATURE_FRONTIER_JSON__;
             
-            // Marginal cost frontier data from Python (pure coefficients)
-            const marginalCostFrontierData = __MARGINAL_COST_FRONTIER_JSON__;
+            // Validation results data from Python
+            const validationResultsData = __VALIDATION_RESULTS_JSON__;
             
             // Cost structure data from Python (multi-frontier method)
             const advancedAnalysisData = __ADVANCED_ANALYSIS_JSON__;
@@ -1210,9 +1348,248 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     console.log('No plan efficiency data available');
                 }
                 
-                // Create marginal cost charts if cost structure data is available
-                // Multi-frontier charts removed per user request
+                // Create validation results display
+                if (validationResultsData && validationResultsData !== null) {
+                    console.log('Creating validation results display...');
+                    displayValidationResults(validationResultsData);
+                } else {
+                    console.log('No validation results data available');
+                    const validationContainer = document.getElementById('validationResults');
+                    if (validationContainer) {
+                        validationContainer.innerHTML = '<p style="text-align: center; color: #666; padding: 40px;">검증 결과가 아직 준비되지 않았습니다.</p>';
+                    }
+                }
             });
+            
+            // Function to display validation results
+            function displayValidationResults(data) {
+                console.log('displayValidationResults called with data:', data);
+                
+                const container = document.getElementById('validationResults');
+                if (!container) {
+                    console.log('Validation results container not found');
+                    return;
+                }
+                
+                let html = '';
+                
+                // Overall summary
+                const bestMethod = data.best_method;
+                const overallReliability = data.overall_reliability_score || 0;
+                
+                html += `
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                        <h3 style="margin: 0 0 10px 0;">🏆 종합 검증 결과</h3>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                            <div>
+                                <div style="font-size: 1.2em; font-weight: bold;">최고 성능 방법</div>
+                                <div style="font-size: 1.5em;">${bestMethod || 'N/A'}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.2em; font-weight: bold;">계수 신뢰도</div>
+                                <div style="font-size: 1.5em;">${overallReliability.toFixed(1)}/100</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Method comparison table
+                if (data.validation_comparisons) {
+                    html += `
+                        <div style="margin-bottom: 30px;">
+                            <h3>📊 방법별 성능 비교</h3>
+                            <div style="overflow-x: auto;">
+                                <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
+                                    <thead>
+                                        <tr style="background-color: #f8f9fa;">
+                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: left;">방법</th>
+                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">총점</th>
+                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">등급</th>
+                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">최적화</th>
+                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">경제성</th>
+                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">예측력</th>
+                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">잔차</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                    `;
+                    
+                    for (const [method, validation] of Object.entries(data.validation_comparisons)) {
+                        const overall = validation.overall_score || {};
+                        const totalScore = overall.total_score || 0;
+                        const grade = overall.grade || 'F';
+                        const breakdown = overall.score_breakdown || {};
+                        
+                        const gradeColor = grade === 'A' ? '#28a745' : 
+                                         grade === 'B' ? '#17a2b8' : 
+                                         grade === 'C' ? '#ffc107' : 
+                                         grade === 'D' ? '#fd7e14' : '#dc3545';
+                        
+                        html += `
+                            <tr style="${method === bestMethod ? 'background-color: #fff3cd;' : ''}">
+                                <td style="padding: 12px; border: 1px solid #ddd; font-weight: ${method === bestMethod ? 'bold' : 'normal'};">
+                                    ${method}${method === bestMethod ? ' 🏆' : ''}
+                                </td>
+                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: bold;">
+                                    ${totalScore.toFixed(1)}
+                                </td>
+                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
+                                    <span style="background-color: ${gradeColor}; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;">
+                                        ${grade}
+                                    </span>
+                                </td>
+                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
+                                    ${breakdown.optimization_consistency || 'N/A'}
+                                </td>
+                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
+                                    ${breakdown.economic_logic || 'N/A'}
+                                </td>
+                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
+                                    ${breakdown.prediction_power || 'N/A'}
+                                </td>
+                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
+                                    ${breakdown.residual_quality || 'N/A'}
+                                </td>
+                            </tr>
+                        `;
+                    }
+                    
+                    html += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Consensus coefficients reliability
+                if (data.consensus_coefficients) {
+                    html += `
+                        <div style="margin-bottom: 30px;">
+                            <h3>🎯 계수 신뢰도 분석</h3>
+                            <div style="overflow-x: auto;">
+                                <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
+                                    <thead>
+                                        <tr style="background-color: #f8f9fa;">
+                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: left;">기능</th>
+                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">평균 계수</th>
+                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">표준편차</th>
+                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">변동계수</th>
+                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">일치도</th>
+                                            <th style="padding: 12px; border: 1px solid #ddd; text-align: center;">신뢰성</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                    `;
+                    
+                    for (const [feature, consensus] of Object.entries(data.consensus_coefficients)) {
+                        const reliability = data.reliability_analysis[feature] || {};
+                        const cv = consensus.coefficient_of_variation || 0;
+                        const reliabilityColor = cv < 0.05 ? '#28a745' : cv < 0.15 ? '#ffc107' : '#dc3545';
+                        
+                        html += `
+                            <tr>
+                                <td style="padding: 12px; border: 1px solid #ddd;">${feature}</td>
+                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
+                                    ₩${consensus.mean.toFixed(2)}
+                                </td>
+                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
+                                    ±${consensus.std.toFixed(2)}
+                                </td>
+                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
+                                    ${(cv * 100).toFixed(1)}%
+                                </td>
+                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
+                                    <span style="background-color: ${reliabilityColor}; color: white; padding: 4px 8px; border-radius: 4px;">
+                                        ${reliability.agreement_level || 'Unknown'}
+                                    </span>
+                                </td>
+                                <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">
+                                    ${consensus.is_reliable ? '✅' : '❌'}
+                                </td>
+                            </tr>
+                        `;
+                    }
+                    
+                    html += `
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                                <p><strong>해석:</strong> 변동계수가 낮을수록 방법간 일치도가 높습니다. 5% 미만(녹색)은 매우 신뢰할만하고, 15% 이상(빨간색)은 주의가 필요합니다.</p>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Best method detailed analysis
+                if (bestMethod && data.validation_comparisons[bestMethod]) {
+                    const bestValidation = data.validation_comparisons[bestMethod];
+                    
+                    html += `
+                        <div style="margin-bottom: 30px;">
+                            <h3>🥇 최고 성능 방법 상세 분석: ${bestMethod}</h3>
+                    `;
+                    
+                    // Economic logic details
+                    if (bestValidation.economic_logic) {
+                        const econ = bestValidation.economic_logic;
+                        html += `
+                            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0;">
+                                <h4 style="margin: 0 0 10px 0;">💰 경제적 타당성 검증</h4>
+                        `;
+                        
+                        if (econ.scale_check) {
+                            const check = econ.scale_check;
+                            html += `
+                                <p><strong>스케일 검증:</strong> 
+                                    5G 프리미엄 (₩${check.fiveg_premium.toFixed(2)}) vs 데이터 1GB (₩${check.data_per_gb.toFixed(2)}) - 
+                                    ${check.makes_sense ? '✅ 합리적' : '❌ 문제있음'}
+                                </p>
+                            `;
+                        }
+                        
+                        if (econ.premium_check) {
+                            const check = econ.premium_check;
+                            html += `
+                                <p><strong>프리미엄 검증:</strong> 
+                                    테더링 (₩${check.tethering_per_gb.toFixed(2)}/GB) vs 음성 (₩${check.voice_per_min.toFixed(2)}/분) - 
+                                    ${check.makes_sense ? '✅ 합리적' : '❌ 문제있음'}
+                                </p>
+                            `;
+                        }
+                        
+                        if (econ.positive_check) {
+                            const check = econ.positive_check;
+                            html += `
+                                <p><strong>양수 검증:</strong> 
+                                    음수 계수 ${check.negative_count}개, 영 계수 ${check.zero_count}개 - 
+                                    ${check.all_positive ? '✅ 모든 계수 양수' : '❌ 문제 계수 존재'}
+                                </p>
+                            `;
+                        }
+                        
+                        html += '</div>';
+                    }
+                    
+                    // Prediction power details
+                    if (bestValidation.prediction_power) {
+                        const pred = bestValidation.prediction_power;
+                        html += `
+                            <div style="background-color: #e7f3ff; padding: 15px; border-radius: 8px; margin: 10px 0;">
+                                <h4 style="margin: 0 0 10px 0;">🎯 예측력 검증 (5-Fold Cross-Validation)</h4>
+                                <p><strong>평균 R² 점수:</strong> ${(pred.mean_r2 * 100).toFixed(1)}% (표준편차: ${(pred.std_r2 * 100).toFixed(1)}%)</p>
+                                <p><strong>평균 절대 오차:</strong> ₩${pred.mean_mae.toFixed(0)} (표준편차: ₩${pred.std_mae.toFixed(0)})</p>
+                                <p><strong>안정성:</strong> ${pred.is_stable ? '✅ 안정적' : '❌ 불안정'}</p>
+                            </div>
+                        `;
+                    }
+                    
+                    html += '</div>';
+                }
+                
+                container.innerHTML = html;
+            }
             
             // Function to create cost structure charts
             function createCostStructureCharts(data) {
@@ -1917,6 +2294,38 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 
                 // Linear decomposition charts removed per user request
             });
+            
+            // Smart refresh functions to avoid unnecessary full page reloads
+            function checkDataAndRefresh() {
+                console.log('Checking data status...');
+                // Simple reload - but user understands this is data checking, not automatic restart
+                window.location.reload();
+            }
+            
+            function checkChartStatus() {
+                console.log('Checking chart status...');
+                fetch('/chart-status')
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Chart status:', data);
+                        if (data.summary.any_calculating) {
+                            alert(`차트 계산 중입니다. 진행률: ${data.summary.overall_progress}%\\n잠시 후 다시 확인해주세요.`);
+                        } else if (data.summary.any_errors) {
+                            alert('일부 차트에서 오류가 발생했습니다. 전체 페이지를 새로고침하겠습니다.');
+                            window.location.reload();
+                        } else if (data.summary.all_ready) {
+                            alert('모든 차트가 준비되었습니다. 페이지를 새로고침하겠습니다.');
+                            window.location.reload();
+                        } else {
+                            alert('차트 상태를 확인 중입니다...');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error checking chart status:', error);
+                        alert('상태 확인 중 오류가 발생했습니다. 페이지를 새로고침하겠습니다.');
+                        window.location.reload();
+                    });
+            }
 
         </script>
     </body>
@@ -1925,12 +2334,25 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     # Use string replacement instead of .format() to avoid issues with JavaScript braces
     html = html_template.replace('{report_title}', report_title)
     html = html.replace('{timestamp_str}', timestamp_str)
-    html = html.replace('{len_df_sorted:,}', f"{len(df_sorted):,}")
-    html = html.replace('{avg_cs:.2f}', f"{df_sorted['CS'].mean():.2f}")
-    html = html.replace('{high_cs_count:,}', f"{(df_sorted['CS'] >= 1).sum():,}")
-    html = html.replace('{high_cs_pct:.1%}', f"{(df_sorted['CS'] >= 1).sum()/len(df_sorted):.1%}")
-    html = html.replace('{low_cs_count:,}', f"{(df_sorted['CS'] < 1).sum():,}")
-    html = html.replace('{low_cs_pct:.1%}', f"{(df_sorted['CS'] < 1).sum()/len(df_sorted):.1%}")
+    html = html.replace('{no_data_message}', no_data_message)
+    
+    # Handle statistics - use safe defaults if no data
+    if len(df_sorted) > 0 and 'CS' in df_sorted.columns:
+        html = html.replace('{len_df_sorted:,}', f"{len(df_sorted):,}")
+        html = html.replace('{avg_cs:.2f}', f"{df_sorted['CS'].mean():.2f}")
+        html = html.replace('{high_cs_count:,}', f"{(df_sorted['CS'] >= 1).sum():,}")
+        html = html.replace('{high_cs_pct:.1%}', f"{(df_sorted['CS'] >= 1).sum()/len(df_sorted):.1%}")
+        html = html.replace('{low_cs_count:,}', f"{(df_sorted['CS'] < 1).sum():,}")
+        html = html.replace('{low_cs_pct:.1%}', f"{(df_sorted['CS'] < 1).sum()/len(df_sorted):.1%}")
+    else:
+        # Safe defaults for no data
+        html = html.replace('{len_df_sorted:,}', "0")
+        html = html.replace('{avg_cs:.2f}', "0.00")
+        html = html.replace('{high_cs_count:,}', "0")
+        html = html.replace('{high_cs_pct:.1%}', "0.0%")
+        html = html.replace('{low_cs_count:,}', "0")
+        html = html.replace('{low_cs_pct:.1%}', "0.0%")
+    
     html = html.replace('{method_info_html}', method_info_html)
     html = html.replace('{comparison_info_html}', comparison_info_html)
     html = html.replace('{multi_frontier_chart_html}', advanced_analysis_chart_html)
@@ -1938,9 +2360,16 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     # Linear decomposition chart removed per user request
     html = html.replace('{all_plans_html}', all_plans_html)
 
+    # Prepare validation results JSON
+    validation_results_data = None
+    if df is not None and hasattr(df, 'attrs') and 'validation_report' in df.attrs:
+        validation_results_data = df.attrs['validation_report']
+    
+    validation_results_json = json.dumps(validation_results_data, ensure_ascii=False, cls=NumpyEncoder)
+    
     # Replace JSON placeholders safely
     html = html.replace('__FEATURE_FRONTIER_JSON__', feature_frontier_json)
-    html = html.replace('__MARGINAL_COST_FRONTIER_JSON__', marginal_cost_frontier_json)
+    html = html.replace('__VALIDATION_RESULTS_JSON__', validation_results_json)
     html = html.replace('__ADVANCED_ANALYSIS_JSON__', advanced_analysis_json)
     # Linear decomposition JSON removed per user request
     html = html.replace('__PLAN_EFFICIENCY_JSON__', plan_efficiency_json)

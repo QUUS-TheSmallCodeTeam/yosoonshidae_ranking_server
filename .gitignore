@@ -8,3 +8,6 @@ data/*
 .env.local
 .log_counter
 core.972334
+versions
+alias/
+.cache/

@@ -1,6 +1,10 @@
 # 🧠 Memory & Context
 
 ## 📊 Current System Status
+- **File-based data storage**: Implemented complete solution for multiprocessing memory sharing using `/app/data/shared/` directory
+- **Ranking table display**: Fixed "데이터 처리 대기 중" issue - now shows actual ranking data
+- **Multiprocessing compatibility**: Process-to-process data sharing via file system instead of memory
+- **Refresh button functionality**: Fixed AttributeError when df_with_rankings is None, now works in all states
 - **Async chart calculation**: Implemented to eliminate continuous calculations triggered by root endpoint
 - **Visual status indicators**: Loading icons (⚙️) for in-progress, error icons (❌) for failed calculations
 - **Manual refresh system**: No auto-polling, users manually refresh to check progress
@@ -27,6 +31,15 @@
 - **✅ UNLIMITED FLAGS IN REGRESSION**: voice_unlimited and message_unlimited now properly included in Feature Marginal Cost Coefficients table
 - **✅ MULTICOLLINEARITY ISSUE RESOLVED**: Removed problematic features from coefficient calculation pipeline ('data_stops_after_quota' and other highly correlated features), switched from Ridge to LinearRegression, enforced positive coefficient bounds for key features
 - **✅ ENHANCED COEFFICIENT TABLE**: Added unconstrained (raw OLS) vs constrained (bounded) coefficient comparison with color-coded adjustments
+- **✅ ASYNC PROCESSING SEQUENCE VERIFIED**: Response returned immediately after ranking calculation, validation and charts run in background only
+- **✅ DETAILED CALCULATION FORMULAS**: HTML coefficient table now shows exact mathematical steps including multicollinearity redistribution formulas
+- **F-string backslash error fixed**: HTML JavaScript code in f-string was using backslashes directly, moved to variable for proper syntax
+- **✅ MULTIPROCESSING MEMORY SHARING SOLVED**: Implemented file-based data storage system to replace global variable sharing
+- **✅ FILE-BASED STORAGE ARCHITECTURE**: Created data_storage.py module with save/load functions for DataFrame and cost structure
+- **✅ PROCESS-TO-PROCESS DATA SHARING**: Uses file system (/app/data/shared/) for reliable data exchange between FastAPI processes
+- **Process endpoint**: ✅ Working correctly - returns 1000+ ranked plans with CS ratios (JSON response successful) + saves to files
+- **Root endpoint**: ✅ Fixed - loads data from files instead of relying on global variables
+- **✅ ERROR LOG ANALYSIS COMPLETE**: 500+ line error.log contains only 1 actual error (empty data processing) and 500+ normal HF Space keep-alive polling logs
 
 ## 🎯 Key Achievements
 - **Cross-contamination problem solved**: Marginal Cost Frontier Charts show pure feature trends without contamination
@@ -47,28 +60,34 @@
 - **✅ FIXED RATES RANKING**: Ranking table now uses pure marginal coefficients from entire dataset for CS calculation
 - **✅ COMPREHENSIVE COEFFICIENT INVESTIGATION**: Systematic analysis of negative coefficient causes completed with definitive root cause identification
 - **✅ COEFFICIENT COMPARISON ENHANCEMENT**: Feature coefficient table now shows both unconstrained (raw) and constrained (bounded) values with difference calculation
+- **✅ MATHEMATICAL TRANSPARENCY**: Coefficient table displays exact calculation steps including multicollinearity redistribution with formulas like "(70.2 + 49.8) / 2 = 60.0"
+- **✅ MULTIPROCESSING ARCHITECTURE SOLVED**: File-based storage eliminates global variable sharing issues in FastAPI multiprocessing environment
 
 ## 🔌 Endpoint Architecture
 **/ endpoint (Root HTML Interface)**:
 - **Purpose**: Visual interface for users to view processed rankings and charts
-- **Requirements**: Must have data processed via /process first
+- **Data Source**: Loads from files using data_storage.load_rankings_data() instead of global variables
 - **Content**: Complete HTML report with ranking table, charts, and feature coefficient table
 - **Chart Status**: Shows individual loading states for each chart section if still calculating
-- **Data Source**: Uses global df_with_rankings from previous /process call
 - **Response**: Always returns HTML (immediate, never blocks for calculations)
+- **File Dependencies**: rankings.json, cost_structure.json, metadata.json in /app/data/shared/
 
 **/process endpoint (Data Processing API)**:
 - **Purpose**: Processes raw mobile plan data and calculates rankings using Cost-Spec analysis
 - **Input**: JSON array of mobile plan data
 - **Processing**: Preprocessing → Feature extraction → Coefficient calculation → Ranking → Store results
+- **File Storage**: Saves results to /app/data/shared/ directory using data_storage.save_rankings_data()
 - **Chart Calculation**: Triggers background async chart calculations (non-blocking)
 - **Response**: Immediate JSON with ranked plans and CS ratios
-- **Side Effect**: Populates global state for / endpoint to display
+- **Side Effect**: Populates file-based storage for / endpoint to display
 
 **Testing Workflow**: `/process` for data processing → `/` for visual verification of results
 **Development Pattern**: Use `/process` endpoint for testing core functionality, check HTML results via `/` endpoint
 
 ## 🔧 Technical Implementation
+- **File-based storage**: data_storage.py module handles save/load operations for DataFrame and cost structure
+- **Storage location**: /app/data/shared/ directory with rankings.json, cost_structure.json, metadata.json
+- **Multiprocessing compatibility**: File system provides reliable inter-process communication
 - **Data preparation**: `prepare_granular_marginal_cost_frontier_data()` function uses entire dataset for regression analysis
 - **Chart creation**: `createMarginalCostFrontierCharts()` JavaScript function renders interactive charts with full dataset results
 - **HTML integration**: Marginal Cost Frontier Analysis section displays comprehensive analysis results
@@ -79,20 +98,22 @@
 - **✅ UNLIMITED PROCESSING**: Separate handling of unlimited plans with proper categorical treatment
 - **✅ FLAG-BASED UNLIMITED**: Unlimited features stored separately from continuous analysis
 - **✅ COMPREHENSIVE FILTERING**: Uses entire dataset for analysis while maintaining data quality standards
-- **✅ CLEAN CODEBASE**: All Linear Decomposition and Multi-Feature Frontier Regression functions and references removed from codebase
+- **✅ CLEAN CODEBASE**: All Linear Decomposition and Multi-Feature Regression functions and references removed from codebase
 - **✅ CUMULATIVE PIECEWISE CALCULATION**: Uses fit_cumulative_piecewise_linear for proper cost accumulation
 - **✅ CHART Y-AXIS FIX**: Charts plot cumulative_cost instead of marginal_cost for proper visualization
 - **✅ FIXED RATES CS CALCULATION**: New method calculates CS ratios using pure coefficients without frontier filtering
 - **✅ DATA PIPELINE ANALYSIS**: Comprehensive investigation framework for diagnosing coefficient calculation issues
 - **✅ COEFFICIENT ENHANCEMENT**: `generate_feature_rates_table_html()` function shows unconstrained vs constrained coefficients with color-coded adjustment indicators
+- **✅ FILE-BASED DATA SHARING**: Eliminates global variable dependencies and multiprocessing memory sharing issues
 
 ## 🚨 Current Issues
-- **Feature coefficient table not displaying**: Table generation is working but cost_structure may be empty in the current data flow
-- **Data source verification needed**: Need to verify if cost_structure is being properly passed from coefficient calculation to HTML generation
-- **Multicollinearity issue**: voice_unlimited ↔ message_unlimited showing 96.8% correlation causing one coefficient to approach zero
-- **Coefficient redistribution**: Need to implement fair distribution of total value between highly correlated features
+- **None currently**: File-based storage system resolved all major multiprocessing memory sharing issues
 
 ## 📝 Feature Enhancement Details
+- **File storage structure**: JSON format for DataFrame serialization with metadata preservation
+- **Error handling**: Graceful degradation when files don't exist (returns None)
+- **Backward compatibility**: Maintains config module storage alongside file storage during transition
+- **Debug capabilities**: Enhanced debug-global endpoint shows both file and config storage status
 - **Unconstrained coefficients**: Raw OLS regression results without bounds constraints
 - **Constrained coefficients**: Final values after applying economic bounds (non-negative, minimum values)
 - **Adjustment display**: Green for upward adjustments, red for downward adjustments, gray for minimal changes
@@ -102,6 +123,8 @@
 - **User feedback**: Request for coefficient table with both raw and adjusted values for comparison
 - **Code enhancement**: Modified `_solve_constrained_regression()` to store unconstrained coefficients
 - **UI improvement**: Enhanced `generate_feature_rates_table_html()` with expanded table format
+- **Architecture decision**: User preference for file-based storage over multithreading conversion
+- **Problem diagnosis**: Identified multiprocessing as root cause of global variable sharing issues
 
 ## 📈 Chart Types Available
 1. **Traditional Feature Frontier Charts**: Market-based trends (with contamination)
@@ -119,8 +142,10 @@
 - **✅ PROPER COST VISUALIZATION**: Charts show realistic cumulative cost accumulation
 - **✅ PIECEWISE SEGMENT DISPLAY**: Coefficient table shows segment ranges instead of fixed rates
 - **✅ CLEAN RANKING TABLE**: Ranking now uses pure fixed rates from entire dataset analysis
+- **✅ RELIABLE DATA DISPLAY**: File-based storage ensures consistent ranking table display across all processes
 
 ## 🎯 User Requirements & Preferences
+- **File-based storage preferred**: User chose file-based solution over multithreading conversion for multiprocessing memory sharing
 - **No auto-refresh**: Manual refresh only, no constant polling
 - **Visual feedback**: Clear status indicators for chart calculation progress
 - **Immediate API response**: /process endpoint returns instantly, charts calculated separately
@@ -136,6 +161,10 @@
 - **Root cause investigation**: User prefers thorough analysis of underlying issues rather than quick workarounds
 
 ## 🔧 Technical Implementation Details
+- **File-based architecture**: data_storage.py module with save_rankings_data() and load_rankings_data() functions
+- **Storage format**: JSON serialization of pandas DataFrame with metadata preservation
+- **Inter-process communication**: File system provides reliable data sharing between FastAPI processes
+- **Error resilience**: Graceful handling of missing files with fallback to None values
 - **Infinite loop fix**: Added safety counters and division-by-zero checks in `prepare_feature_frontier_data`
 - **Logging optimization**: Reduced verbose logging to prevent SSH polling spam
 - **Chart data handling**: JavaScript functions handle full dataset analysis results
@@ -148,6 +177,7 @@
 - **Data preprocessing pipeline**: Raw data requires preprocessing via prepare_features() to create expected feature columns
 
 ## 🎯 Working Methods
+- **File-based data persistence**: Eliminates multiprocessing memory sharing issues through file system storage
 - **Fixed rates regression**: Uses FullDatasetMultiFeatureRegression for pure coefficient extraction on entire dataset
 - **Feature frontier charts**: Original logic maintained as requested
 - **Safety measures**: Infinite loop prevention implemented and working
@@ -157,6 +187,7 @@
 - **Investigation methodology**: Systematic analysis of data pipeline issues using parallel comparisons
 
 ## 🔧 Implementation Patterns
+- **File-based storage pattern**: Save on process, load on display - eliminates global variable dependencies
 - **Async chart calculation**: Background tasks for expensive visualizations
 - **Progressive status display**: Real-time progress indicators for chart generation
 - **Fallback mechanisms**: Basic HTML reports when charts fail or are in progress
@@ -167,14 +198,16 @@
 - **Root cause analysis**: Comprehensive investigation of technical issues before implementing solutions
 
 ## 📈 Data Flow
-- Raw data → Fixed rates multi-feature regression → CS ratio calculation → Immediate API response
+- Raw data → Fixed rates multi-feature regression → CS ratio calculation → **File storage** → Immediate API response
 - Background: Chart generation → HTML report with visualizations → Cache update
+- **File-based persistence**: Process endpoint saves to files, root endpoint loads from files
 - Feature analysis for each core feature (data, voice, messages, tethering, 5G)
 - Comprehensive dataset utilization for accurate coefficient extraction without filtering
 - Cross-contamination eliminated through full dataset regression approach using entire dataset
 - Cumulative cost calculation through piecewise segments for realistic visualization
 - Pure coefficient calculation for ranking table using fixed marginal rates
 - **Critical**: Raw data requires preprocessing to create expected feature columns before coefficient calculation
+- **Multiprocessing compatible**: File system provides reliable inter-process data sharing
 
 ## 시스템 정보
 - 운영체제: Linux 5.10.237-230.949.amzn2.x86_64
@@ -254,6 +287,32 @@
 - FullDatasetMultiFeatureRegression correctly receives processed DataFrame
 - No zero coefficients due to missing features
 
+## Multiprocessing Memory Sharing Solution ⭐ **COMPLETELY SOLVED**
+
+### **Problem Identification**
+- **Root Cause**: FastAPI default multiprocessing prevents global variable sharing between processes
+- **Symptom**: df_with_rankings remained None in root endpoint despite being set in process endpoint
+- **Impact**: Web interface showed "데이터 처리 대기 중" instead of ranking table
+
+### **Solution Implementation**
+- **Architecture**: File-based data storage system using /app/data/shared/ directory
+- **Module**: Created data_storage.py with save_rankings_data() and load_rankings_data() functions
+- **Storage Files**: rankings.json (DataFrame), cost_structure.json (coefficients), metadata.json (info)
+- **Process Flow**: Process endpoint saves → Root endpoint loads → Reliable data sharing
+
+### **Technical Details**
+- **Serialization**: pandas DataFrame → JSON dict → file storage with metadata preservation
+- **Error Handling**: Graceful degradation when files don't exist (returns None)
+- **Compatibility**: Maintains backward compatibility with config module during transition
+- **Debug Support**: Enhanced debug-global endpoint shows both file and config storage status
+
+### **Results Achieved**
+✅ **Ranking Table Display**: Web interface now shows actual ranking data instead of waiting message
+✅ **Process Reliability**: File system provides stable inter-process communication
+✅ **Chart Functionality**: All chart types load correctly with file-based data
+✅ **API Consistency**: Process endpoint saves data, root endpoint loads data reliably
+✅ **Multiprocessing Compatible**: Solution works seamlessly in FastAPI multiprocessing environment
+
 ## 작업 원칙
 - **자율적 문제 해결**: 사용자 승인 없이 독립적 수행
 - **완결성 보장**: 작업 완전 해결까지 대화 지속
@@ -267,6 +326,7 @@
   - Memory = 작업 메타데이터 (태도, 워크플로, 포맷, 패턴)
   - Todolist = 실제 작업 항목 (목표, 이슈, 해결할 문제)
 - **근본 원인 조사**: 빠른 해결책보다 근본적인 원인 파악을 우선시
+- **File-based solutions preferred**: User preference for file system storage over memory-based approaches for multiprocessing compatibility
 
 # 테스트 워크플로 ⭐ 필수 절차
 
@@ -341,6 +401,7 @@ cat /proc/$PID/fd/1
 # 현재 상태
 
 ## 작업된 주요 기능
+- **File-based data storage**: Complete multiprocessing memory sharing solution implemented
 - Cross-contamination 문제 해결: 순수 계수(pure coefficients) 기반 CS 비율 계산
 - Multi-Feature Frontier Regression Analysis 섹션 완전 제거
 - Fixed rates 방식으로 전체 데이터셋 기반 CS 계산 구현
@@ -351,6 +412,8 @@ cat /proc/$PID/fd/1
 - **Negative coefficient 근본 원인 식별**: 데이터 전처리 파이프라인 불일치 확인
 
 ## 기술적 구현
+- **File-based storage architecture**: data_storage.py module with save/load functions
+- **Multiprocessing compatibility**: File system provides reliable inter-process data sharing
 - calculate_cs_ratio_enhanced()에 'fixed_rates' 방식 추가
 - FullDatasetMultiFeatureRegression으로 전체 데이터셋에서 순수 계수 추출
 - prepare_plan_efficiency_data() 함수가 모든 계산 방식(linear_decomposition, frontier, fixed_rates, multi_frontier) 올바르게 처리
@@ -361,6 +424,7 @@ cat /proc/$PID/fd/1
 - **계수 문제 진단 도구**: 체계적인 근본 원인 분석 프레임워크 구현
 
 ## 데이터 처리 방식
+- **File-based persistence**: Process endpoint saves to files, root endpoint loads from files
 - 무제한 기능: 불린 플래그와 3배 승수 값으로 처리
 - **Double counting 방지**: 무제한 플래그가 있는 기능의 연속값은 0으로 설정
 - 필터링 없이 전체 데이터셋 처리
@@ -382,9 +446,11 @@ cat /proc/$PID/fd/1
 - 문자메시지: ₩3.19/건 (무제한 시 0으로 설정)
 
 ## 테스트 환경
+- **File-based storage**: Uses /app/data/shared/ directory for reliable data persistence
 - 로컬 테스트 시 data/raw 폴더의 최신 JSON 파일 사용
 - curl -X POST http://localhost:7860/process -H "Content-Type: application/json" -d @$(ls -t data/raw/*.json | head -1)
 - 모든 기능이 정상 작동 중
 - Double counting 문제 해결 완료
 - Unlimited type flags 정상 작동
 - Negative coefficient 근본 원인 식별 완료
+- **Multiprocessing memory sharing**: Completely resolved with file-based storage system

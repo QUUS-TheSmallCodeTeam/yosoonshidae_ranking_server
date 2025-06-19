@@ -11,13 +11,14 @@ from datetime import datetime
 from pathlib import Path
 import pandas as pd
 import numpy as np
-from typing import Optional, Union, List
+from typing import Optional, Union, List, Any
 import os
 import psutil
 import logging
 
 # Import configuration
 from modules.config import config, logger
+from modules import data_storage
 
 # Import necessary modules
 # Legacy imports (cleaned up - now using consolidated import below)
@@ -31,6 +32,9 @@ from modules import (
     cleanup_all_datasets,
     rank_plans_by_cs_enhanced
 )
+
+# Import validation functions
+from modules.cost_spec import calculate_multiple_coefficient_sets
 
 # Initialize FastAPI
 app = FastAPI(title="Moyo Plan Ranking Model Server - Enhanced Cost-Spec Method")
@@ -75,9 +79,9 @@ async def startup_event():
     threading.Thread(target=delayed_start, daemon=True).start()
     logger.info("FastAPI app started - log monitoring will start in 3 seconds")
 
-# Global variables for storing data
-df_with_rankings = None  # Global variable to store the latest rankings
+# Global variables for storing data (using config module instead of global variables)
 latest_logical_test_results_cache = None  # For storing logical test results
+validation_results_cache = None  # For storing validation results
 
 # Individual chart calculation statuses with threading
 from concurrent.futures import ThreadPoolExecutor
@@ -85,8 +89,8 @@ import threading
 
 chart_types = [
     'feature_frontier',
-    'marginal_cost_frontier', 
-    'multi_frontier_analysis',
+    # 'marginal_cost_frontier',  # 복잡한 전체 데이터셋 분석 - 너무 무거워서 비활성화
+    # 'multi_frontier_analysis',  # 다중 프론티어 분석 - 너무 무거워서 비활성화  
     'plan_efficiency'
 ]
 
@@ -101,8 +105,19 @@ chart_calculation_statuses = {
     } for chart_type in chart_types
 }
 
+# Add validation status tracking
+validation_status = {
+    'is_calculating': False,
+    'last_calculation_time': None,
+    'calculation_progress': 0,
+    'error_message': None,
+    'validation_results': None,
+    'status': 'idle'  # idle, calculating, ready, error
+}
+
 chart_calculation_lock = threading.Lock()
 chart_executor = ThreadPoolExecutor(max_workers=len(chart_types), thread_name_prefix="chart_worker")
+validation_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="validation_worker")
 
 def update_chart_status(chart_type, status=None, progress=None, error=None, data=None):
     """Thread-safe update of chart status"""
@@ -242,6 +257,47 @@ async def calculate_charts_async(df_ranked, method, cost_structure, request_id):
         for chart_type in chart_types:
             update_chart_status(chart_type, error=str(e))
 
+def update_validation_status(status=None, progress=None, error=None, results=None):
+    """Thread-safe update of validation status"""
+    global validation_status, validation_results_cache
+    with chart_calculation_lock:
+        if status is not None:
+            validation_status['status'] = status
+            validation_status['is_calculating'] = (status == 'calculating')
+        if progress is not None:
+            validation_status['calculation_progress'] = progress
+        if error is not None:
+            validation_status['error_message'] = str(error)
+            validation_status['status'] = 'error'
+        if results is not None:
+            validation_status['validation_results'] = results
+            validation_results_cache = results
+        if status == 'ready':
+            validation_status['last_calculation_time'] = datetime.now()
+            validation_status['calculation_progress'] = 100
+
+def calculate_validation_async(df, method, feature_set, fee_column, tolerance, request_id):
+    """Calculate validation in background"""
+    try:
+        update_validation_status(status='calculating', progress=10)
+        logger.info(f"[{request_id}] Started background validation calculation")
+        
+        update_validation_status(progress=30)
+        validation_results = calculate_multiple_coefficient_sets(
+            df,
+            method=method,
+            feature_set=feature_set,
+            fee_column=fee_column,
+            tolerance=tolerance
+        )
+        
+        update_validation_status(status='ready', progress=100, results=validation_results)
+        logger.info(f"[{request_id}] Background validation calculation completed")
+        
+    except Exception as e:
+        logger.error(f"[{request_id}] Error in background validation: {str(e)}")
+        update_validation_status(error=str(e), progress=0)
+
 # Data model for plan input 
 class PlanData(BaseModel):
     id: int
@@ -319,21 +375,26 @@ class PlanInput(BaseModel):
 
 # Define FastAPI endpoints
 @app.get("/")
-async def root(basic: bool = False):
+def root(basic: bool = False):
     """
     Root endpoint that always shows the full HTML report.
     Individual chart sections show loading status if not ready.
     """
-    global df_with_rankings, chart_calculation_statuses
+    global chart_calculation_statuses
     
     try:
-        # Check if we have data
-        if df_with_rankings is None:
-            return HTMLResponse(content="<h1>No data available. Please process data first via /process endpoint.</h1>")
+        # Load data from files instead of using config module
+        df_to_use, cost_structure, method = data_storage.load_rankings_data()
         
-        # Always generate the full HTML report with chart loading states
-        method = getattr(df_with_rankings, 'method', 'fixed_rates')
-        cost_structure = getattr(df_with_rankings, 'cost_structure', None)
+        logger.info(f"Root endpoint - loaded data is None: {df_to_use is None}")
+        if df_to_use is not None:
+            logger.info(f"Root endpoint - loaded data shape: {df_to_use.shape}")
+        
+        # Use loaded data or defaults
+        if method is None:
+            method = 'fixed_rates'
+        if cost_structure is None:
+            cost_structure = {}
         
         method_name = "Fixed Rates"
         title = f"Enhanced Cost-Spec Rankings ({method_name})"
@@ -344,7 +405,7 @@ async def root(basic: bool = False):
         
         # Use existing data and include chart statuses for individual section loading
         html_report = generate_html_report(
-            df_with_rankings, 
+            df_to_use, 
             datetime.now(), 
             is_cs=True, 
             title=title,
@@ -359,7 +420,7 @@ async def root(basic: bool = False):
         return HTMLResponse(content=f"<h1>Error: {str(e)}</h1>", status_code=500)
 
 @app.post("/process")
-async def process_data(request: Request):
+def process_data(data: Any = Body(...)):
     """
     Main data processing endpoint - analyzes mobile plans using Cost-Spec enhanced analysis.
     """
@@ -389,7 +450,7 @@ async def process_data(request: Request):
             logger.info(f"[{request_id}] No old files found to clean up")
         
         # Step 2: Parse request data and options
-        request_json = await request.json()
+        request_json = data
         
         # Check if the request includes data and/or options
         if isinstance(request_json, dict):
@@ -444,7 +505,9 @@ async def process_data(request: Request):
         
         processed_df.to_csv(processed_data_path, index=False, encoding='utf-8')
         
-        # Step 6: Apply Enhanced Cost-Spec ranking method with options
+        # Step 6: Apply Enhanced Cost-Spec ranking method (IMMEDIATELY - no validation delay)
+        logger.info(f"[{request_id}] Starting IMMEDIATE ranking calculation...")
+        
         df_ranked = rank_plans_by_cs_enhanced(
             processed_df,
             method=method,
@@ -454,6 +517,7 @@ async def process_data(request: Request):
             include_comparison=include_comparison
         )
         
+        logger.info(f"[{request_id}] ✓ Ranking calculation completed immediately")
         logger.info(f"[{request_id}] Ranked DataFrame shape: {df_ranked.shape}")
         
         # Store the results in global state for access by other endpoints
@@ -465,14 +529,7 @@ async def process_data(request: Request):
             top_10_by_rank = df_ranked.sort_values(rank_column).head(10)
             logger.info(f"Top 10 plans by rank to be stored:\n{top_10_by_rank[['plan_name', 'CS', rank_column]].to_string()}")
         
-        # Store the complete dataframe
-        config.df_with_rankings = df_ranked.copy()
-        
-        # Store the global dataframe for the root endpoint
-        global df_with_rankings
-        df_with_rankings = df_ranked.copy()
-        
-        # Extract cost structure from DataFrame attrs and store as object attributes
+        # Extract cost structure from DataFrame attrs
         cost_structure = {}
         if hasattr(df_ranked, 'attrs') and 'cost_structure' in df_ranked.attrs:
             cost_structure = df_ranked.attrs['cost_structure']
@@ -481,9 +538,15 @@ async def process_data(request: Request):
             cost_structure = df_ranked.attrs['multi_frontier_breakdown']
             logger.info(f"[{request_id}] Multi-frontier breakdown found in DataFrame attrs: {cost_structure}")
         
-        # Set cost_structure as object attributes for HTML report access
-        df_with_rankings.cost_structure = cost_structure
-        df_with_rankings.method = method
+        # Save data to files instead of storing in memory
+        save_success = data_storage.save_rankings_data(df_ranked, cost_structure, method)
+        if save_success:
+            logger.info(f"[{request_id}] Successfully saved rankings data to files")
+        else:
+            logger.error(f"[{request_id}] Failed to save rankings data to files")
+        
+        # Also store in config for backward compatibility (will be removed later)
+        config.df_with_rankings = df_ranked.copy()
         config.df_with_rankings.cost_structure = cost_structure
         config.df_with_rankings.method = method
         
@@ -589,28 +652,79 @@ async def process_data(request: Request):
                 "report_url": f"/reports/cs_reports/{report_filename}"
             },
             "top_10_plans": convert_numpy_types(top_10_plans),
-            "all_ranked_plans": convert_numpy_types(all_ranked_plans)
+            "all_ranked_plans": convert_numpy_types(all_ranked_plans),
+            "validation_status": "calculating",  # Validation started in background
+            "chart_status": "calculating"  # Charts also started in background
         }
         
-        # Start chart calculation in the background (non-blocking for fast ranking response)
+        # Start background tasks AFTER response is prepared (non-blocking)
         import asyncio
         try:
+            # Start validation calculation in background
+            validation_task = validation_executor.submit(
+                calculate_validation_async, 
+                processed_df.copy(), 
+                method, 
+                feature_set, 
+                fee_column, 
+                tolerance, 
+                request_id
+            )
+            logger.info(f"[{request_id}] Started background validation task")
+            
             # Create background task for chart calculation - don't await!
             loop = asyncio.get_event_loop()
             chart_calculation_task = loop.create_task(
                 calculate_charts_async(df_ranked, method, cost_structure, request_id)
             )
             logger.info(f"[{request_id}] Started background chart calculation task")
-            response["chart_status"] = "calculating"
+            
         except Exception as e:
-            logger.error(f"[{request_id}] Failed to start background chart calculation: {str(e)}")
+            logger.error(f"[{request_id}] Failed to start background tasks: {str(e)}")
+            response["validation_status"] = "failed_to_start"
             response["chart_status"] = "failed_to_start"
-            response["chart_error"] = str(e)
+            response["background_error"] = str(e)
         
         return response
     except Exception as e:
         logger.exception(f"[{request_id}] Error in /process: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing data: {str(e)}")
+
+@app.get("/validation-status")
+def get_validation_status():
+    """
+    Get the current status of validation calculation.
+    """
+    global validation_status, validation_results_cache
+    with chart_calculation_lock:
+        status = validation_status.copy()
+    
+    # Add validation results if available
+    if validation_results_cache:
+        status['validation_results'] = validation_results_cache
+    
+    return status
+
+@app.get("/validation-results")
+def get_validation_results():
+    """
+    Get the validation results if ready.
+    """
+    global validation_status, validation_results_cache
+    with chart_calculation_lock:
+        status = validation_status.copy()
+    
+    if status['status'] != 'ready':
+        raise HTTPException(
+            status_code=409, 
+            detail=f"Validation is not ready. Current status: {status['status']}"
+        )
+    
+    return {
+        "status": status['status'],
+        "validation_results": validation_results_cache,
+        "last_calculation_time": status['last_calculation_time']
+    }
 
 @app.get("/chart-status")
 def get_chart_status():
@@ -715,7 +829,7 @@ def get_status_page():
         status_text = "No calculations performed yet"
         status_color = "#6c757d"
     
-    html = f"""
+    html = """
     <html>
         <head>
             <title>System Status - Moyo Plan Rankings</title>
@@ -727,6 +841,35 @@ def get_status_page():
                 .btn {{ background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px; text-decoration: none; display: inline-block; }}
                 .btn:hover {{ background-color: #0056b3; }}
             </style>
+            <script>
+                function checkSystemStatus() {{
+                    console.log('Checking system status...');
+                    fetch('/chart-status')
+                        .then(response => response.json())
+                        .then(data => {{
+                            console.log('System status:', data);
+                            const summary = data.summary;
+                            let message = '시스템 상태:\\n';
+                            message += '전체 차트: ' + summary.total_charts + '개\\n';
+                            message += '완료된 차트: ' + summary.ready_charts + '개\\n';
+                            message += '계산 중인 차트: ' + summary.calculating_charts + '개\\n';
+                            message += '오류 차트: ' + summary.error_charts + '개\\n';
+                            message += '전체 진행률: ' + summary.overall_progress + '%';
+                            
+                            if (summary.any_calculating) {{
+                                message += '\\n\\n차트 계산이 진행 중입니다.';
+                            }} else if (summary.all_ready) {{
+                                message += '\\n\\n모든 차트가 준비되었습니다!';
+                            }}
+                            
+                            alert(message);
+                        }})
+                        .catch(error => {{
+                            console.error('Error checking status:', error);
+                            alert('상태 확인 중 오류가 발생했습니다.');
+                        }});
+                }}
+            </script>
         </head>
         <body>
             <div class="status-card">
@@ -735,11 +878,11 @@ def get_status_page():
                 <div class="status-text">{status_text}</div>
                 <a href="/" class="btn">🏠 Home</a>
                 <a href="/chart-status" class="btn">📊 API Status</a>
-                <button onclick="window.location.reload()" class="btn">🔄 Refresh</button>
+                <button onclick="checkSystemStatus()" class="btn">🔄 상태 확인</button>
             </div>
         </body>
     </html>
-    """
+    """.format(status_color=status_color, status_icon=status_icon, status_text=status_text)
     
     return HTMLResponse(content=html)
 
@@ -747,6 +890,28 @@ def get_status_page():
 def test(request: dict = Body(...)):
     """Simple echo endpoint for testing (returns the provided data)."""
     return {"received": request}
+
+@app.get("/debug-global")
+def debug_global_state():
+    """Debug endpoint to check file-based data storage state"""
+    # Check file-based storage
+    file_info = data_storage.get_data_info()
+    
+    # Also check config for comparison
+    config_info = {
+        "config_df_with_rankings_is_none": config.df_with_rankings is None,
+        "config_df_with_rankings_type": str(type(config.df_with_rankings)),
+        "config_df_with_rankings_shape": config.df_with_rankings.shape if config.df_with_rankings is not None else None,
+        "config_df_with_rankings_columns": list(config.df_with_rankings.columns) if config.df_with_rankings is not None else None,
+        "has_method_attr": hasattr(config.df_with_rankings, 'method') if config.df_with_rankings is not None else False,
+        "has_cost_structure_attr": hasattr(config.df_with_rankings, 'cost_structure') if config.df_with_rankings is not None else False
+    }
+    
+    return {
+        "file_storage": file_info,
+        "config_storage": config_info,
+        "storage_method": "file_based_with_config_backup"
+    }
 
 # The /upload-csv endpoint has been removed
 # All functionality is now consolidated in the /process endpoint
