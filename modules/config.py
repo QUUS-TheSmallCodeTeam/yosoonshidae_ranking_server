@@ -75,5 +75,31 @@ class Config:
         os.environ["PYTHONPATH"] = str(self.app_dir)
         logger.info(f"Set PYTHONPATH to: {self.app_dir}")
 
+# Feature set definitions
+FEATURE_SETS = {
+    'basic': [
+        'basic_data_clean', 'basic_data_unlimited',
+        'daily_data_clean', 'daily_data_unlimited',
+        'voice_clean', 'voice_unlimited',
+        'message_clean', 'message_unlimited',
+        'additional_call', 'is_5g',
+        'tethering_gb', 'speed_when_exhausted',
+        'data_throttled_after_quota', 'data_unlimited_speed', 'has_unlimited_speed'
+        # REMOVED: only 'data_stops_after_quota' per user request
+    ]
+}
+
+# Unlimited flag mappings
+UNLIMITED_FLAGS = {
+    'basic_data_clean': 'basic_data_unlimited',
+    'daily_data_clean': 'daily_data_unlimited',
+    'voice_clean': 'voice_unlimited',
+    'message_clean': 'message_unlimited',
+    'speed_when_exhausted': 'has_unlimited_speed'
+}
+
+# Use all features for frontier calculation, not just core ones
+CORE_FEATURES = FEATURE_SETS['basic']
+
 # Create global config instance
 config = Config()
