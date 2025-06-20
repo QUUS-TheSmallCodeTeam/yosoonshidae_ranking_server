@@ -187,8 +187,8 @@ def calculate_and_save_charts(df_ranked: pd.DataFrame, method: str, cost_structu
         
         # 1. Feature Frontier Charts
         try:
-            core_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb']
-            charts_data['feature_frontier'] = prepare_feature_frontier_data(df_ranked, core_features)
+            from .config import CORE_FEATURES
+            charts_data['feature_frontier'], _, _ = prepare_feature_frontier_data(df_ranked, CORE_FEATURES)
             logger.info("✓ Feature frontier chart data calculated")
         except Exception as e:
             logger.error(f"Failed to calculate feature frontier chart: {e}")

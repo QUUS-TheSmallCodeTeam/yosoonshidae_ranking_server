@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 from ..config import FEATURE_SETS, UNLIMITED_FLAGS
 from ..frontier.core import calculate_feature_frontiers, estimate_frontier_value, calculate_plan_baseline_cost
 from ..regression.full_dataset import FullDatasetMultiFeatureRegression
+from ..regression.multi_feature import MultiFeatureFrontierRegression
 
 def calculate_cs_ratio(df: pd.DataFrame, feature_set: str = 'basic', 
                       fee_column: str = 'fee') -> pd.DataFrame:

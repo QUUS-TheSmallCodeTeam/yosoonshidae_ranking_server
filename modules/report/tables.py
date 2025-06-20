@@ -102,15 +102,46 @@ def generate_feature_rates_table_html(cost_structure):
         
         coeff_display = format_coefficient(coefficient)
         
-        # Determine description based on feature type
-        if feature.endswith('_unlimited'):
-            description = "무제한 기능 활성화 시 적용되는 가치"
-        elif feature in ['data_throttled_after_quota', 'data_unlimited_speed']:
-            description = "데이터 소진 후 처리 방식에 따른 고정 가치"
-        elif feature == 'is_5g':
-            description = "5G 네트워크 지원에 따른 기술 프리미엄"
+        # Generate detailed calculation description based on feature type and coefficient
+        if isinstance(cost_data, dict):
+            # Extract calculation details from cost_data
+            calculation_method = cost_data.get('method', 'regression')
+            r_squared = cost_data.get('r_squared', None)
+            samples_used = cost_data.get('samples_used', None)
+            
+            base_description = ""
+            if feature.endswith('_unlimited'):
+                base_description = "무제한 기능 활성화 시 적용되는 가치"
+            elif feature in ['data_throttled_after_quota', 'data_unlimited_speed']:
+                base_description = "데이터 소진 후 처리 방식에 따른 고정 가치"
+            elif feature == 'is_5g':
+                base_description = "5G 네트워크 지원에 따른 기술 프리미엄"
+            else:
+                base_description = f"{info['name']} 1단위 증가 시 추가되는 한계비용"
+            
+            # Add calculation details
+            calc_details = []
+            if calculation_method:
+                calc_details.append(f"방법: {calculation_method}")
+            if r_squared is not None:
+                calc_details.append(f"R²: {r_squared:.3f}")
+            if samples_used is not None:
+                calc_details.append(f"샘플수: {samples_used}")
+            
+            if calc_details:
+                description = f"{base_description}<br><small>계산상세: {', '.join(calc_details)}</small>"
+            else:
+                description = base_description
         else:
-            description = f"{info['name']} 1단위 증가 시 추가되는 한계비용"
+            # Simple coefficient value - show calculation formula
+            if feature.endswith('_unlimited'):
+                description = "무제한 기능 활성화 시 적용되는 가치"
+            elif feature in ['data_throttled_after_quota', 'data_unlimited_speed']:
+                description = "데이터 소진 후 처리 방식에 따른 고정 가치"
+            elif feature == 'is_5g':
+                description = "5G 네트워크 지원에 따른 기술 프리미엄"
+            else:
+                description = f"{info['name']} 1단위 증가 시 추가되는 한계비용<br><small>계산: {coefficient:.4f} × 기능값 = 기여분</small>"
         
         html += f"""
                 <tr>

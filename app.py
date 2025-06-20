@@ -155,8 +155,8 @@ def calculate_single_chart(chart_type, df_ranked, method, cost_structure, reques
         if chart_type == 'feature_frontier':
             update_chart_status(chart_type, progress=30)
             from modules.report_charts import prepare_feature_frontier_data
-            core_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb']
-            chart_data = prepare_feature_frontier_data(df_ranked, core_features)
+            from modules.config import CORE_FEATURES
+            chart_data, _, _ = prepare_feature_frontier_data(df_ranked, CORE_FEATURES)
             
         elif chart_type == 'marginal_cost_frontier':
             update_chart_status(chart_type, progress=30)
@@ -286,8 +286,8 @@ def calculate_and_save_charts_background(df_ranked, method, cost_structure, requ
                 # Calculate this specific chart
                 if chart_type == 'feature_frontier':
                     from modules.report_charts import prepare_feature_frontier_data
-                    core_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb']
-                    chart_data = prepare_feature_frontier_data(df_ranked, core_features)
+                    from modules.config import CORE_FEATURES
+                    chart_data, _, _ = prepare_feature_frontier_data(df_ranked, CORE_FEATURES)
                 elif chart_type == 'plan_efficiency':
                     from modules.report_html import prepare_plan_efficiency_data
                     chart_data = prepare_plan_efficiency_data(df_ranked, method)
