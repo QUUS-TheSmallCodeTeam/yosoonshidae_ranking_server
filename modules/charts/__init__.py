@@ -14,10 +14,8 @@ Modules:
 - piecewise_utils: Piecewise linear regression utilities
 """
 
-from .feature_frontier import (
-    prepare_feature_frontier_data,
-    prepare_residual_analysis_data
-)
+from .feature_frontier import prepare_feature_frontier_data
+from .residual_analysis import prepare_residual_analysis_data
 
 from .multi_frontier import (
     prepare_multi_frontier_chart_data,
