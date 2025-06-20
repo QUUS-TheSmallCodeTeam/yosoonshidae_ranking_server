@@ -146,7 +146,7 @@ def prepare_plan_efficiency_data(df, method):
     
     Args:
         df: DataFrame with plan data including CS ratios and baselines
-        method: Method used ('linear_decomposition', 'frontier', 'fixed_rates', or 'multi_frontier')
+        method: Method used ('frontier', 'fixed_rates', or 'multi_frontier')
         
     Returns:
         Dictionary with chart data for JavaScript rendering
@@ -160,7 +160,7 @@ def prepare_plan_efficiency_data(df, method):
     }
     
     # Get baseline and actual cost columns based on method
-    if method == 'linear_decomposition' and 'B_decomposed' in df.columns:
+    if method == 'linear_decomposition' and 'B_decomposed' in df.columns:  # Legacy support
         baseline_col = 'B_decomposed'
         cs_col = 'CS_decomposed'
     else:

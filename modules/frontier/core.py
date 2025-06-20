@@ -13,6 +13,9 @@ import logging
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Import configuration
+from ..config import CORE_FEATURES
+
 def create_robust_monotonic_frontier(df_feature_specific: pd.DataFrame, 
                                    feature_col: str, 
                                    cost_col: str) -> pd.Series:

@@ -35,7 +35,7 @@ def get_main_html_template():
             
             {no_data_message}
             
-            <div class="summary" style="{'display:none;' if no_data_message else ''}">
+            <div class="summary" style="{summary_display_style}">
                 <h2>요약 통계</h2>
                 <ul>
                     <li>분석된 요금제 수: <strong>{len_df_sorted:,}개</strong></li>

@@ -35,7 +35,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
         report_title: Title for the report
         is_cs: Whether this is a Cost-Spec report (for backward compatibility)
         title: Alternative title (for backward compatibility)
-        method: Cost-Spec method used ('linear_decomposition' or 'frontier')
+        method: Cost-Spec method used ('frontier', 'multi_frontier', or 'fixed_rates')
         cost_structure: Cost structure dictionary from linear decomposition
         chart_statuses: Dictionary with individual chart statuses for loading states
         charts_data: Pre-calculated charts data from file storage
@@ -49,14 +49,23 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
         
     # Add method information to title if available
     if method:
-        method_name = "Linear Decomposition" if method == "linear_decomposition" else "Frontier-Based"
+        method_names = {
+            "fixed_rates": "Fixed Rates", 
+            "multi_frontier": "Multi-Frontier", 
+            "frontier": "Frontier-Based"
+        }
+        method_name = method_names.get(method, "Frontier-Based")
         report_title = f"{report_title} ({method_name})"
         
     # Set timestamp if not provided
     if timestamp is None:
         timestamp = datetime.now()
     
-    timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+    # Handle timestamp as string or datetime object
+    if isinstance(timestamp, str):
+        timestamp_str = timestamp
+    else:
+        timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
     
     # Handle case when no data is available
     if df is None or df.empty:
@@ -140,6 +149,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
     # Determine display styles based on chart status
     feature_frontier_display_style = "display:none;" if feature_frontier_status_html else ""
     plan_efficiency_display_style = "display:none;" if plan_efficiency_status_html else ""
+    summary_display_style = "display:none;" if no_data_message else ""
     
     # Get template components
     css_styles = get_main_css_styles()
@@ -160,6 +170,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
         css_styles=css_styles,
         timestamp_str=timestamp_str,
         no_data_message=no_data_message,
+        summary_display_style=summary_display_style,
         len_df_sorted=len_df_sorted,
         avg_cs=avg_cs,
         high_cs_count=high_cs_count,

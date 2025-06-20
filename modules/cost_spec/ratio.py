@@ -140,7 +140,7 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
     
     Args:
         df: DataFrame with plan data
-        method: Calculation method ('frontier', 'linear_decomposition', 'multi_frontier', or 'fixed_rates')
+        method: Calculation method ('frontier', 'multi_frontier', or 'fixed_rates')
         feature_set: Name of the feature set to use
         fee_column: Column containing the fee to use
         **method_kwargs: Additional arguments passed to specific methods
@@ -219,90 +219,9 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
             return calculate_cs_ratio(df, feature_set, fee_column)
 
     elif method == 'linear_decomposition':
-        # Use linear decomposition method
-        logger.info("Starting linear decomposition method")
-        df_result = df.copy()
-        
-        # Get features for this feature set
-        if feature_set in FEATURE_SETS:
-            features = [f for f in FEATURE_SETS[feature_set] if f not in UNLIMITED_FLAGS.values()]
-        else:
-            raise ValueError(f"Unknown feature set: {feature_set}")
-        
-        logger.info(f"Using features for decomposition: {features}")
-        
-        # Initialize linear decomposition
-        tolerance = method_kwargs.get('tolerance', 500)
-        # Get all features for this feature set (excluding unlimited flags)
-        if feature_set in FEATURE_SETS:
-            all_features = [f for f in FEATURE_SETS[feature_set] if f not in UNLIMITED_FLAGS.values()]
-        else:
-            # Fallback to safe features if feature_set not found
-            all_features = ['basic_data_clean', 'voice_clean', 'message_clean', 'tethering_gb', 'is_5g']
-        
-        # Only use features that actually exist in the dataframe
-        decomp_features = [f for f in all_features if f in df.columns]
-        if len(decomp_features) < 3:
-            logger.warning(f"Not enough valid features for decomposition: {decomp_features}")
-            logger.info("Falling back to frontier method due to insufficient features")
-            return calculate_cs_ratio(df, feature_set, fee_column)
-        decomp_features = method_kwargs.get('features', decomp_features)
-        
-        logger.info(f"Decomposition features: {decomp_features}")
-        
-        try:
-            decomposer = LinearDecomposition(tolerance=tolerance, features=decomp_features)
-            
-            # Extract representative plans using frontier points
-            selection_method = method_kwargs.get('selection_method', 'frontier_points')
-            representative_plans = decomposer.extract_representative_plans(df, selection_method)
-            logger.info(f"Extracted {len(representative_plans)} representative plans")
-            
-            # Solve for coefficients using 'original_fee' to match frontier selection
-            coefficients = decomposer.solve_coefficients(representative_plans, 'original_fee')
-            logger.info(f"Successfully solved coefficients: {coefficients}")
-            
-            # Calculate decomposed baselines
-            baselines = decomposer.calculate_decomposed_baselines(df)
-            logger.info(f"Calculated baselines for {len(baselines)} plans")
-            
-            # Add results to dataframe
-            df_result['B_decomposed'] = baselines
-            df_result['CS_decomposed'] = baselines / df_result[fee_column]
-            
-            # Also calculate traditional method for comparison
-            df_traditional = calculate_cs_ratio(df, feature_set, fee_column)
-            df_result['B_frontier'] = df_traditional['B']
-            df_result['CS_frontier'] = df_traditional['CS']
-            
-            # Set primary columns to decomposed values
-            df_result['B'] = df_result['B_decomposed']
-            df_result['CS'] = df_result['CS_decomposed']
-            
-            # Add coefficient information as metadata (both formats for compatibility)
-            cost_structure = {
-                'base_cost': float(coefficients[0]),
-                'feature_costs': {
-                    feature: {
-                        'coefficient': float(coef),
-                        'min_increment': 1,
-                        'cost_per_unit': float(coef)
-                    } for feature, coef in zip(decomp_features, coefficients[1:])
-                }
-            }
-            df_result.attrs['decomposition_coefficients'] = cost_structure
-            df_result.attrs['cost_structure'] = cost_structure
-            
-            logger.info(f"Created cost_structure: {cost_structure}")
-            
-            return df_result
-            
-        except Exception as e:
-            logger.error(f"Linear decomposition failed: {str(e)}")
-            logger.error(f"Error type: {type(e).__name__}")
-            # Fallback to frontier method
-            logger.info("Falling back to frontier method")
-            return calculate_cs_ratio(df, feature_set, fee_column)
+        # Linear decomposition method deprecated - redirect to fixed_rates
+        logger.warning("linear_decomposition method is deprecated, using fixed_rates instead")
+        return calculate_cs_ratio_enhanced(df, 'fixed_rates', feature_set, fee_column, **method_kwargs)
     
     elif method == 'multi_frontier':
         # Use new multi-feature frontier regression method
@@ -385,7 +304,7 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
             return calculate_cs_ratio(df, feature_set, fee_column)
     
     else:
-        raise ValueError(f"Unknown method: {method}. Supported methods: 'frontier', 'linear_decomposition', 'multi_frontier', 'fixed_rates'")
+        raise ValueError(f"Unknown method: {method}. Supported methods: 'frontier', 'multi_frontier', 'fixed_rates'")
 
 def rank_plans_by_cs_enhanced(df: pd.DataFrame, method: str = 'frontier',
                             feature_set: str = 'basic', fee_column: str = 'fee',
@@ -395,7 +314,7 @@ def rank_plans_by_cs_enhanced(df: pd.DataFrame, method: str = 'frontier',
     
     Args:
         df: DataFrame with plan data
-        method: Calculation method ('frontier' or 'linear_decomposition')
+        method: Calculation method ('frontier', 'multi_frontier', or 'fixed_rates')
         feature_set: Name of the feature set to use
         fee_column: Column containing the fee to use
         top_n: If provided, return only the top N plans

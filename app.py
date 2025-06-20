@@ -19,6 +19,7 @@ import logging
 # Import configuration
 from modules.config import config, logger
 from modules import data_storage
+from modules.performance import profiler, cache_manager, get_system_info
 
 # Import necessary modules
 # Legacy imports (cleaned up - now using consolidated import below)
@@ -653,7 +654,7 @@ def process_data(data: Any = Body(...)):
         
         # Set up HTML report info
         timestamp_now = datetime.now()
-        method_suffix = "decomp" if method == "linear_decomposition" else "frontier"
+        method_suffix = method if method in ["fixed_rates", "multi_frontier"] else "frontier"
         report_filename = f"cs_ranking_{method_suffix}_{timestamp_now.strftime('%Y%m%d_%H%M%S')}.html"
         report_path = config.cs_report_dir / report_filename
         
@@ -933,6 +934,50 @@ def debug_global_state():
         "config_storage": config_info,
         "storage_method": "file_based_with_config_backup"
     }
+
+# Performance monitoring endpoints
+@app.get("/performance")
+def get_performance_stats():
+    """Get performance monitoring statistics"""
+    try:
+        return {
+            "status": "success",
+            "system_info": get_system_info(),
+            "profiler_summary": profiler.get_summary(),
+            "cache_stats": cache_manager.get_stats(),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Performance endpoint error: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+@app.post("/performance/clear-cache")
+def clear_performance_cache(pattern: Optional[str] = None):
+    """Clear performance cache"""
+    try:
+        cache_manager.clear(pattern)
+        return {
+            "status": "success",
+            "message": f"Cache cleared{f' (pattern: {pattern})' if pattern else ''}",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Cache clear error: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+@app.post("/performance/save-report")
+def save_performance_report():
+    """Save performance report to file"""
+    try:
+        profiler.save_report()
+        return {
+            "status": "success",
+            "message": "Performance report saved",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Performance report save error: {str(e)}")
+        return {"status": "error", "message": str(e)}
 
 # The /upload-csv endpoint has been removed
 # All functionality is now consolidated in the /process endpoint
