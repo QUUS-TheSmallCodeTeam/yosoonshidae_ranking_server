@@ -1247,174 +1247,7 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                 }
             }
 
-            // Create charts for each feature
-            document.addEventListener('DOMContentLoaded', () => {
-                const chartsContainer = document.getElementById('featureCharts');
-                
-                // Track created charts for potential later use (e.g., responsiveness)
-                const charts = [];
-                
-                // For each feature in the data, create a chart
-                for (const [feature, data] of Object.entries(featureFrontierData)) {
-                    // Create chart container
-                    const chartContainer = document.createElement('div');
-                    chartContainer.className = 'chart-container';
-                    chartContainer.style.width = '100%';  // Full viewport width
-                    chartContainer.style.maxWidth = '100%';  // Prevent horizontal overflow
-                    chartContainer.style.margin = '0 0 20px 0';  // Add bottom margin
-                    chartContainer.style.padding = '15px';  // Small padding inside container
-                    chartContainer.style.boxSizing = 'border-box'; // Include padding in width
-                    chartContainer.style.height = '500px';  // Taller charts
-                    
-                    // Create feature title (h3)
-                    const title = document.createElement('h3');
-                    title.textContent = feature.replace('_clean', '').replace('_', ' ') + ' Frontier';
-                    title.style.marginTop = '0';
-                    title.style.textAlign = 'center';
-                    chartContainer.appendChild(title);
-                    
-                    // Create canvas for Chart.js
-                    const canvas = document.createElement('canvas');
-                    chartContainer.appendChild(canvas);
-                    chartsContainer.appendChild(chartContainer);
-                    
-                    // Prepare data for Chart.js
-                    // Create datasets for frontier points (line) and excluded points (scatter)
-                    const frontierDataset = {
-                        label: 'Cost Frontier',
-                        data: data.frontier_values.map((val, i) => ({
-                            x: val,
-                            y: data.frontier_contributions[i],
-                            plan: data.frontier_plan_names[i]
-                        })),
-                        borderColor: chartColors.frontier,
-                        backgroundColor: chartColors.frontierFill,
-                        pointBackgroundColor: chartColors.frontier,
-                        pointRadius: 5,
-                        pointHoverRadius: 7,
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.1,
-                        showLine: true
-                    };
-                    
-                    const excludedDataset = {
-                        label: 'Excluded Plans',
-                        data: data.excluded_values.map((val, i) => ({
-                            x: val,
-                            y: data.excluded_contributions[i],
-                            plan: data.excluded_plan_names[i]
-                        })),
-                        backgroundColor: chartColors.excluded,
-                        pointRadius: 5,
-                        pointHoverRadius: 7,
-                        showLine: false
-                    };
-                    
-                    // Create a dataset for unlimited point if present
-                    let unlimitedDataset = null;
-                    if (data.has_unlimited) {
-                        unlimitedDataset = {
-                            label: 'Unlimited Plan',
-                            data: [{
-                                x: null, // Will be rendered on right edge
-                                y: data.unlimited_value,
-                                plan: data.unlimited_plan
-                            }],
-                            backgroundColor: chartColors.unlimited,
-                            pointRadius: 7,
-                            pointHoverRadius: 9,
-                            pointStyle: 'triangle',
-                            rotation: 90,
-                            showLine: false
-                        };
-                    }
-                    
-                    // Combine datasets
-                    const datasets = [frontierDataset, excludedDataset];
-                    if (unlimitedDataset) datasets.push(unlimitedDataset);
-                    
-                    // Create Chart.js chart
-                    const chartConfig = {
-                        type: 'scatter',
-                        data: {
-                            datasets: datasets
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            scales: {
-                                x: {
-                                    title: {
-                                        display: true,
-                                        text: feature.includes('data') ? 'GB' : 
-                                              feature.includes('voice') ? 'Minutes' : 
-                                              feature.includes('message') ? 'Messages' : 'Value'
-                                    },
-                                    beginAtZero: true,
-                                    suggestedMin: 0
-                                },
-                                y: {
-                                    title: {
-                                        display: true,
-                                        text: 'Cost (KRW)'
-                                    },
-                                    beginAtZero: true,
-                                    suggestedMin: 0
-                                }
-                            },
-                            plugins: {
-                                legend: {
-                                    position: 'top',
-                                },
-                                tooltip: {
-                                    callbacks: {
-                                        label: function(context) {
-                                            const point = context.raw;
-                                            const planName = point.plan ? point.plan : 'Unknown';
-                                            const xValue = point.x !== null ? point.x.toLocaleString() : 'Unlimited';
-                                            const yValue = point.y.toLocaleString();
-                                            return `${planName}: ${xValue} ${feature.includes('data') ? 'GB' : 
-                                                            feature.includes('voice') ? 'min' : 
-                                                            feature.includes('message') ? 'SMS' : ''} - ${yValue} KRW`;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    };
-                    
-                    const chart = new Chart(canvas, chartConfig);
-                    charts.push(chart);
-                }
-                
-                // Hide loading overlay for feature frontier charts
-                hideLoadingOverlay('feature_frontier', 'featureCharts');
-                
-                // Debug: Log the data to console
-                console.log('Cost Structure Data:', costStructureData);
-                console.log('Plan Efficiency Data:', planEfficiencyData);
-                
-                // Create cost structure charts if data is available
-                if (costStructureData && costStructureData !== null) {
-                    console.log('Creating cost structure charts...');
-                    createCostStructureCharts(costStructureData);
-                } else {
-                    console.log('No cost structure data available');
-                }
-                
-                // Create plan efficiency chart if data is available
-                if (planEfficiencyData && planEfficiencyData !== null) {
-                    console.log('Creating plan efficiency chart...');
-                    createPlanEfficiencyChart(planEfficiencyData);
-                    // Hide loading overlay for plan efficiency chart
-                    hideLoadingOverlay('plan_efficiency', 'planEfficiencyChart');
-                } else {
-                    console.log('No plan efficiency data available');
-                }
-                
-                // Validation results display removed
-            });
+            // First DOMContentLoaded listener removed - using only createFeatureFrontierCharts() function
             
             // All validation related JavaScript code removed
             
@@ -1699,8 +1532,12 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
             // Function to create traditional feature frontier charts
             function createFeatureFrontierCharts() {
                 console.log('Creating traditional feature frontier charts');
+                console.log('featureFrontierData type:', typeof featureFrontierData);
+                console.log('featureFrontierData isArray:', Array.isArray(featureFrontierData));
+                console.log('featureFrontierData length:', featureFrontierData ? featureFrontierData.length : 'null');
+                console.log('featureFrontierData content:', featureFrontierData);
                 
-                if (!featureFrontierData || Object.keys(featureFrontierData).length === 0) {
+                if (!featureFrontierData || !Array.isArray(featureFrontierData) || featureFrontierData.length === 0) {
                     console.log('No feature frontier data available');
                     return;
                 }
@@ -1711,8 +1548,15 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                     return;
                 }
                 
+                // Get the first element which contains the feature data
+                const featureData = featureFrontierData[0];
+                if (!featureData || typeof featureData !== 'object') {
+                    console.log('Invalid feature frontier data structure');
+                    return;
+                }
+                
                 // Create charts for each feature
-                for (const [feature, data] of Object.entries(featureFrontierData)) {
+                for (const [feature, data] of Object.entries(featureData)) {
                     console.log(`Creating traditional frontier chart for ${feature}`);
                     
                     // Create chart container
@@ -1817,6 +1661,10 @@ def generate_html_report(df, timestamp=None, report_title="Mobile Plan Rankings"
                         }
                     });
                 }
+                
+                // Hide loading overlay for feature frontier charts
+                hideLoadingOverlay('feature_frontier', 'featureCharts');
+                console.log('Feature frontier charts creation completed');
             }
             
             // Function to create full dataset marginal cost frontier charts

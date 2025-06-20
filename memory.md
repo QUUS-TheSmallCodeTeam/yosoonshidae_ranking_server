@@ -46,6 +46,9 @@
 - **✅ FILE-BASED BACKGROUND SHARING**: Background tasks use file storage for data persistence and sharing
 - **✅ ALWAYS LATEST FILE ACCESS**: / endpoint always loads most recent files, never caches, always shows current data
 - **✅ DOCKER DIRECTORY SETUP**: Added /app/data/shared directory creation in Dockerfile for storage reliability
+- **✅ DOCUMENTATION SYNCHRONIZATION**: README.md completely aligned with current codebase architecture, endpoints, and implementation details
+- **✅ MATHEMATICAL FOUNDATION DOCUMENTED**: Complete mathematical modeling documentation with formulas, algorithms, and statistical principles
+- **✅ ADVANCED IMPLEMENTATION DETAILS ADDED**: README enhanced with comprehensive technical details including categorical handlers, piecewise regression, Korean ranking system, and code examples
 
 ## 🎯 Key Achievements
 - **Cross-contamination problem solved**: Marginal Cost Frontier Charts show pure feature trends without contamination
@@ -68,6 +71,9 @@
 - **✅ COEFFICIENT COMPARISON ENHANCEMENT**: Feature coefficient table now shows both unconstrained (raw) and constrained (bounded) values with difference calculation
 - **✅ MATHEMATICAL TRANSPARENCY**: Coefficient table displays exact calculation steps including multicollinearity redistribution with formulas like "(70.2 + 49.8) / 2 = 60.0"
 - **✅ MULTIPROCESSING ARCHITECTURE SOLVED**: File-based storage eliminates global variable sharing issues in FastAPI multiprocessing environment
+- **✅ COMPLETE DOCUMENTATION**: README.md fully reflects current system architecture with comprehensive technical details
+- **✅ MATHEMATICAL MODELING DOCUMENTED**: Comprehensive mathematical foundation including marginal cost theory, regression formulations, and statistical validation
+- **✅ ADVANCED TECHNICAL DOCUMENTATION**: README enhanced with implementation details, code examples, and class/function specifications
 
 ## 🔌 Endpoint Architecture
 **/ endpoint (Root HTML Interface)**:
@@ -86,6 +92,15 @@
 - **Chart Calculation**: Triggers background async chart calculations (non-blocking)
 - **Response**: Immediate JSON with ranked plans and CS ratios
 - **Side Effect**: Populates file-based storage for / endpoint to display
+
+**Additional Endpoints**:
+- **/chart-status**: Overall chart calculation status
+- **/chart-status/{chart_type}**: Individual chart calculation status  
+- **/chart-data/{chart_type}**: Retrieve specific chart data
+- **/status**: System status page with processing information
+- **/test**: Test endpoint for API validation
+- **/test-reload**: Test system reload functionality
+- **/debug-global**: Debug global state and file-based storage
 
 **Testing Workflow**: `/process` for data processing → `/` for visual verification of results
 **Development Pattern**: Use `/process` endpoint for testing core functionality, check HTML results via `/` endpoint
@@ -111,6 +126,9 @@
 - **✅ DATA PIPELINE ANALYSIS**: Comprehensive investigation framework for diagnosing coefficient calculation issues
 - **✅ COEFFICIENT ENHANCEMENT**: `generate_feature_rates_table_html()` function shows unconstrained vs constrained coefficients with color-coded adjustment indicators
 - **✅ FILE-BASED DATA SHARING**: Eliminates global variable dependencies and multiprocessing memory sharing issues
+- **✅ COMPREHENSIVE DOCUMENTATION**: Technical architecture documented with exact file sizes, line counts, and module responsibilities
+- **✅ ADVANCED CLASS DOCUMENTATION**: CategoricalFeatureHandler, PiecewiseLinearRegression, FullDatasetMultiFeatureRegression classes documented
+- **✅ CODE EXAMPLE INTEGRATION**: Feature engineering, ranking algorithms, data storage examples added to README
 
 ## 🚨 Current Issues
 - **None currently**: File-based storage system resolved all major multiprocessing memory sharing issues
@@ -124,6 +142,11 @@
 - **Constrained coefficients**: Final values after applying economic bounds (non-negative, minimum values)
 - **Adjustment display**: Green for upward adjustments, red for downward adjustments, gray for minimal changes
 - **Comparison format**: Side-by-side table with separate columns for before/after values and difference
+- **Documentation completeness**: README.md provides exhaustive technical details for development and deployment
+- **Mathematical transparency**: Complete formulation of marginal cost theory, regression algorithms, and statistical validation methods
+- **Economic modeling**: Detailed explanation of frontier analysis, coefficient optimization, and multicollinearity handling
+- **Algorithm documentation**: Step-by-step mathematical processes from data preprocessing to final ranking calculations
+- **Advanced implementation details**: Categorical feature processing, piecewise regression, Korean tie ranking system with code examples
 
 ## 🔍 Information Sources
 - **User feedback**: Request for coefficient table with both raw and adjusted values for comparison
@@ -131,6 +154,8 @@
 - **UI improvement**: Enhanced `generate_feature_rates_table_html()` with expanded table format
 - **Architecture decision**: User preference for file-based storage over multithreading conversion
 - **Problem diagnosis**: Identified multiprocessing as root cause of global variable sharing issues
+- **Documentation enhancement**: Comprehensive codebase review to identify advanced implementation details for README improvement
+- **Technical detail discovery**: Analysis of modules revealed categorical handlers, piecewise regression, and other advanced features
 
 ## 📈 Chart Types Available
 1. **Traditional Feature Frontier Charts**: Market-based trends (with contamination)
@@ -167,6 +192,7 @@
 - **Piecewise Segment Structure**: Coefficient table displays segment ranges with varying rates
 - **Fixed Rates Ranking**: Ranking table uses pure marginal coefficients for entire dataset
 - **Root cause investigation**: User prefers thorough analysis of underlying issues rather than quick workarounds
+- **Comprehensive documentation**: User values detailed technical documentation with implementation specifics and code examples
 
 ## 🔧 Technical Implementation Details
 - **File-based architecture**: data_storage.py module with save_rankings_data() and load_rankings_data() functions
@@ -183,6 +209,9 @@
 - **Piecewise segment implementation**: Using fit_cumulative_piecewise_linear for realistic cost accumulation
 - **Fixed rates method**: New 'fixed_rates' method in calculate_cs_ratio_enhanced using FullDatasetMultiFeatureRegression
 - **Data preprocessing pipeline**: Raw data requires preprocessing via prepare_features() to create expected feature columns
+- **Advanced categorical processing**: CategoricalFeatureHandler class with multiple encoding strategies
+- **Korean ranking system**: calculate_rankings_with_ties() function with proper tie notation and rank incrementing
+- **Piecewise linear modeling**: PiecewiseLinearRegression class with automatic breakpoint detection
 
 ## 🎯 Working Methods
 - **File-based data persistence**: Eliminates multiprocessing memory sharing issues through file system storage
@@ -193,6 +222,9 @@
 - **Async processing**: Chart calculations run in background, API responds immediately
 - **Cumulative piecewise calculation**: Proper cost accumulation through segments
 - **Investigation methodology**: Systematic analysis of data pipeline issues using parallel comparisons
+- **Advanced feature processing**: Categorical handlers for unlimited flags with multiple encoding strategies
+- **Piecewise regression**: Automatic breakpoint detection for economies of scale modeling
+- **Korean localization**: Proper tie notation with "공동 X위" format and rank incrementing
 
 ## 🔧 Implementation Patterns
 - **File-based storage pattern**: Save on process, load on display - eliminates global variable dependencies
@@ -204,6 +236,7 @@
 - **Testing workflow**: Using raw data files from /data/raw/ directory
 - **Clean server startup**: Direct uvicorn command in Dockerfile, log monitoring via app.py startup event
 - **Root cause analysis**: Comprehensive investigation of technical issues before implementing solutions
+- **Documentation enhancement pattern**: Regular codebase review to identify and document advanced implementation details
 
 ## 📈 Data Flow
 - Raw data → Fixed rates multi-feature regression → CS ratio calculation → **File storage** → Immediate API response
@@ -216,6 +249,7 @@
 - Pure coefficient calculation for ranking table using fixed marginal rates
 - **Critical**: Raw data requires preprocessing to create expected feature columns before coefficient calculation
 - **Multiprocessing compatible**: File system provides reliable inter-process data sharing
+- **Advanced processing**: Categorical feature handling through specialized classes and functions
 
 ## 시스템 정보
 - 운영체제: Linux 5.10.237-230.949.amzn2.x86_64
@@ -335,6 +369,7 @@
   - Todolist = 실제 작업 항목 (목표, 이슈, 해결할 문제)
 - **근본 원인 조사**: 빠른 해결책보다 근본적인 원인 파악을 우선시
 - **File-based solutions preferred**: User preference for file system storage over memory-based approaches for multiprocessing compatibility
+- **Comprehensive documentation approach**: Regular codebase review to identify and document advanced implementation details
 
 # 테스트 워크플로 ⭐ 필수 절차
 
@@ -418,6 +453,7 @@ cat /proc/$PID/fd/1
 - **Double counting 문제 해결**: 무제한 기능의 연속값을 0으로 설정하여 이중 계산 방지
 - **Unlimited type flags 구현**: 3가지 데이터 소진 후 상태를 별도 플래그로 분리
 - **Negative coefficient 근본 원인 식별**: 데이터 전처리 파이프라인 불일치 확인
+- **README 고급 기술 문서화**: 카테고리 핸들러, 조각별 회귀, 한국어 랭킹 시스템 등 고급 구현 세부사항 추가
 
 ## 기술적 구현
 - **File-based storage architecture**: data_storage.py module with save/load functions
@@ -430,6 +466,8 @@ cat /proc/$PID/fd/1
 - **무제한 기능 전처리 수정**: unlimited 플래그가 1인 경우 연속값을 0으로 설정
 - **Unlimited type flags**: data_stops_after_quota, data_throttled_after_quota, data_unlimited_speed
 - **계수 문제 진단 도구**: 체계적인 근본 원인 분석 프레임워크 구현
+- **고급 클래스 시스템**: CategoricalFeatureHandler, PiecewiseLinearRegression 등 고급 기능 구현
+- **한국어 랭킹 시스템**: calculate_rankings_with_ties() 함수로 "공동 X위" 표기법과 적절한 순위 증가 처리
 
 ## 데이터 처리 방식
 - **File-based persistence**: Process endpoint saves to files, root endpoint loads from files
@@ -439,6 +477,8 @@ cat /proc/$PID/fd/1
 - 순수 계수 기반 baseline cost / original fee로 CS 비율 계산
 - 계수 분석 결과를 시각화와 호환되도록 저장
 - **데이터 파이프라인 요구사항**: 원시 데이터는 prepare_features()를 통한 전처리 필요
+- **고급 카테고리 처리**: CategoricalFeatureHandler를 통한 다양한 인코딩 전략
+- **조각별 선형 모델링**: PiecewiseLinearRegression으로 자동 변화점 탐지
 
 ## 기능별 한계비용 현황 (최신 데이터 기준)
 - 데이터 소진 후 속도제한: ₩10,838 (고정)
@@ -462,6 +502,7 @@ cat /proc/$PID/fd/1
 - Unlimited type flags 정상 작동
 - Negative coefficient 근본 원인 식별 완료
 - **Multiprocessing memory sharing**: Completely resolved with file-based storage system
+- **Advanced implementation documentation**: README enhanced with comprehensive technical details and code examples
 
 ## 🔬 Model Validation & Quality Assurance System - REMOVED
 
@@ -512,8 +553,10 @@ cat /proc/$PID/fd/1
 - **API 엔드포인트**: ✅ 모든 엔드포인트 정상
 - **데이터 로딩**: ✅ 앱 시작 시 자동 로딩
 - **HTML 표시**: ✅ 차트 정상 렌더링
+- **고급 문서화**: ✅ README에 종합적인 기술 세부사항 추가 완료
 
 ## 주의사항
 - HTML 템플릿 수정 시 변수 replace 처리 확인 필요
 - 차트 상태 함수 수정 시 HTML 변수 동기화 확인
 - datetime 객체 JSON 직렬화 시 안전 처리 적용
+- 코드베이스 검토를 통한 문서화 개선 지속적 수행

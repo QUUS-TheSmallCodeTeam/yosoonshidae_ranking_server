@@ -1,445 +1,347 @@
-# 📋 MVNO Plan Ranking Model - Todo List
-
-## 🚨 **URGENT: Current Issues**
-
-### **1. Ranking Table Not Displaying in HTML** ⭐ **CRITICAL**
-- [ ] **Debug global variable persistence**
-  - Issue: `/process` endpoint works correctly, returns 1000+ ranked plans
-  - Issue: HTML shows "데이터 처리 대기 중" despite successful data processing  
-  - Issue: `df_with_rankings` appears to be None in root endpoint despite being set in process endpoint
-  - Possible FastAPI async/threading issue preventing global variable persistence
-  - Need to verify global variable state and fix HTML report generation
-
-### **2. Coefficient Table Not Displaying** ⭐ **HIGH PRIORITY**
-- [ ] **Debug cost_structure data flow**
-  - Issue: HTML coefficient table not showing despite correct calculation
-  - Added logging to `generate_feature_rates_table_html()` for debugging
-  - Need to verify cost_structure parameter vs DataFrame attrs priority
-  - Test with actual data processing to see debug logs
-
-### **3. Multicollinearity Causing Zero Coefficients** ⭐ **CRITICAL**  
-- [ ] **Fix voice_unlimited ↔ message_unlimited correlation (96.8%)**
-  - Issue: One coefficient approaches zero due to high correlation
-  - Solution: Implement fair coefficient redistribution 
-  - Added `_fix_multicollinearity_coefficients()` method to redistribute total value equally
-  - Need to test redistribution logic with actual data
-
-### **4. Feature Merging vs Fair Distribution** ⭐ **CLARIFIED**
-- [x] **User clarification received**: Don't merge features, redistribute values fairly
-- [x] **Implementation approach**: Calculate total value, divide equally between correlated features
-- [ ] **Test redistribution**: Verify both features get meaningful coefficients
-
-## ✅ **VALIDATION SYSTEM REMOVED - SYSTEM SIMPLIFIED**
-
-### **🎯 Recently Completed - Validation System Removal**
-
-#### **1. Background Processing Simplified** ✅
-- **Task**: Remove complex validation system that relied on biased criteria
-- **Implementation**: 
-  - Removed all validation calculation functions and endpoints
-  - Eliminated 5-method coefficient comparison system
-  - Removed economic logic validation with arbitrary thresholds
-  - Deleted statistical validation with misleading metrics
-  - Simplified background tasks to chart calculation only
-- **Result**: Clean, fast background processing without validation overhead
-- **Status**: ✅ **FULLY COMPLETED** - Validation system completely removed
-
-#### **2. HTML Interface Cleanup** ✅
-- **Task**: Remove validation section from web interface
-- **Implementation**:
-  - Removed "🔬 Model Validation & Reliability Analysis" section
-  - Deleted all validation-related JavaScript functions
-  - Eliminated validation result display code
-  - Simplified page structure without validation complexity
-- **Result**: Cleaner, faster-loading web interface focused on actual results
-- **Status**: ✅ **FULLY COMPLETED** - HTML validation section removed
-
-#### **3. API Endpoint Cleanup** ✅
-- **Task**: Remove validation-related API endpoints
-- **Implementation**:
-  - Removed `/validation-status` and `/validation-results` endpoints
-  - Eliminated validation executor thread pool
-  - Removed validation status tracking variables
-  - Simplified response structure without validation references
-- **Result**: Streamlined API with focus on core functionality
-- **Status**: ✅ **FULLY COMPLETED** - Validation endpoints removed
-
-### **📊 Current System Capabilities (Post-Validation Removal)**
-- **Complete Feature Analysis**: All 16 features properly calculated and displayed
-- **Realistic Coefficient Values**: No unrealistic base costs or zero coefficients
-- **Robust Regression**: Handles multicollinearity and constraint optimization
-- **Accurate Ranking**: CS ratios calculated using proper marginal costs
-- **Data Integrity**: Full dataset analysis (2,293 plans) with outlier handling
-- **Fast Background Processing**: Chart calculation only, no validation overhead
-- **Clean User Interface**: No misleading validation scores or biased criteria
-
-### **🎯 System Status: PRODUCTION READY (Simplified)**
-- ✅ **Coefficient calculation**: All features working correctly
-- ✅ **Chart generation**: Background chart calculation operational
-- ✅ **File-based storage**: Reliable multiprocessing data sharing
-- ✅ **Clean architecture**: Validation complexity removed
-- ✅ **Fast response**: No validation overhead in background processing
-
-## 📝 **No Outstanding Issues**
-
-**The MVNO Plan Ranking Model is now simplified and focused on core functionality without misleading validation systems.**
-
-### **System Performance Summary**
-- **Feature Coverage**: 16/16 features successfully analyzed ✅
-- **Data Processing**: 2,293 plans analyzed (6 outliers removed) ✅  
-- **Coefficient Accuracy**: All values realistic and meaningful ✅
-- **User Interface**: Complete coefficient table display ✅
-- **Ranking Accuracy**: CS ratios based on proper marginal costs ✅
-
-**Next development work can focus on feature enhancements or performance optimizations rather than bug fixes.**
-
-## 🎯 **Current System Status**
-- **Regression Analysis**: FullDatasetMultiFeatureRegression with multicollinearity handling ✅
-- **Coefficient Calculation**: All features showing proper values ✅  
-- **Ridge Regression**: Automatically activated when correlations > 0.8 ✅
-- **Feature Processing**: Unlimited flags and usage-based features handled correctly ✅
-
-## 🔧 **Active Features**
-- **Multicollinearity Detection**: Correlation matrix analysis with 0.8 threshold
-- **Smart Regression**: Ridge regression for correlated features, constrained for independent features  
-- **Selective Bounds**: Unlimited flags (discount-capable) vs usage features (non-negative)
-- **Comprehensive Logging**: Detailed regression method and correlation reporting
-
-## 📈 **Working Coefficient Calculation**
-- **voice_unlimited**: ✅ Proper coefficient (₩3,115)
-- **message_unlimited**: ✅ Handled appropriately (correlation-based)
-- **additional_call**: ✅ Now calculated correctly (was previously zero)
-- **All other features**: ✅ Standard coefficient calculation working
-
-## 🎉 **Major Achievements**
-- ✅ **Multicollinearity Problem**: Completely resolved with automatic detection and Ridge regression
-- ✅ **Zero Coefficient Issue**: All features now show meaningful coefficients
-- ✅ **System Robustness**: Enhanced regression methodology handles edge cases
-- ✅ **Production Ready**: Full end-to-end testing confirms solution working
-
-## 🎯 현재 상태
-- 모든 주요 기능이 정상 작동 중
-- Cross-contamination 문제 해결 완료
-- Fixed rates 방식으로 순수 한계비용 기반 CS 계산 구현
-- Double counting 문제 해결로 더 정확한 CS 비율 계산
-- 사용자 인터페이스에서 계산 기준이 명확히 표시됨
-- 11개 기능의 한계비용이 정확히 계산되고 표시됨
-
-## 💡 제안사항 (향후 개선)
-- 구글/페이스북 로그인 추가 (다음 단계)
-- 추가 기능 분석 (예: 국제로밍, 부가서비스)
-- 모바일 최적화 개선
-- 데이터 시각화 차트 추가 개선
-
-## 🚨 Issues to Monitor
-
-### System Health
-- 🔍 **Memory Usage**: Monitor memory consumption with full dataset processing
-- 🔍 **Response Times**: Ensure API remains responsive under load
-- 🔍 **Error Rates**: Track any calculation errors or edge cases
-- 🔍 **Log Quality**: Ensure logging provides adequate debugging information
-
-### Data Quality
-- 🔍 **Coefficient Stability**: Monitor coefficient consistency across different datasets
-- 🔍 **Outlier Detection**: Watch for data quality issues affecting calculations
-- 🔍 **Edge Cases**: Handle plans with unusual feature combinations
-
-## 📊 Success Metrics
-
-### Performance Targets
-- ✅ API response time < 500ms (excluding chart generation)
-- ✅ Chart generation completion < 30 seconds
-- ✅ Memory usage < 2GB for typical datasets
-- ✅ Error rate < 1% for valid input data
-
-### User Experience Goals
-- ✅ Intuitive ranking system using pure coefficients
-- ✅ Clean, simplified interface without overpriced plan analysis
-- ✅ Accurate CS ratios reflecting true feature values
-- ✅ Comprehensive dataset coverage without filtering bias
-
-### **Voice & Message Unlimited Flag Integration**
-- [x] Fixed preprocessing to include unlimited flags in regression analysis
-- [x] Updated `fixed_rates` method to include voice_unlimited and message_unlimited
-- [x] Verified data preprocessing creates correct unlimited flags (1,227 message_unlimited plans)
-- [x] Confirmed features are included in regression analysis (16 total features)
-- [x] Voice unlimited coefficient now shows ₩3,115 (working correctly)
-
-### **System Architecture & Performance**
-- [x] Async chart calculation implementation
-- [x] Visual status indicators for calculation progress
-- [x] Manual refresh system (no auto-polling)
-- [x] Background chart processing
-- [x] Immediate API response with separate chart calculation
-
-## 💡 Future Enhancements
-
-### **Regression Model Improvements**
-- [ ] Implement cross-validation for coefficient stability
-- [ ] Add model diagnostics and residual analysis
-- [ ] Consider ensemble methods for robust coefficient estimation
-- [ ] Add confidence intervals for coefficient estimates
-
-### **Data Quality & Validation**
-- [ ] Add automated data quality checks
-- [ ] Implement outlier detection and handling
-- [ ] Add feature importance analysis
-- [ ] Create data drift monitoring
-
-## 🔍 **Current Investigation - Data Source Discrepancy**
-
-### **Immediate Priority: HTML Table vs Logs Mismatch**
-- **Issue**: User sees incorrect coefficients in HTML table despite correct log values
-  - HTML shows: `additional_call` ₩-1.9992, `data_stops` ₩-10649.9018
-  - Logs show: `additional_call` ₩0.00, `data_stops` ₩-5000.00
-- **Action needed**: Trace data flow from `get_coefficient_breakdown()` → HTML table
-- **Suspected causes**: 
-  - Browser/server caching
-  - Multiple coefficient calculation paths  
-  - Different data source for `generate_feature_rates_table_html()`
-
-### **Next Steps**
-1. **Clear any caching** and force fresh calculation
-2. **Add debug logging** to `generate_feature_rates_table_html()` to see input values
-3. **Verify coefficient flow** from Ridge regression → breakdown → HTML table
-
-## 🚨 **Current Issue - Multicollinearity Resolution** ⭐ **ROOT CAUSE: PERFECT CORRELATIONS**
-
-### **Immediate Action Required**
-- [ ] **Resolve multicollinearity in coefficient calculation**
-  - Issue: 6 perfect/high correlations (>0.95) causing negative coefficients
-  - Current: Basic Ridge regression (α=1.0) insufficient for perfect correlations
-  - Required: Stronger regularization + remove perfectly correlated features
-  - Impact: Eliminates negative coefficients, improves coefficient stability
-
-### **Phase 1: Quick Fix**
-- [ ] **Increase Ridge regularization**: Change α from 1.0 → 10.0 for stronger correlation handling
-- [ ] **Remove perfect correlations**: Remove data_unlimited_speed, has_unlimited_speed from FEATURE_SETS  
-- [ ] **Test coefficient stability**: Verify positive coefficients for economically sensible features
-
-### **Phase 2: Advanced Solutions** 
-- [ ] **Implement VIF calculation**: Add Variance Inflation Factor (VIF = 1/(1-R²)) for automatic feature selection
-- [ ] **Feature importance ranking**: Economic logic-based selection when removing correlated features
-- [ ] **Validation framework**: Compare coefficient stability across different multicollinearity solutions
-
-## 📊 **Secondary Issues - Post-Fix**
-
-### **Multicollinearity Management** (After pipeline fix)
-- [ ] **Address perfect correlations in processed data**
-  - `basic_data_unlimited ↔ data_unlimited_speed: 1.000`
-  - `voice_unlimited ↔ message_unlimited: 0.968` 
-  - `data_stops_after_quota ↔ data_throttled_after_quota: -0.986`
-  - Consider feature selection or regularization adjustments
-
-### **Coefficient Display** 
-- [ ] **Fix coefficient breakdown parsing error**
-  - Current error: `'<' not supported between instances of 'dict' and 'int'`
-  - Ensure proper data type handling in get_coefficient_breakdown()
-
-## ✅ **Investigation Complete**
-
-### **Confirmed NOT Issues** (No action needed)
-- ✅ **Multicollinearity in raw data**: Low correlations found
-- ✅ **Economic logic violations**: Available features correlate positively with price  
-- ✅ **Overfitting**: Adequate sample-to-feature ratio (1149:1)
-- ✅ **Coefficient instability**: Stable across regularization levels
-- ✅ **Data quality**: No significant outliers or corruption
-
-### **Root Cause Confirmed**
-- ✅ **Primary Issue**: Data preprocessing pipeline mismatch
-  - Raw data lacks expected feature columns (`basic_data_clean`, `voice_clean`, etc.)
-  - Preprocessing creates these columns from raw columns (`basic_data`, `voice`, etc.)
-  - Coefficient calculation expects processed columns but receives raw data
-  - Missing features default to zero coefficients → Economically incorrect results
-
-## 🎯 **Success Criteria**
-
-### **Pipeline Fix Validation**
-- [ ] Feature Marginal Cost Coefficients table shows meaningful positive values for:
-  - `basic_data_clean`: Positive per-GB cost
-  - `voice_clean`: Positive per-minute cost  
-  - `message_clean`: Positive per-message cost
-  - `data_stops_after_quota`: Baseline reference cost
-  - All other features: Economically sensible values
-
-### **Technical Verification**
-- [ ] All 16/16 expected features present in coefficient calculation
-- [ ] No zero coefficients due to missing data
-- [ ] Coefficient signs align with economic expectations
-- [ ] System logs confirm preprocessing pipeline execution
-
-## ✅ 완료된 작업
-- **종합적 모델 검증 시스템 구축**: 5가지 다른 방법으로 coefficient 계산 및 검증
-- **4단계 검증 프레임워크**: 최적화 일관성, 경제적 타당성, 예측력, 잔차 품질 분석
-- **다중 방법 비교**: Conservative, Standard, Aggressive, Random seed 방법들로 robust 검증
-- **HTML 리포트 개선**: Marginal Cost Frontier Analysis 제거, Model Validation & Reliability Analysis 추가
-- **JavaScript 검증 UI**: 종합 점수, 방법별 비교, 계수 신뢰도 분석 표시
-- **Process 엔드포인트 통합**: 검증 결과를 DataFrame attrs에 저장하여 HTML에서 표시
-
-## 🎯 제안사항 (선택적)
-- **Google/Facebook 로그인**: 카카오 소셜 로그인 완료 후 추가 고려
-- **UI/UX 개선**: 더 나은 사용자 경험을 위한 인터페이스 개선
-- **성능 모니터링**: 차트 계산 시간 최적화를 위한 모니터링 시스템
-
-## 🔄 진행 중인 작업
-- 검증 결과의 정확성과 의미있는 해석 확인
-
-## 📝 제안사항
-1. **차트 추가 최적화** - 필요시 다른 차트들도 성능 검토
-2. **UI/UX 개선** - 차트 로딩 상태 표시 개선
-3. **에러 처리** - 데이터 처리 실패 시 사용자 안내 메시지 개선
-
-## ✅ 완료된 작업
-
-### 비동기 처리 최적화
-- ✅ **비동기 처리 순서 검증 완료**: /process endpoint에서 랭킹 계산 → response 준비 → response 반환 → 백그라운드 작업(검증+차트) 순서로 올바르게 구현됨
-- ✅ **즉시 응답 구조**: /process endpoint에서 무거운 작업 없이 즉시 랭킹 계산 후 response 반환
-- ✅ **백그라운드 무거운 계산**: Validation + Chart 계산을 모두 백그라운드에서 처리
-- ✅ **병목 현상 제거**: 랭킹 계산과 검증이 동시에 실행되지 않도록 순서 조정
-- ✅ **차트 렌더링 확인**: HTML 차트가 서버사이드에서 렌더링됨 (Plotly 서버사이드 생성)
-
-### 수학적 투명성 향상
-- ✅ **정확한 계산 과정 표시**: HTML 계수 테이블에서 OLS 회귀 → 제약 조건 적용 → 다중공선성 보정의 전체 과정을 수학 공식으로 표시
-- ✅ **다중공선성 재분배 공식**: "(계수1 + 계수2) / 2" 같은 정확한 계산식을 테이블에 표시
-- ✅ **단계별 계산 추적**: 보정 전 값에서 최종 값까지의 모든 수학적 변환 과정 기록
-- ✅ **색상 코딩**: 제약 조건 적용(주황), 다중공선성 보정(파랑), 변경 없음(녹색)으로 구분 표시
-
-### 핵심 기능
-- ✅ **Cross-contamination 문제 해결**: 순수 계수 기반 CS 비율 계산
-- ✅ **Fixed rates 방식 구현**: 전체 데이터셋 기반 CS 계산
-- ✅ **기능별 한계비용 테이블**: 랭킹 테이블 위에 각 기능의 한계비용 표시
-- ✅ **Double counting 문제 해결**: 무제한 기능의 연속값을 0으로 설정
-- ✅ **Unlimited type flags 구현**: 3가지 데이터 소진 후 상태를 별도 플래그로 분리
-- ✅ **Negative coefficient 근본 원인 식별**: 데이터 전처리 파이프라인 불일치 확인
-
-## 🔄 진행 중인 작업
-
-### 성능 모니터링
-- 🔄 **응답 시간 측정**: /process endpoint 응답 시간이 실제로 개선되었는지 확인
-- 🔄 **백그라운드 작업 완료 시간**: Validation, chart 계산 각각의 완료 시간 모니터링
-
-## 📝 향후 개선 사항
-
-### 사용자 경험 개선
-- 📝 **진행 상태 표시**: 백그라운드 작업의 실시간 진행률 표시
-- 📝 **오류 복구**: 백그라운드 작업 실패 시 재시도 메커니즘
-- 📝 **성능 최적화**: 차트 계산 시간 단축 방안
-
-### 데이터 품질 개선
-- 📝 **추가 검증**: 계수 계산 결과의 경제적 타당성 자동 검증
-- 📝 **이상치 탐지**: 비정상적인 요금제 자동 식별 및 분리
-- 📝 **데이터 일관성**: 입력 데이터 형식 표준화
-
-## 제안 사항
-
-### 고급 기능
-- 💡 **시계열 분석**: 요금제 트렌드 변화 추적
-- 💡 **경쟁사 비교**: 통신사별 가격 경쟁력 분석
-- 💡 **사용자 맞춤**: 개인별 사용 패턴에 따른 최적 요금제 추천
-
-## 🚨 긴급 해결 필요
-- [ ] **Process 엔드포인트 오류 수정**: JSON 응답 대신 원시 데이터 출력되는 문제 해결
-- [ ] **데이터 처리 파이프라인 수정**: config.df_with_rankings가 None으로 남는 근본 원인 해결
-- [ ] **Supabase 엔드포인트 테스트**: 실제 데이터로 end-to-end 테스트 수행
-
-## ✅ 완료된 작업
-- [x] **Global 변수 멀티프로세싱 문제 해결**: config 모듈 직접 사용으로 변경
-- [x] **코드 정리**: 불필요한 global 변수 선언 및 중복 로직 제거
-- [x] **Error log 분석**: 500줄 로그에서 실제 문제는 1건뿐임을 확인
-
-## 🔍 조사 필요
-- [ ] **Process 엔드포인트 디버깅**: 실제 오류 메시지 및 스택트레이스 확인
-- [ ] **데이터 형식 검증**: 입력 데이터가 예상 형식과 일치하는지 확인
-- [ ] **전처리 파이프라인 점검**: prepare_features() 함수 정상 작동 여부 확인
-
-## 🎉 **완료된 주요 작업**
-
-### ✅ **멀티프로세싱 메모리 공유 문제 완전 해결**
-- [x] **파일 기반 데이터 저장 시스템 구현**: `/app/data/shared/` 디렉토리 사용
-- [x] **data_storage.py 모듈 생성**: 저장/로드/상태확인 기능 완비
-- [x] **Process 엔드포인트 수정**: 처리 결과를 파일에 저장
-- [x] **Root 엔드포인트 수정**: 파일에서 데이터 로드하여 HTML 생성
-- [x] **Debug 엔드포인트 강화**: 파일 저장 상태와 config 상태 비교 표시
-- [x] **멀티프로세싱 환경 대응**: 프로세스 간 파일 시스템 통한 안정적 데이터 공유
-
-### ✅ **웹 인터페이스 복구**
-- [x] **랭킹 테이블 정상 표시**: "데이터 처리 대기 중" 문제 완전 해결
-- [x] **차트 데이터 정상 로드**: Feature Frontier, Plan Efficiency 차트 작동
-- [x] **실시간 상태 확인**: debug-global 엔드포인트로 저장 상태 모니터링
-
-### ✅ **시스템 안정성 확보**
-- [x] **저장 파일 구조**: rankings.json, cost_structure.json, metadata.json
-- [x] **에러 처리**: 파일 없을 때 graceful degradation
-- [x] **백워드 호환성**: config 모듈도 병행 사용하여 안정성 확보
-
-## 📊 **현재 시스템 상태**
-- **파일 저장**: ✅ 정상 작동 (1+ 플랜 처리 확인)
-- **웹 인터페이스**: ✅ 랭킹 테이블 표시 (test 요금제 확인)
-- **멀티프로세싱**: ✅ 프로세스 간 데이터 공유 성공
-- **API 응답**: ✅ Process 엔드포인트 정상 (JSON 응답)
-
-## 🔧 **기술적 구현 세부사항**
-- **저장 방식**: pandas DataFrame → JSON dict → 파일 저장
-- **로드 방식**: 파일 → JSON dict → pandas DataFrame 복원
-- **메타데이터**: 타임스탬프, 플랜 수, 처리 방법 등 저장
-- **에러 복구**: 파일 없을 때 None 반환으로 graceful handling
-
-## 🎯 **향후 개선 가능 사항**
-- [ ] **Config 모듈 의존성 제거**: 파일 기반으로 완전 전환 후 config.df_with_rankings 제거
-- [ ] **파일 압축**: 대용량 데이터 처리 시 gzip 압축 고려
-- [ ] **캐시 무효화**: 타임스탬프 기반 캐시 갱신 로직
-- [ ] **동시성 처리**: 파일 락 메커니즘 (필요 시)
-
-## 💡 **학습된 교훈**
-- **멀티프로세싱 vs 멀티쓰레딩**: 프로세스 간 메모리 공유 불가 → 파일 시스템 활용
-- **FastAPI 환경**: uvicorn 기본 설정에서 멀티프로세싱 사용
-- **파일 기반 해결책**: 메모리 공유 문제의 근본적이고 안정적인 해결방법
-
-## ✅ **REFRESH BUTTON ADDED - USER EXPERIENCE IMPROVED**
-
-### **🎯 Recently Completed - Refresh Button Implementation**
-
-#### **1. Manual Refresh System Enhancement** ✅
-- **Task**: Add refresh button for users to load latest data without browser navigation
-- **Implementation**: 
-  - Added 🔄 새로고침 button in page header next to timestamp
-  - Positioned button using flexbox layout (timestamp left, button right)
-  - Implemented `refreshPage()` JavaScript function for clean page reload
-  - Blue styling consistent with site theme (#007bff)
-- **Result**: Users can easily refresh to check for new data processing results
-- **Status**: ✅ **FULLY COMPLETED** - Refresh button fully functional
-
-#### **2. UI Layout Optimization** ✅
-- **Task**: Integrate refresh button without disrupting existing layout
-- **Implementation**:
-  - Used flex layout to balance timestamp and button positioning
-  - Maintained responsive design principles
-  - Preserved existing page styling and functionality
-- **Result**: Clean, professional header with intuitive refresh option
-- **Status**: ✅ **FULLY COMPLETED** - Layout optimized and responsive
-
-### **🎯 System Benefits**
-- **User autonomy**: Manual control over data refresh timing
-- **No auto-polling**: Eliminates unnecessary server requests
-- **Latest data access**: Easy way to check for newly processed data
-- **File-based storage compatibility**: Works perfectly with current architecture where / endpoint always loads latest files
+# 🔧 MVNO Plan Ranking Model - Refactoring Plan (세부 검토 완료)
+
+## 🎯 **Refactoring 목표**
+
+### **시스템 현대화 및 최적화**
+- **Performance**: 응답 시간 단축 및 메모리 사용량 최적화
+- **Scalability**: 대용량 데이터셋 처리 능력 향상
+- **Maintainability**: 코드 구조 개선 및 모듈화 강화
+- **Reliability**: 오류 처리 및 복구 메커니즘 개선
+- **Extensibility**: 새로운 기능 추가 용이성 확보
+
+## 🏗️ **Phase 0: Code Modularization (Priority 1) - **상세 분석 완료**
+
+### 🔬 **심층 분석 결과**
+
+#### **1. cost_spec.py (2,746 lines) - 완전 분석**
+
+**클래스 기반 분해 우선 순위:**
+
+**🔴 1순위: FullDatasetMultiFeatureRegression (784 lines, 1795-2579)**
+- **기능**: 전체 데이터셋 회귀 분석 (현재 활성 사용 중)
+- **독립성**: 높음 - self.features, self.coefficients, 명확한 인터페이스
+- **타겟**: `modules/regression/full_dataset.py`
+- **메서드 수**: 15개 (init, solve_full_dataset_coefficients, detect_multicollinearity 등)
+- **의존성**: sklearn, numpy만 필요
+
+**🔴 2순위: MultiFeatureFrontierRegression (776 lines, 1018-1794)**
+- **기능**: 다중 특성 프론티어 회귀 (레거시 코드)
+- **독립성**: 높음 - 프론티어 수집 + 회귀 로직
+- **타겟**: `modules/regression/multi_feature.py`
+- **메서드 수**: 12개 (collect_all_frontier_plans, solve_multi_feature_coefficients 등)
+- **의존성**: CORE_FEATURES, UNLIMITED_FLAGS
+
+**🟡 3순위: LinearDecomposition (232 lines, 43-275)**
+- **기능**: 선형 분해 분석 (미사용)
+- **독립성**: 높음
+- **타겟**: `modules/regression/linear_decomposition.py` (레거시 보관)
+
+**함수 기반 분해:**
+
+**🔴 4순위: Frontier Functions (337 lines, 276-613)**
+- create_robust_monotonic_frontier(), calculate_feature_frontiers(), estimate_frontier_value()
+- **타겟**: `modules/frontier/core.py`
+
+**🔴 5순위: CS Ratio Functions (403 lines, 614-1017)**  
+- calculate_cs_ratio(), rank_plans_by_cs(), calculate_cs_ratio_enhanced()
+- **타겟**: `modules/cost_spec/ratio.py`
+
+**🟢 6순위: Helper Functions (166 lines, 2580-2746)**
+- **타겟**: `modules/cost_spec/utils.py`
+
+#### **2. report_html.py (2,058 lines) - 핵심 문제 발견**
+
+**🚨 핵심 문제: generate_html_report() 함수 1,507 lines (551-2058)**
+
+**분해 전략:**
+- **HTML 템플릿 추출**: 1,000+ lines → `modules/templates/main_template.py`
+- **JavaScript 코드 분리**: 300+ lines → `modules/templates/chart_scripts.py`
+- **CSS 스타일 분리**: 200+ lines → `modules/templates/styles.py`
+- **내부 함수 추출**: get_chart_status_html() → `modules/report/status.py`
+
+**기존 함수 분리:**
+- prepare_cost_structure_chart_data() (133 lines) → `modules/report/chart_data.py`
+- prepare_plan_efficiency_data() (68 lines) → `modules/report/efficiency.py`
+- generate_feature_rates_table_html() (330 lines) → `modules/report/tables.py`
+
+#### **3. report_charts.py (1,825 lines) - 함수별 분석**
+
+**🔴 1순위: Marginal Cost Group (915 lines, 909-1824)**
+- prepare_marginal_cost_frontier_data() (524 lines)
+- prepare_granular_marginal_cost_frontier_data() (392 lines)
+- **타겟**: `modules/charts/marginal_cost.py`
+
+**🔴 2순위: Feature Frontier Group (347 lines, 14-361)**
+- prepare_feature_frontier_data() (347 lines)
+- **타겟**: `modules/charts/feature_frontier.py`
+
+**🟡 3순위: Multi-Frontier Group (407 lines, 501-908)**
+- prepare_multi_frontier_chart_data(), prepare_contamination_comparison_data()
+- **타겟**: `modules/charts/multi_frontier.py` (레거시)
+
+**🟡 4순위: Piecewise Utilities (221 lines, 686-907)**
+- detect_change_points(), fit_piecewise_linear(), fit_piecewise_linear_segments()
+- **타겟**: `modules/charts/piecewise_utils.py`
+
+**🟢 5순위: Residual Analysis (138 lines, 362-500)**
+- **타겟**: `modules/charts/residual.py`
+
+### 🔄 **순환 의존성 분석 (Critical Issue)**
+
+**현재 순환 의존성:**
+```
+report_html.py → report_charts.py → cost_spec.py
+data_storage.py → report_charts.py + report_html.py  
+report_charts.py → cost_spec.py (3곳에서 import)
+```
+
+**해결 방안:**
+1. **Interface Layer 도입**: `modules/interfaces/chart_interface.py`
+2. **Dependency Injection**: 함수 파라미터로 전달
+3. **Configuration Registry**: 중앙 설정 관리
+
+### 📊 **수정된 현실적 모듈화 계획**
+
+#### **Week 1: cost_spec.py 분해 (우선순위 1)**
+
+**Day 1-2: 회귀 클래스 추출**
+```python
+# modules/regression/full_dataset.py
+class FullDatasetMultiFeatureRegression:
+    # 784 lines → 독립 모듈
+
+# modules/regression/multi_feature.py  
+class MultiFeatureFrontierRegression:
+    # 776 lines → 독립 모듈
+
+# modules/regression/__init__.py
+from .full_dataset import FullDatasetMultiFeatureRegression
+from .multi_feature import MultiFeatureFrontierRegression
+```
+
+**Day 3-4: 함수 그룹 분리**
+```python
+# modules/frontier/core.py
+def create_robust_monotonic_frontier(...)
+def calculate_feature_frontiers(...)
+def estimate_frontier_value(...)
+
+# modules/cost_spec/ratio.py
+def calculate_cs_ratio(...)
+def calculate_cs_ratio_enhanced(...)
+def rank_plans_by_cs(...)
+```
+
+**Day 5: 브리지 함수 및 호환성**
+```python
+# modules/cost_spec.py (축소됨 - 500 lines 이하)
+from .regression import FullDatasetMultiFeatureRegression
+from .frontier.core import create_robust_monotonic_frontier
+from .ratio import calculate_cs_ratio_enhanced
+
+# 기존 import 경로 유지 (6개월간)
+```
+
+#### **Week 2: report_html.py 분해**
+
+**Day 1-2: 템플릿 분리**
+```python
+# modules/templates/main_template.py
+def get_main_html_template() -> str:
+    # 1,000+ lines HTML template
+
+# modules/templates/chart_scripts.py  
+def get_chart_javascript() -> str:
+    # 300+ lines JavaScript
+
+# modules/templates/styles.py
+def get_report_styles() -> str:
+    # 200+ lines CSS
+```
+
+**Day 3-4: 함수 추출**
+```python
+# modules/report/html_generator.py
+def generate_html_report(...):
+    # 300 lines 이하로 축소
+    template = get_main_html_template()
+    # 조립 로직만
+
+# modules/report/status.py
+def get_chart_status_html(...)
+
+# modules/report/chart_data.py
+def prepare_cost_structure_chart_data(...)
+```
+
+#### **Week 3: report_charts.py 분해**
+
+**Day 1-2: 핵심 차트 그룹**
+```python
+# modules/charts/marginal_cost.py
+def prepare_marginal_cost_frontier_data(...)  # 524 lines
+def prepare_granular_marginal_cost_frontier_data(...)  # 392 lines
+
+# modules/charts/feature_frontier.py
+def prepare_feature_frontier_data(...)  # 347 lines
+```
+
+**Day 3-4: 유틸리티 분리**
+```python
+# modules/charts/piecewise_utils.py
+def detect_change_points(...)
+def fit_piecewise_linear(...)
+
+# modules/charts/residual.py
+def prepare_residual_analysis_data(...)
+```
+
+#### **Week 4: 의존성 정리 및 통합 테스트**
+
+**Day 1-2: 순환 의존성 해결**
+```python
+# modules/interfaces/chart_interface.py
+class ChartDataInterface:
+    @abstractmethod
+    def prepare_feature_frontier_data(...)
+    @abstractmethod  
+    def prepare_marginal_cost_data(...)
+
+# 의존성 주입으로 순환 참조 제거
+```
+
+**Day 3-4: 브리지 레이어 구현**
+```python
+# modules/legacy_bridge.py
+import warnings
+from .regression import FullDatasetMultiFeatureRegression
+
+def calculate_cs_ratio_enhanced(*args, **kwargs):
+    warnings.warn("Import path deprecated, use modules.cost_spec.ratio", DeprecationWarning)
+    from .cost_spec.ratio import calculate_cs_ratio_enhanced
+    return calculate_cs_ratio_enhanced(*args, **kwargs)
+```
+
+**Day 5: 통합 테스트**
+- 모든 기존 import 경로 호환성 확인
+- /process 엔드포인트 완전 테스트
+- 차트 생성 파이프라인 검증
+
+### 📈 **수정된 성공 기준**
+
+**모듈 크기:**
+- ⭐ **개별 파일**: < 800 lines (기존 500에서 현실적으로 조정)
+- ⭐ **핵심 함수**: < 200 lines (generate_html_report 1,507 lines 해결)
+- ⭐ **클래스 메서드**: < 100 lines
+
+**의존성:**
+- ⭐ **순환 의존성**: 0개 (현재 3개)
+- ⭐ **계층 구조**: 최대 3 depth
+- ⭐ **인터페이스**: 모든 모듈 간 명확한 계약
+
+**호환성:**
+- ⭐ **기존 import**: 6개월간 100% 지원
+- ⭐ **API 변화**: 0개 (모든 기존 함수 시그니처 유지)
+- ⭐ **성능**: 10% 이내 오버헤드
+
+### ⚠️ **위험 관리**
+
+**고위험 요소:**
+1. **generate_html_report() 1,507 lines** - 템플릿 분리 중 문법 오류 가능성
+2. **순환 의존성** - 잘못된 추출 시 import 에러 
+3. **클래스 상태 관리** - self.coefficients 등 상태 분리
+
+**완화 전략:**
+1. **단계별 복사본 생성** - 기존 파일 보존하며 새 구조 구축
+2. **자동화된 테스트** - 각 단계마다 /process 엔드포인트 전체 테스트
+3. **롤백 계획** - Git 브랜치 전략으로 즉시 되돌리기 가능
+
+### 🎯 **Phase 0 완료 후 예상 구조**
+
+```
+modules/
+├── regression/
+│   ├── __init__.py
+│   ├── full_dataset.py (780 lines)
+│   ├── multi_feature.py (770 lines) 
+│   └── linear_decomposition.py (230 lines)
+├── frontier/
+│   ├── __init__.py
+│   ├── core.py (250 lines)
+│   └── utils.py (80 lines)
+├── cost_spec/
+│   ├── __init__.py
+│   ├── ratio.py (400 lines)
+│   └── constants.py (50 lines)
+├── report/
+│   ├── __init__.py
+│   ├── html_generator.py (300 lines)
+│   ├── chart_data.py (130 lines)
+│   ├── status.py (100 lines)
+│   └── tables.py (330 lines)
+├── templates/
+│   ├── __init__.py
+│   ├── main_template.py (600 lines)
+│   ├── chart_scripts.py (300 lines)
+│   └── styles.py (200 lines)
+├── charts/
+│   ├── __init__.py
+│   ├── marginal_cost.py (650 lines)
+│   ├── feature_frontier.py (350 lines)
+│   ├── piecewise_utils.py (220 lines)
+│   └── residual.py (140 lines)
+└── interfaces/
+    ├── __init__.py
+    └── chart_interface.py (150 lines)
+```
+
+**총 파일 수**: 28개 (기존 3개 → 25개 증가)
+**최대 파일 크기**: 780 lines (목표 달성)
+**순환 의존성**: 0개 (인터페이스 레이어로 해결)
 
 ---
 
-**🎉 핵심 문제 해결 완료**: 멀티프로세싱 환경에서 파일 기반 데이터 공유를 통해 웹 인터페이스 랭킹 테이블 정상 표시 달성!
+## Phase 1-6: 후속 계획 (Phase 0 완료 후 진행)
 
-## ✅ 완료된 작업
-- [x] 차트 표시 문제 해결 (HTML 템플릿 변수 처리 수정)
-- [x] 차트 상태 API 오류 수정 (datetime 직렬화, 필드명 수정)
-- [x] 앱 시작 시 차트 데이터 자동 로딩 구현
+### Phase 1: Core Algorithm Optimization (Month 2-3)
+- 회귀 알고리즘 성능 최적화
+- 캐싱 전략 구현
+- 병렬 처리 개선
 
-## 현재 상태
-- **모든 차트 기능이 정상 작동합니다** ✅
-- Feature Frontier 차트: 정상 표시
-- Plan Efficiency 차트: 정상 표시  
-- 차트 상태 API: 완전한 JSON 응답 제공
+### Phase 2: Data Processing Modernization (Month 4-5)  
+- Pandas 최적화
+- 메모리 사용량 개선
+- 스트리밍 데이터 처리
 
-## 제안사항 (추후 개선)
-- 차트 로딩 상태 실시간 업데이트 UI 개선
-- 차트 데이터 캐싱 최적화
-- 차트 상호작용 기능 추가 (줌, 필터링 등)
+### Phase 3: Performance Enhancement (Month 6-7)
+- 비동기 처리 확장
+- 데이터베이스 통합
+- API 응답 시간 최적화
+
+### Phase 4: Intelligence & Analytics (Month 8-9)
+- 머신러닝 모델 통합
+- 예측 분석 기능
+- 이상치 탐지 개선
+
+### Phase 5: Data Architecture Modernization (Month 10-11)
+- 마이크로서비스 아키텍처
+- 실시간 데이터 파이프라인
+- 스케일링 전략
+
+### Phase 6: Security & Monitoring (Month 12)
+- 보안 강화
+- 로깅 개선
+- 모니터링 대시보드
+
+---
+
+## 🚀 **즉시 실행 가능한 첫 단계**
+
+1. **regression 폴더 생성** 및 클래스 복사
+2. **FullDatasetMultiFeatureRegression** 추출 및 테스트
+3. **기존 import 경로** 브리지 함수 생성
+4. **/process 엔드포인트** 완전 동작 확인
+
+**예상 소요 시간**: Phase 0 완료까지 4주
+**리스크 레벨**: 중간 (체계적 접근으로 관리 가능)
+**백워드 호환성**: 100% 보장
