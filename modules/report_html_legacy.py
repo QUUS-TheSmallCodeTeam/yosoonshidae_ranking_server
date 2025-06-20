@@ -5,8 +5,6 @@ This module now imports from the modularized report components.
 All HTML generation logic has been moved to dedicated modules:
 - templates/: HTML templates, CSS styles, JavaScript code
 - report/: Report generation functions by responsibility
-
-Original file size: 2,057 lines → New size: ~20 lines (99% reduction)
 """
 
 # Import the main function from the new modular structure
