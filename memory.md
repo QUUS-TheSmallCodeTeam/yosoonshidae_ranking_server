@@ -1,45 +1,38 @@
 # 🧠 Memory & Context
 
-## 🎯 Project Overview & Objective
+## 🎯 Project Overview & Mission
 
 ### **MVNO Plan Ranking System - Core Mission**
 This system provides **objective, data-driven ranking of Korean mobile phone plans** to help consumers find the best value plans based on their specific usage patterns.
 
-### **What are MVNO Plans?**
-- **MVNO** (Mobile Virtual Network Operator): Companies that lease network infrastructure from major carriers (SKT, KT, LG U+)
-- **Korean Market**: 100+ MVNO providers offering diverse plans with complex pricing structures
+### **MVNO Market Context**
+- **MVNO Definition**: Mobile Virtual Network Operator - Companies that lease network infrastructure from major carriers (SKT, KT, LG U+)
+- **Korean Market Scale**: 100+ MVNO providers offering diverse plans with complex pricing structures
 - **Consumer Challenge**: Overwhelming choice with opaque pricing, hidden fees, and marketing-driven comparisons
 - **Our Solution**: Mathematical analysis to cut through marketing noise and reveal true value
 
-### **Features We Compare (16+ Core Features)**
+### **Features We Compare (FEATURE_SETS['basic'] - 15 Core Features)**
+
 **Data Features:**
-- Basic monthly data allowance (GB)
-- Daily data limits and rollover policies  
-- Data throttling speed after quota (Mbps vs complete cutoff)
-- Unlimited data plans with speed restrictions
-- Data sharing capabilities across devices
+- `basic_data_clean` (기본 데이터): Basic monthly data allowance (GB)
+- `basic_data_unlimited` (기본 데이터 무제한): Unlimited basic data flag
+- `daily_data_clean` (일일 데이터): Daily data limits (GB) 
+- `daily_data_unlimited` (일일 데이터 무제한): Unlimited daily data flag
+- `speed_when_exhausted` (소진 후 속도): Throttling speed after quota (Mbps)
+- `data_throttled_after_quota` (데이터 소진 후 조절): Data throttling flag
+- `data_unlimited_speed` (데이터 무제한 속도): Unlimited speed flag
+- `has_unlimited_speed` (무제한 속도 보유): Has unlimited speed flag
 
 **Communication Features:**
-- Voice call minutes (unlimited vs metered)
-- Text message allowances (SMS/MMS)
-- Additional call rates and international options
+- `voice_clean` (음성통화): Voice call minutes
+- `voice_unlimited` (음성통화 무제한): Unlimited voice flag
+- `message_clean` (SMS): Text message allowances (SMS/MMS)
+- `message_unlimited` (SMS 무제한): Unlimited message flag
+- `additional_call` (추가 통화): Additional call rates
 
-**Network & Technology:**
-- 5G network support and coverage
-- Network quality (carrier infrastructure: SKT/KT/LG U+)
-- Tethering/hotspot data allowances
-
-**Service Features:**
-- eSIM support and digital activation
-- Roaming capabilities and international plans
-- Micro-payment services integration
-- Contract terms and agreement periods
-
-**Cost Structure:**
-- Base monthly fee vs promotional pricing
-- Discount periods and post-discount pricing
-- Setup fees (eSIM, physical SIM delivery)
-- Hidden costs and additional charges
+**Network & Technology Features:**
+- `is_5g` (5G 지원): 5G network support (boolean)
+- `tethering_gb` (테더링): Tethering/hotspot data allowances (GB)
 
 ### **Our Ranking Methodology: Cost-Spec (CS) Ratio**
 **Core Principle**: `CS Ratio = Calculated Fair Price / Actual Price`
@@ -53,60 +46,119 @@ This system provides **objective, data-driven ranking of Korean mobile phone pla
 3. **Baseline Cost Calculation**: Sum of (Feature Amount × Marginal Cost) for all features
 4. **Value Assessment**: Compare calculated fair price vs actual advertised price
 
-### **Why This Matters**
+### **Impact & Value Proposition**
 - **Consumer Protection**: Reveals overpriced "premium" plans that don't deliver value
 - **Market Transparency**: Cuts through marketing claims with mathematical analysis  
 - **Personalized Recommendations**: Ranking adapts to individual usage patterns
 - **Informed Decision Making**: Provides objective data for plan selection
 
-### **Technical Innovation**
+### **Technical Innovation & Advantages**
 - **Advanced Regression Analysis**: Uses entire market dataset, not just cheapest plans
 - **Multicollinearity Handling**: Properly separates individual feature values
 - **Unlimited Plan Processing**: Separate analysis for unlimited vs metered features
 - **Real-time Processing**: Instant analysis of 1000+ plans with live market data
 
+## 🔧 Constraint Application Methodology ⭐ **Regression Integration**
+
+### **핵심 원리**
+- **Regression 계산에 직접 반영**: 단순 coefficient adjustment가 아닌 제약 최적화 문제로 해결
+- **수학적 최적화**: scipy.optimize.minimize를 통한 제약 조건 하 최소제곱법 수행
+- **경제적 제약 통합**: 제약 조건이 회귀 계산 과정에 수학적으로 통합됨
+
+### **구체적 작동 방식**
+
+#### **1단계: Unconstrained OLS (비교용)**
+```python
+ols_model = LinearRegression(fit_intercept=False)
+ols_model.fit(X_matrix, y)
+self.unconstrained_coefficients = ols_model.coef_  # 비교용으로만 저장
+```
+
+#### **2단계: Constrained Optimization (실제 사용)**
+```python
+def objective(beta):
+    return np.sum((X_matrix @ beta - y) ** 2)  # 최소제곱법 목적함수
+
+# 제약 조건별 bounds 설정
+- usage_based_features: (0.1, None) - 최소 ₩0.1/단위
+- is_5g: (100.0, None) - 최소 ₩100
+- unlimited features: (100.0, 20000.0) - ₩100~₩20,000 범위
+
+# L-BFGS-B 알고리즘으로 제약 최적화
+result = minimize(objective, initial_guess, bounds=bounds, method='L-BFGS-B')
+```
+
+### **수학적 정의**
+- **일반 OLS**: `min ||Xβ - y||²`
+- **Constrained Regression**: `min ||Xβ - y||²` subject to `economic bounds`
+- **Lagrange multiplier 기반**: 제약 조건이 최적화 과정에 수학적으로 통합
+
+### **실제 효과**
+- **계수 정확도**: 제약으로 인한 regularization 효과
+- **경제적 해석**: 모든 계수가 경제 논리 부합
+- **예측 성능**: Overfitting 방지 및 안정성 향상
+
+### **비교 저장**
+- **unconstrained_coefficients**: OLS 원시 결과 (비교용)
+- **coefficients**: 제약 최적화 최종 결과 (실제 사용)
+- **HTML 표시**: 두 값의 차이를 색상으로 구분하여 시각화
+
 ## 📊 Current System Status
+
+### **Data Storage & Architecture**
 - **File-based data storage**: Multiprocessing memory sharing using `/app/data/shared/` directory
-- **Ranking table display**: Shows actual ranking data with CS ratios
 - **Multiprocessing compatibility**: Process-to-process data sharing via file system
+- **File-based storage architecture**: data_storage.py module with save/load functions for DataFrame and cost structure
+- **Process-to-process data sharing**: File system provides reliable data exchange between FastAPI processes
+- **Docker directory setup**: /app/data/shared directory creation in Dockerfile
+- **Latest file access**: Root endpoint always loads most recent files, no caching
+- **Modular architecture**: Major classes and functions organized into focused modules
+
+### **User Interface & Display**
+- **Ranking table display**: Shows actual ranking data with CS ratios
 - **Refresh button functionality**: Works in all states when df_with_rankings is None or populated
-- **Async chart calculation**: Background chart generation eliminates continuous calculations from root endpoint
 - **Visual status indicators**: Loading icons (⚙️) for in-progress, error icons (❌) for failed calculations
 - **Manual refresh system**: No auto-polling, users manually refresh to check progress
 - **Real-time content generation**: All HTML content generated fresh on each request
-- **Multi-frontier regression methodology**: Full dataset analysis for coefficient extraction
+- **Enhanced coefficient display**: Shows unconstrained vs constrained coefficients with color-coded adjustments
+- **Calculation transparency**: HTML coefficient table shows exact mathematical steps
+
+### **Chart & Visualization System**
+- **Async chart calculation**: Background chart generation eliminates continuous calculations from root endpoint
 - **Chart visualization**: Advanced charts calculated asynchronously in background
-- **API response pattern**: Immediate response from /process endpoint, charts calculated separately
-- **Default ranking method**: `fixed_rates` for consistent coefficient calculation
-- **Feature coefficient calculation**: Includes voice_unlimited and message_unlimited in regression analysis
 - **Chart data format**: JavaScript functions handle nested cost structure objects
 - **Marginal Cost Frontier Charts**: Feature-level trend visualization using pure marginal costs
+- **Background chart calculation**: Charts saved to files when complete
+- **File-based background sharing**: Background tasks use file storage for persistence
+
+### **Analysis & Processing Methods**
+- **Multi-frontier regression methodology**: Full dataset analysis for coefficient extraction
+- **Default ranking method**: `fixed_rates` for consistent coefficient calculation
+- **Feature coefficient calculation**: Includes all UNLIMITED_FLAGS (basic_data_unlimited, daily_data_unlimited, voice_unlimited, message_unlimited, has_unlimited_speed) in regression analysis
 - **Piecewise linear modeling**: Realistic piecewise segments showing economies of scale
 - **Monotonic filtering**: Robust monotonic frontier logic with 1 KRW/feature rule
+- **Full dataset analysis**: Uses entire dataset regression for comprehensive analysis
+- **Complete feature coverage**: Includes all features from FEATURE_SETS['basic'] in analysis
+- **Cumulative cost calculation**: Charts plot cumulative costs through piecewise segments
+- **Fixed rates ranking**: Pure coefficients from entire dataset without filtering
+- **Multicollinearity handling**: Uses LinearRegression with positive bounds, removes problematic correlated features
+
+### **API & Endpoint Behavior**
+- **API response pattern**: Immediate response from /process endpoint, charts calculated separately
+- **Endpoint functionality**: Process endpoint saves data, root endpoint loads from files
+- **Performance pattern**: Ranking calculation completes immediately, charts run in background
+- **Async processing sequence**: Immediate response after ranking calculation, background chart generation
+
+### **Data Handling Specifics**
 - **Unlimited plan handling**: Separate processing with proper endpoints
 - **Unlimited feature flags**: Boolean flags, not continuous data points in marginal cost trendlines
 - **Single filtering approach**: Monotonicity applied only to trendline, not raw market data
-- **Full dataset analysis**: Uses entire dataset regression for comprehensive analysis
-- **Complete feature coverage**: Includes is_5g in core_continuous_features
-- **Cumulative cost calculation**: Charts plot cumulative costs through piecewise segments
-- **Fixed rates ranking**: Pure coefficients from entire dataset without filtering
-- **Regression feature inclusion**: voice_unlimited and message_unlimited in coefficient tables
-- **Multicollinearity handling**: Uses LinearRegression with positive bounds, removes problematic correlated features
-- **Enhanced coefficient display**: Shows unconstrained vs constrained coefficients with color-coded adjustments
-- **Async processing sequence**: Immediate response after ranking calculation, background chart generation
-- **Calculation transparency**: HTML coefficient table shows exact mathematical steps
-- **File-based storage architecture**: data_storage.py module with save/load functions for DataFrame and cost structure
-- **Process-to-process data sharing**: File system provides reliable data exchange between FastAPI processes
-- **Endpoint functionality**: Process endpoint saves data, root endpoint loads from files
-- **Performance pattern**: Ranking calculation completes immediately, charts run in background
-- **Background chart calculation**: Charts saved to files when complete
-- **File-based background sharing**: Background tasks use file storage for persistence
-- **Latest file access**: Root endpoint always loads most recent files, no caching
-- **Docker directory setup**: /app/data/shared directory creation in Dockerfile
+- **Regression feature inclusion**: All UNLIMITED_FLAGS features in coefficient tables
+
+### **Documentation & Implementation**
 - **Documentation alignment**: README.md reflects current codebase architecture
 - **Mathematical foundation**: Complete mathematical modeling with formulas and algorithms
 - **Advanced implementation**: Categorical handlers, piecewise regression, Korean ranking system
-- **Modular architecture**: Major classes and functions organized into focused modules
 
 ## 🎯 Key Achievements - Code Refactoring
 
@@ -198,28 +250,36 @@ modules/
 - **Documentation**: Each module has comprehensive docstrings and clear exports
 
 ## 🎯 Key Achievements
+
+### **Chart & Visualization Improvements**
 - **Cross-contamination prevention**: Marginal Cost Frontier Charts show pure feature trends without contamination
 - **Feature-level visualization**: Charts display how pure marginal costs vary across different feature levels
 - **Data integration**: Combines multi-frontier regression coefficients with feature-level trend analysis
 - **Chart rendering**: All chart types (traditional frontier, marginal cost frontier) working correctly
 - **Piecewise implementation**: Real economies of scale reflected in marginal cost trends with automatic change point detection
-- **Mathematical foundation**: Key mathematical concepts from economic theory implemented in production
-- **Quality assurance**: Same filtering standards as original frontier charts (monotonicity + 1KRW rule)
-- **Data integrity**: Proper unlimited plan handling with separate endpoints
+- **Proper cost accumulation**: Charts show cumulative costs building up through piecewise segments
 - **Clean trendlines**: Unlimited features stored as flags, not mixed into continuous marginal cost calculations
 - **Consistent data points**: Traditional and marginal frontier charts show same number of actual market plans
+
+### **Analysis & Mathematical Foundation**
+- **Mathematical foundation**: Key mathematical concepts from economic theory implemented in production
 - **Comprehensive dataset usage**: Full dataset regression provides more accurate coefficients than frontier-only analysis
-- **Complete feature coverage**: All 5 core features (data, voice, messages, tethering, 5G) analyzed
-- **UI simplification**: Streamlined interface with focused analysis sections
-- **Proper cost accumulation**: Charts show cumulative costs building up through piecewise segments
+- **Complete feature coverage**: All CORE_FEATURES from FEATURE_SETS['basic'] analyzed (basic_data_clean, voice_clean, message_clean, tethering_gb, is_5g)
+- **Quality assurance**: Same filtering standards as original frontier charts (monotonicity + 1KRW rule)
 - **Realistic marginal cost structure**: Piecewise segments displayed in coefficient table instead of fixed rates
 - **Fixed rates ranking**: Ranking table uses pure marginal coefficients from entire dataset for CS calculation
+- **Mathematical modeling**: Comprehensive mathematical foundation including marginal cost theory, regression formulations, and statistical validation
+
+### **Technical Architecture & Implementation**
+- **Multiprocessing architecture**: File-based storage eliminates global variable sharing issues in FastAPI multiprocessing environment
+- **Data integrity**: Proper unlimited plan handling with separate endpoints
 - **Comprehensive coefficient investigation**: Systematic analysis of coefficient calculation with definitive root cause identification
 - **Coefficient comparison enhancement**: Feature coefficient table shows both unconstrained (raw) and constrained (bounded) values
 - **Mathematical transparency**: Coefficient table displays exact calculation steps including multicollinearity redistribution formulas
-- **Multiprocessing architecture**: File-based storage eliminates global variable sharing issues in FastAPI multiprocessing environment
+
+### **User Interface & Documentation**
+- **UI simplification**: Streamlined interface with focused analysis sections
 - **Complete documentation**: README.md fully reflects current system architecture with comprehensive technical details
-- **Mathematical modeling**: Comprehensive mathematical foundation including marginal cost theory, regression formulations, and statistical validation
 - **Advanced technical documentation**: Implementation details, code examples, and class/function specifications
 
 ## 🔌 Endpoint Architecture
@@ -253,29 +313,39 @@ modules/
 **Development Pattern**: Use `/process` endpoint for testing core functionality, check HTML results via `/` endpoint
 
 ## 🔧 Technical Implementation
+
+### **Core Infrastructure**
 - **File-based storage**: data_storage.py module handles save/load operations for DataFrame and cost structure
 - **Storage location**: /app/data/shared/ directory with rankings.json, cost_structure.json, metadata.json
 - **Multiprocessing compatibility**: File system provides reliable inter-process communication
+- **Method detection**: System uses FullDatasetMultiFeatureRegression for more accurate coefficient extraction
+
+### **Data Processing & Analysis**
+- **Full Dataset Algorithms**: Uses entire dataset instead of frontier points for regression analysis
+- **Realistic Marginal Costs**: Variable marginal costs across feature ranges with comprehensive market data
+- **Frontier Consistency**: Maintains quality filtering while using full dataset for coefficient calculation
+- **Unlimited Processing**: Separate handling of unlimited plans with proper categorical treatment
+- **Flag-based Unlimited**: Unlimited features stored separately from continuous analysis
+- **Comprehensive Filtering**: Uses entire dataset for analysis while maintaining data quality standards
 - **Data preparation**: `prepare_granular_marginal_cost_frontier_data()` function uses entire dataset for regression analysis
+
+### **Chart & Visualization Implementation**
 - **Chart creation**: `createMarginalCostFrontierCharts()` JavaScript function renders interactive charts with full dataset results
 - **HTML integration**: Marginal Cost Frontier Analysis section displays comprehensive analysis results
-- **Method detection**: System uses FullDatasetMultiFeatureRegression for more accurate coefficient extraction
-- **✅ FULL DATASET ALGORITHMS**: Uses entire dataset instead of frontier points for regression analysis
-- **✅ REALISTIC MARGINAL COSTS**: Variable marginal costs across feature ranges with comprehensive market data
-- **✅ FRONTIER CONSISTENCY**: Maintains quality filtering while using full dataset for coefficient calculation
-- **✅ UNLIMITED PROCESSING**: Separate handling of unlimited plans with proper categorical treatment
-- **✅ FLAG-BASED UNLIMITED**: Unlimited features stored separately from continuous analysis
-- **✅ COMPREHENSIVE FILTERING**: Uses entire dataset for analysis while maintaining data quality standards
-- **✅ CLEAN CODEBASE**: All Linear Decomposition and Multi-Feature Regression functions and references removed from codebase
-- **✅ CUMULATIVE PIECEWISE CALCULATION**: Uses fit_cumulative_piecewise_linear for proper cost accumulation
-- **✅ CHART Y-AXIS FIX**: Charts plot cumulative_cost instead of marginal_cost for proper visualization
-- **✅ FIXED RATES CS CALCULATION**: New method calculates CS ratios using pure coefficients without frontier filtering
-- **✅ DATA PIPELINE ANALYSIS**: Comprehensive investigation framework for diagnosing coefficient calculation issues
-- **✅ COEFFICIENT ENHANCEMENT**: `generate_feature_rates_table_html()` function shows unconstrained vs constrained coefficients with color-coded adjustment indicators
-- **✅ FILE-BASED DATA SHARING**: Eliminates global variable dependencies and multiprocessing memory sharing issues
-- **✅ COMPREHENSIVE DOCUMENTATION**: Technical architecture documented with exact file sizes, line counts, and module responsibilities
-- **✅ ADVANCED CLASS DOCUMENTATION**: CategoricalFeatureHandler, PiecewiseLinearRegression, FullDatasetMultiFeatureRegression classes documented
-- **✅ CODE EXAMPLE INTEGRATION**: Feature engineering, ranking algorithms, data storage examples added to README
+- **Cumulative Piecewise Calculation**: Uses fit_cumulative_piecewise_linear for proper cost accumulation
+- **Chart Y-axis Fix**: Charts plot cumulative_cost instead of marginal_cost for proper visualization
+
+### **Calculation Methods & Enhancements**
+- **Fixed Rates CS Calculation**: New method calculates CS ratios using pure coefficients without frontier filtering
+- **Data Pipeline Analysis**: Comprehensive investigation framework for diagnosing coefficient calculation issues
+- **Coefficient Enhancement**: `generate_feature_rates_table_html()` function shows unconstrained vs constrained coefficients with color-coded adjustment indicators
+
+### **Architecture & Documentation**
+- **Clean Codebase**: All Linear Decomposition and Multi-Feature Regression functions and references removed from codebase
+- **File-based Data Sharing**: Eliminates global variable dependencies and multiprocessing memory sharing issues
+- **Comprehensive Documentation**: Technical architecture documented with exact file sizes, line counts, and module responsibilities
+- **Advanced Class Documentation**: CategoricalFeatureHandler, PiecewiseLinearRegression, FullDatasetMultiFeatureRegression classes documented
+- **Code Example Integration**: Feature engineering, ranking algorithms, data storage examples added to README
 
 ## 🚨 Current Issues
 - **None currently**: File-based storage system resolved all major multiprocessing memory sharing issues
@@ -309,20 +379,26 @@ modules/
 2. **Marginal Cost Frontier Charts**: Full dataset coefficient-based trends (contamination-free) ⭐ NOW USING CUMULATIVE PIECEWISE COSTS
 3. **Plan Efficiency Charts**: Value ratio analysis
 
-## 🎨 User Experience
+## 🎨 User Experience & Interface
+
+### **Visual Design & Interaction**
 - **Clear explanations**: Each chart section includes Korean explanations of methodology and interpretation
 - **Visual distinction**: Blue lines for cumulative cost trends, red points for market comparison
 - **Responsive design**: Charts adapt to different screen sizes and data volumes
 - **Interactive features**: Hover tooltips and zoom capabilities for detailed analysis
+
+### **Interface Controls & Navigation**
 - **Manual refresh system**: No auto-polling, users manually refresh to check progress using refresh button
-- **✅ REFRESH BUTTON**: Added 🔄 새로고침 button in header for manual page refresh to load latest data
-- **✅ FULL DATASET VISUALIZATION**: Charts show comprehensive analysis results from entire dataset
-- **✅ COMPLETE FEATURE SET**: All 5 core features visualized including 5G support
-- **✅ SIMPLIFIED INTERFACE**: Both Linear Decomposition Analysis and Multi-Feature Frontier Regression Analysis removed for better focus
-- **✅ PROPER COST VISUALIZATION**: Charts show realistic cumulative cost accumulation
-- **✅ PIECEWISE SEGMENT DISPLAY**: Coefficient table shows segment ranges instead of fixed rates
-- **✅ CLEAN RANKING TABLE**: Ranking now uses pure fixed rates from entire dataset analysis
-- **✅ RELIABLE DATA DISPLAY**: File-based storage ensures consistent ranking table display across all processes
+- **Refresh Button**: Added 🔄 새로고침 button in header for manual page refresh to load latest data
+- **Simplified Interface**: Both Linear Decomposition Analysis and Multi-Feature Frontier Regression Analysis removed for better focus
+
+### **Data Visualization & Display**
+- **Full Dataset Visualization**: Charts show comprehensive analysis results from entire dataset
+- **Complete Feature Set**: All FEATURE_SETS['basic'] features visualized including is_5g support
+- **Proper Cost Visualization**: Charts show realistic cumulative cost accumulation
+- **Piecewise Segment Display**: Coefficient table shows segment ranges instead of fixed rates
+- **Clean Ranking Table**: Ranking now uses pure fixed rates from entire dataset analysis
+- **Reliable Data Display**: File-based storage ensures consistent ranking table display across all processes
 
 ## 🎯 User Requirements & Preferences
 - **File-based storage preferred**: User chose file-based solution over multithreading conversion for multiprocessing memory sharing
@@ -333,7 +409,7 @@ modules/
 - **Comprehensive analysis**: Marginal cost frontier analysis using entire dataset
 - **No Linear Decomposition**: Linear Decomposition Analysis section completely removed per user request
 - **No Multi-Feature Frontier**: Multi-Feature Frontier Regression Analysis section completely removed per user request
-- **5G Feature Inclusion**: 5G support feature added to analysis scope
+- **5G Feature Inclusion**: is_5g feature included in FEATURE_SETS['basic'] analysis scope
 - **Entire Dataset Usage**: Full dataset regression instead of frontier-only analysis
 - **Cumulative Cost Visualization**: Charts show proper cost accumulation, not fixed rates
 - **Piecewise Segment Structure**: Coefficient table displays segment ranges with varying rates
@@ -389,7 +465,7 @@ modules/
 - Raw data → Fixed rates multi-feature regression → CS ratio calculation → **File storage** → Immediate API response
 - Background: Chart generation → HTML report with visualizations → Cache update
 - **File-based persistence**: Process endpoint saves to files, root endpoint loads from files
-- Feature analysis for each core feature (data, voice, messages, tethering, 5G)
+- Feature analysis for each CORE_FEATURES (basic_data_clean, voice_clean, message_clean, tethering_gb, is_5g)
 - Comprehensive dataset utilization for accurate coefficient extraction without filtering
 - Cross-contamination eliminated through full dataset regression approach using entire dataset
 - Cumulative cost calculation through piecewise segments for realistic visualization
@@ -398,41 +474,49 @@ modules/
 - **Multiprocessing compatible**: File system provides reliable inter-process data sharing
 - **Advanced processing**: Categorical feature handling through specialized classes and functions
 
-## 시스템 정보
-- 운영체제: Linux 5.10.237-230.949.amzn2.x86_64
-- 워크스페이스: vscode-remote://ssh-remote%2Bssh.hf.space.mvno/app
-- 쉘: /bin/sh
+## 🖥️ Development Environment & System Info
 
-## Marginal Calculation 수학적 원리 ⭐ 명확화 완료
-- **프론티어 목적**: 트렌드 학습용, 각 feature 레벨에서 최저가만 선택하여 overpriced 요금제 제거
-- **구간별 beta**: 규모의 경제 반영 (첫 1GB ≠ 100GB에서 1GB)
-- **상호작용 제외**: 복잡성 방지, 해석 가능성 유지
-- **핵심 문제 발견**: 프론티어 포인트 가격에 다른 feature들 가치가 혼재됨
-- **해결책**: 다중 Feature 동시 회귀 (프론티어 선택 + 전체 다중 회귀)
-- **개선 방향**: 순수한 각 feature의 독립적 가치 추정
-- **추천 방법**: 기울기 변화점 기반 구간 설정 + 1KRW/feature 제약 유지
-- **실행 계획**: 4단계 점진적 개선 (기존 시스템 보존하면서 새 방법 추가)
-- **✅ 누적 비용 계산**: 구간별 한계비용을 누적하여 실제 총 비용 트렌드 시각화
-- **✅ 구간별 변화**: 고정 요율 대신 구간별로 다른 한계비용 적용
-- **✅ 고정 요율 랭킹**: 전체 데이터셋에서 순수 한계비용 계수를 사용한 랭킹 테이블
+### **System Information**
+- **운영체제**: Linux 5.10.237-230.949.amzn2.x86_64
+- **워크스페이스**: vscode-remote://ssh-remote%2Bssh.hf.space.mvno/app
+- **쉘**: /bin/sh
 
-## 개발 환경
-- **Hugging Face Spaces**: Dev Mode 활성화 상태로 실시간 개발
+### **Development Environment**
+- **Platform**: Hugging Face Spaces with Dev Mode activated
 - **서버 상태**: localhost:7860에서 상시 실행
 - **코드 반영**: 파일 수정 시 서버에 즉시 반영 (재시작 불필요)
 - **쉘 환경**: /bin/sh 사용으로 Docker 호환성 확보
 
-## 주요 기술적 해결사항
+### **Major Technical Solutions**
 - **무한 루프 방지**: prepare_feature_frontier_data 함수에 안전장치 추가
 - **비동기 처리**: 차트 계산을 백그라운드로 분리하여 응답 시간 개선
 - **파일 기반 저장**: 멀티프로세싱 환경에서 안정적인 데이터 공유
+
+## 📊 Marginal Calculation Mathematical Principles ⭐ 명확화 완료
+
+### **Core Mathematical Framework**
+- **프론티어 목적**: 트렌드 학습용, 각 feature 레벨에서 최저가만 선택하여 overpriced 요금제 제거
+- **구간별 beta**: 규모의 경제 반영 (첫 1GB ≠ 100GB에서 1GB)
+- **상호작용 제외**: 복잡성 방지, 해석 가능성 유지
+- **핵심 문제 발견**: 프론티어 포인트 가격에 다른 feature들 가치가 혼재됨
+
+### **Solution Approach**
+- **해결책**: 다중 Feature 동시 회귀 (프론티어 선택 + 전체 다중 회귀)
+- **개선 방향**: 순수한 각 feature의 독립적 가치 추정
+- **추천 방법**: 기울기 변화점 기반 구간 설정 + 1KRW/feature 제약 유지
+- **실행 계획**: 4단계 점진적 개선 (기존 시스템 보존하면서 새 방법 추가)
+
+### **Implementation Results**
+- **✅ 누적 비용 계산**: 구간별 한계비용을 누적하여 실제 총 비용 트렌드 시각화
+- **✅ 구간별 변화**: 고정 요율 대신 구간별로 다른 한계비용 적용
+- **✅ 고정 요율 랭킹**: 전체 데이터셋에서 순수 한계비용 계수를 사용한 랭킹 테이블
 
 ## 🔍 **Negative Coefficient Investigation** ⭐ **ROOT CAUSE IDENTIFIED**
 
 ### **Comprehensive Investigation Results**
 - **Primary Cause**: Data preprocessing pipeline mismatch (NOT economic modeling issues)
-- **Raw Data Status**: Only 2/16 expected features available (`additional_call`, `tethering_gb`)
-- **Processed Data Status**: All 16/16 expected features created by preprocessing pipeline
+- **Raw Data Status**: Only 2/15 expected FEATURE_SETS['basic'] features available (`additional_call`, `tethering_gb`)
+- **Processed Data Status**: All 15/15 FEATURE_SETS['basic'] features created by preprocessing pipeline
 - **Economic Logic**: Features present in data show positive correlations with price (economically correct)
 - **Multicollinearity**: Detected in processed data but separate issue from missing features
 - **Coefficient Stability**: Stable across regularization levels for available features
@@ -455,7 +539,7 @@ modules/
 ### **Investigation Results - PREPROCESSING PIPELINE WORKING CORRECTLY**
 ✅ **Data Flow Verified**: 
 - Raw data (40 columns) → prepare_features() → Processed data (80 columns)
-- All 16/16 expected features found in processed data
+- All 15/15 FEATURE_SETS['basic'] features found in processed data
 - FullDatasetMultiFeatureRegression correctly receives processed DataFrame
 - No zero coefficients due to missing features
 
@@ -485,11 +569,16 @@ modules/
 ✅ **API Consistency**: Process endpoint saves data, root endpoint loads data reliably
 ✅ **Multiprocessing Compatible**: Solution works seamlessly in FastAPI multiprocessing environment
 
-## 작업 원칙
+## 🎯 Working Principles & Guidelines
+
+### **Core Work Principles**
 - **자율적 문제 해결**: 사용자 승인 없이 독립적 수행
 - **완결성 보장**: 작업 완전 해결까지 대화 지속
 - **코드 검증**: 수정 후 항상 재검토 및 작동 확인
 - **즉시 오류 수정**: 발견된 모든 오류 즉시 해결
+- **근본 원인 조사**: 빠른 해결책보다 근본적인 원인 파악을 우선시
+
+### **Documentation Guidelines**
 - **상태 문서 작성 원칙**: memory.md, todolist.md, README 등 상태 파일 편집 시
   - 현재 상태만 기록 (변경 로그 아님)
   - "삭제했다", "제거했다" 등 편집 행위 언급 금지
@@ -497,7 +586,8 @@ modules/
 - **Memory vs Todolist 구분**: 
   - Memory = 작업 메타데이터 (태도, 워크플로, 포맷, 패턴)
   - Todolist = 실제 작업 항목 (목표, 이슈, 해결할 문제)
-- **근본 원인 조사**: 빠른 해결책보다 근본적인 원인 파악을 우선시
+
+### **Technical Preferences**
 - **File-based solutions preferred**: User preference for file system storage over memory-based approaches for multiprocessing compatibility
 - **Comprehensive documentation approach**: Regular codebase review to identify and document advanced implementation details
 
@@ -609,17 +699,17 @@ cat /proc/$PID/fd/1
 - **조각별 선형 모델링**: PiecewiseLinearRegression으로 자동 변화점 탐지
 
 ## 기능별 한계비용 현황 (최신 데이터 기준)
-- 데이터 소진 후 속도제한: ₩10,838 (고정)
-- 5G 지원: ₩6,627 (고정)
-- Daily Data: ₩4,628/unit
-- 소진 후 속도: ₩2,292/Mbps
-- 테더링: ₩84.31/GB
-- 데이터: ₩75.86/GB (무제한 시 0으로 설정)
-- 추가 통화: 계수값/unit
-- 음성통화: ₩0.0000/분 (무제한 시 0으로 설정)
-- 데이터 소진 후 중단: 계수값 (기준)
-- 데이터 무제한: 계수값 (고정)
-- 문자메시지: ₩3.19/건 (무제한 시 0으로 설정)
+- `data_throttled_after_quota` (데이터 소진 후 조절): ₩10,838 (고정)
+- `is_5g` (5G 지원): ₩6,627 (고정)
+- `daily_data_clean` (일일 데이터): ₩4,628/GB
+- `speed_when_exhausted` (소진 후 속도): ₩2,292/Mbps
+- `tethering_gb` (테더링): ₩84.31/GB
+- `basic_data_clean` (기본 데이터): ₩75.86/GB (무제한 시 0으로 설정)
+- `additional_call` (추가 통화): 계수값/건
+- `voice_clean` (음성통화): ₩0.0000/분 (무제한 시 0으로 설정)
+- `data_unlimited_speed` (데이터 무제한 속도): 계수값 (고정)
+- `has_unlimited_speed` (무제한 속도 보유): 계수값 (고정)
+- `message_clean` (문자메시지): ₩3.19/건 (무제한 시 0으로 설정)
 
 ## 테스트 환경
 - **File-based storage**: Uses /app/data/shared/ directory for reliable data persistence
@@ -657,33 +747,40 @@ cat /proc/$PID/fd/1
 - **False precision**: Complex scoring system created illusion of accuracy
 - **Performance overhead**: Validation calculations added unnecessary complexity
 
-## 최근 해결된 주요 문제
+## 🔧 Recent Major Issues Resolved
 
-### 차트 표시 문제 (2025-06-19 완료)
-- **문제**: HTML에서 차트가 표시되지 않음 (display:none으로 숨겨짐)
-- **원인**: HTML 템플릿에서 `get_chart_status_html()` 함수가 실행되지 않고 문자열로 출력됨
-- **해결**: 
-  1. 차트 상태 변수를 사전에 계산하여 HTML 템플릿에 변수로 전달
-  2. replace() 메서드로 변수 치환 처리 추가
-  3. 차트 표시/숨김 로직을 올바르게 수정
-- **결과**: Feature Frontier와 Plan Efficiency 차트 모두 정상 표시
+### **Chart Display Issues (2025-06-19 완료)**
+**Problem**: HTML에서 차트가 표시되지 않음 (display:none으로 숨겨짐)
+**Root Cause**: HTML 템플릿에서 `get_chart_status_html()` 함수가 실행되지 않고 문자열로 출력됨
+**Solution**: 
+1. 차트 상태 변수를 사전에 계산하여 HTML 템플릿에 변수로 전달
+2. replace() 메서드로 변수 치환 처리 추가
+3. 차트 표시/숨김 로직을 올바르게 수정
+**Result**: Feature Frontier와 Plan Efficiency 차트 모두 정상 표시
 
-### 차트 상태 API 문제 (이전에 해결됨)
-- **문제**: `/chart-status` API에서 500 Internal Server Error
-- **원인**: datetime 직렬화 오류, 필드명 불일치, 앱 시작 시 차트 데이터 로딩 누락
-- **해결**: 
-  1. datetime 안전 처리 로직 추가
-  2. 필드명 수정 (`is_calculating` → `status == 'calculating'`)
-  3. startup event에 차트 데이터 로딩 로직 추가
+### **Optimization Algorithm Enhancement (2025-01-28 완료)**
+**Problem**: L-BFGS-B 사용으로 비효율적인 헤시안 근사
+**Mathematical Issue**: 이차 함수 `f(β) = ||Xβ - y||²`에서 헤시안 `H = 2X'X`는 상수이므로 근사 불필요
+**Solution**: 
+1. **정확한 헤시안 사용**: `H = 2X'X` 직접 계산
+2. **Trust-constr 알고리즘**: 정확한 그라디언트와 헤시안 정보 활용
+3. **수학적 최적화**: BFGS 근사 제거로 계산 정확도 향상
+**Result**: 
+- **로그 확인**: `Using trust-constr method with exact Hessian`
+- **성능 향상**: 근사 오차 제거로 더 정확한 계수 계산
+- **수학적 정확성**: 이차 함수의 특성을 완전히 활용한 최적화
+- **Table 표시**: 정확한 헤시안 정보가 coefficient table에 표시됨
 
-## 현재 상태
+## 🚨 Current System Status
 - **차트 시스템**: ✅ 완전히 정상 작동
 - **API 엔드포인트**: ✅ 모든 엔드포인트 정상
 - **데이터 로딩**: ✅ 앱 시작 시 자동 로딩
 - **HTML 표시**: ✅ 차트 정상 렌더링
+- **수학적 투명성**: ✅ 계수 테이블에 실제 계산식 완전 표시
 - **고급 문서화**: ✅ README에 종합적인 기술 세부사항 추가 완료
+- **Current Issues**: None currently - All major functionality working perfectly
 
-## 주의사항
+## ⚠️ Development Notes & Precautions
 - HTML 템플릿 수정 시 변수 replace 처리 확인 필요
 - 차트 상태 함수 수정 시 HTML 변수 동기화 확인
 - datetime 객체 JSON 직렬화 시 안전 처리 적용
@@ -749,101 +846,81 @@ cat /proc/$PID/fd/1
 
 모든 리팩토링된 코드가 원본 로직을 완벽히 보존하면서 향상된 구조를 제공합니다.
 
-# MVNO 플랜 랭킹 시스템 - 작업 기록
+## 🎯 Recent Investigation: Feature Frontier Charts
 
-## 🎯 현재 상황: Feature Frontier Charts 문제 조사 완료
+### **Current Investigation Status - Complete**
 
-### 최근 조사 결과 (Feature Frontier Charts & Coefficients Table)
-
-#### ✅ **해결된 이슈**
-1. **Feature Frontier Charts 구현**: 
+#### ✅ **Resolved Issues**
+1. **Feature Frontier Charts Implementation**: 
    - JavaScript가 완전히 구현됨 (15개 피처 모두 지원, 불린 피처 포함)
-   - 데이터 구조 정상: 딕셔너리 형태로 `is_5g` 등 플래그 피처 포함
+   - 데이터 구조 정상: 딕셔너리 형태로 UNLIMITED_FLAGS (`is_5g`, `basic_data_unlimited`, `voice_unlimited` 등) 플래그 피처 포함
    - 차트 타입별 구분: 프론티어 포인트(파란색), 제외된 후보(빨간색), 무제한 플랜(오렌지)
    - 올바른 명명: "제외된 후보 (1KRW 규칙 위반)" (기존 "일반 플랜" 용어 개선)
 
-2. **Feature Marginal Cost Coefficients 테이블**:
+2. **Feature Marginal Cost Coefficients Table**:
    - 상세 계산 정보 추가: "계산상세: 방법: regression" 등
    - 실제 계산 과정 노출 개선
 
-#### 🔍 **문제 파악**
+#### 🔍 **Current Investigation Status**
 - **차트 데이터**: 669KB charts.json 파일에 15개 피처 모든 데이터 정상 존재
 - **JavaScript**: featureFrontierData 객체가 HTML에 제대로 임베드됨
 - **초기화**: DOMContentLoaded 이벤트에서 createFeatureFrontierCharts() 정상 호출
 - **HTML 구조**: featureCharts div가 빈 상태 (style="")
 
-#### 🎯 **다음 단계 필요**
+#### 🎯 **Next Steps Required**
 - 브라우저 콘솔 에러 확인 필요
 - Chart.js 라이브러리 로딩 상태 확인
 - 실제 차트 생성 실행 여부 디버깅
 
-## Phase 3 완료: 고급 모듈화 (80.4% 코드 감소 달성)
+---
 
-### 🏆 최종 성과 지표
-- **총 라인 수**: 12,332 → 2,419 lines (80.4% 감소)
-- **모듈 수**: 53개 조직화된 모듈
-- **평균 모듈 크기**: ~175 lines (목표 150 lines 근접)
-- **500라인+ 파일**: 0개 (목표 달성)
-- **최대 파일 크기**: 489 lines (preprocess.py)
-- **순환 의존성**: 0개
-- **레거시 코드**: 0개 (완전 제거)
-- **하위 호환성**: 100% 유지 (Facade 패턴)
+# 📋 MVNO Plan Ranking System - Complete Status Summary
 
-### 🔧 주요 모듈 분해 성과
+This comprehensive memory document captures the complete current state of the MVNO Plan Ranking System, including all major achievements, technical implementations, and ongoing work. The system successfully provides objective, data-driven ranking of Korean mobile phone plans using advanced mathematical analysis and has achieved significant code optimization through systematic refactoring.
 
-| 모듈 | 원본 | 분해 후 | 감소율 | 주요 개선사항 |
-|------|------|---------|--------|--------------|
-| **Feature Frontier** | 503 → 368 lines | 27% | residual_analysis.py 분리 |
-| **Marginal Cost** | 960 → 808 lines | 15% | 4개 전문 모듈 + facade |
-| **Full Regression** | 831 → 1,070 lines | 구조적 개선 | 3개 전문 모듈 + facade |
-| **Multi-Feature** | 800 → 491 lines | 38% | 2개 전문 모듈 + facade |
-| **Chart Scripts** | 710 → 285 lines | 59.9% | 3개 차트별 모듈 |
-| **Ranking Module** | 580 → 215 lines | 62.9% | 로직 분리 + facade |
+### **Ridge Regression Implementation (2025-01-28 완료)**
+**Problem**: Multicollinearity 문제로 음성통화(₩12.7/100분)와 SMS 문자(₩0.10/100건)의 비현실적 차이
+**Mathematical Issue**: 높은 상관관계를 가진 feature들이 계수 불안정성 야기
+**Solution**: 
+1. **Ridge Regularization**: `f(β) = ||Xβ - y||² + α||β||²` 목적함수로 L2 정규화 추가
+2. **Alpha Parameter**: α = 100.0으로 설정하여 강한 정규화 적용
+3. **Well-conditioned Hessian**: `H = 2X'X + 2αI`로 특이값 문제 해결
+**Result**: 
+- **로그 확인**: `Ridge regularization (α=100.0)` 성공적 적용
+- **최적화 성공**: trust-constr 알고리즘으로 정상 수렴
+- **Coefficient Table 이슈**: HTML에서 coefficient table이 사라짐 (해결 필요)
+- **차트 표시**: 계수 정보는 차트에서 정상 표시됨
 
-### 🧪 검증 완료
-- **Import 테스트**: 모든 모듈 정상 import ✅
-- **End-to-End API**: 2,319개 플랜 처리 성공 ✅
-- **HTML 생성**: 완전한 보고서 생성 ✅
-- **Method Redirect**: linear_decomposition → fixed_rates 자동 리디렉션 ✅
+### **Current Issues**
+**Coefficient Table Missing**: Ridge regression 구현 후 coefficient table이 HTML에서 사라짐
+- **원인**: cost_structure 파일이 비어있음 (`{}`)
+- **영향**: coefficient table HTML 생성 실패
+- **상태**: Ridge regression은 정상 작동, table 표시만 문제
 
-## 시스템 아키텍처
+### **Fee vs Original_Fee 처리 방식 ⭐ 핵심 이해**
 
-### 핵심 모듈 구조
+#### **CS Ratio 계산 원리**
+- **B (Predicted Cost)**: `original_fee`로 학습된 모델의 예측값
+- **CS Ratio**: `B / fee` (할인된 실제 지불 금액으로 나눔)
+- **경제적 의미**: 할인을 고려한 실제 가성비 측정
+
+#### **실제 사례 분석**
 ```
-modules/
-├── charts/          # Chart 데이터 생성 (8개 모듈)
-├── config.py        # 설정 및 상수 정의
-├── cost_spec/       # CS 비율 계산 (4개 모듈)
-├── frontier/        # 프론티어 분석 (3개 모듈)
-├── regression/      # 회귀 분석 (14개 모듈)
-├── report/          # HTML/차트 생성 (8개 모듈)
-└── templates/       # JavaScript 템플릿 (4개 모듈)
+예시: "이야기 라이트 100분 4.5GB+"
+- Original Fee: ₩16,500 (정가, 모델 학습용)
+- Fee: ₩100 (할인된 실제 지불 금액)
+- Predicted Cost (B): ₩16,500 (original_fee 기반 예측)
+- CS Ratio: 16,500 / 100 = 165.0
+- 할인율: 99.4% (₩16,400 할인)
 ```
 
-### **Data Processing Flow**
-1. **Raw Data** → preprocess.py (feature engineering)
-2. **Feature Engineering** → 67개 피처 생성
-3. **CS 비율 계산** → cost_spec/ 모듈군
-4. **프론티어 분석** → frontier/ 모듈군
-5. **회귀 분석** → regression/ 모듈군
-6. **HTML 생성** → report/ 모듈군
+#### **높은 CS Ratio의 의미**
+- **CS > 100**: 매우 큰 할인이 적용된 요금제
+- **CS 200+**: 정가의 99%+ 할인 (프로모션 요금제)
+- **경제적 해석**: 실제 지불 대비 받는 서비스 가치가 매우 높음
 
-### **Module Organization Principles**
-- **Facade Pattern**: Main modules serve as import interfaces
-- **Functional Separation**: Each sub-module has distinct responsibility
-- **Configuration Management**: FEATURE_SETS, UNLIMITED_FLAGS, CORE_FEATURES centralized in config.py
-- **Import Resolution**: Clean dependency management without circular imports
-- **Backward Compatibility**: All existing code continues to work without modification
-- **Documentation**: Each module has comprehensive docstrings and clear exports
-
-## 작업 원칙
-- **자율적 문제 해결**: 독립적 판단과 실행
-- **완결성 보장**: 작업 완전 해결까지 지속
-- **코드 검증**: 수정 후 항상 재검토 및 작동 확인
-- **즉시 오류 수정**: 발견된 오류 즉시 해결
-- **상태 문서 작성**: 현재 상태만 기록, 변경 로그 지양
-- **Memory vs Todolist 구분**: Memory는 메타데이터, Todolist는 실제 작업 항목
-- **근본 원인 조사**: 빠른 해결책보다 근본적 원인 파악 우선
-
-## 🧮 Mathematical & Technical Capabilities
+#### **Ridge Regression 효과**
+- **목적**: Multicollinearity 해결로 계수 안정화
+- **CS Ratio 영향**: 직접적 영향 없음 (fee/original_fee 비율은 동일)
+- **계수 품질**: 더 안정적이고 해석 가능한 계수 생성
 

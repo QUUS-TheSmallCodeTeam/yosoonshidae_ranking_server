@@ -612,19 +612,7 @@ def process_data(data: Any = Body(...)):
             elif df_for_response[col].dtype.kind == 'b':  # boolean types
                 df_for_response[col] = df_for_response[col].astype(bool)
         
-        # Extract cost structure if available (linear decomposition)
-        cost_structure = {}
-        logger.info(f"[{request_id}] Checking for cost_structure in DataFrame attrs...")
-        logger.info(f"[{request_id}] DataFrame has attrs: {hasattr(df_ranked, 'attrs')}")
-        if hasattr(df_ranked, 'attrs'):
-            logger.info(f"[{request_id}] DataFrame attrs keys: {list(df_ranked.attrs.keys())}")
-            if 'cost_structure' in df_ranked.attrs:
-                cost_structure = df_ranked.attrs['cost_structure']
-                logger.info(f"[{request_id}] Cost structure discovered: {cost_structure}")
-            else:
-                logger.info(f"[{request_id}] No cost_structure found in attrs")
-        else:
-            logger.info(f"[{request_id}] DataFrame has no attrs")
+        # Note: cost_structure already extracted above (lines 560-567), no need to extract again
         
         # Create all_ranked_plans for the response
         columns_to_include = ["id", "plan_name", "mvno", "fee", "original_fee", "rank", "B", "CS"]

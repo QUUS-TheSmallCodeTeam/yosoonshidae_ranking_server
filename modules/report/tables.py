@@ -6,7 +6,7 @@ This module handles HTML table generation for reports.
 
 def generate_feature_rates_table_html(cost_structure):
     """
-    Generate HTML table showing feature marginal cost rates.
+    Generate HTML table showing feature marginal cost rates with mathematical formulas.
     
     Args:
         cost_structure: Dictionary containing feature costs and coefficients
@@ -35,6 +35,46 @@ def generate_feature_rates_table_html(cost_structure):
         except (ValueError, TypeError):
             return str(value)
     
+    def get_mathematical_formula(feature, coefficient, cost_data=None):
+        """Generate mathematical formula for each coefficient calculation"""
+        coeff_val = coefficient
+        
+        # Extract bounds information if available
+        bounds_info = ""
+        if isinstance(cost_data, dict) and 'bounds' in cost_data:
+            bounds = cost_data['bounds']
+            lower = bounds.get('lower', 0)
+            upper = bounds.get('upper', '∞')
+            if upper is None:
+                upper = '∞'
+            bounds_info = f" subject to {lower} ≤ β ≤ {upper}"
+        
+        # Feature-specific mathematical formulas with Ridge regularization information
+        base_formula = f"<code>min ||Xβ - y||² + α||β||²{bounds_info}</code>"
+        ridge_info = "<small>Ridge 정규화: α||β||² 항으로 다중공선성 해결</small><br>"
+        hessian_info = "<small>정확한 헤시안 H = 2X'X + 2αI (잘 조건화됨)</small><br>"
+        
+        if 'data' in feature.lower():
+            unit_desc = "데이터GB"
+        elif 'voice' in feature.lower():
+            unit_desc = "음성분" if 'unlimited' not in feature.lower() else "무제한플래그(0/1)"
+        elif 'message' in feature.lower() or 'sms' in feature.lower():
+            unit_desc = "SMS건수" if 'unlimited' not in feature.lower() else "무제한플래그(0/1)"
+        elif 'tethering' in feature.lower():
+            unit_desc = "테더링GB"
+        elif '5g' in feature.lower():
+            unit_desc = "5G여부(0/1)"
+        elif 'speed' in feature.lower():
+            unit_desc = "속도Mbps"
+        elif 'unlimited' in feature.lower() or 'throttled' in feature.lower():
+            unit_desc = "처리방식플래그(0/1)"
+        else:
+            unit_desc = f"{feature}"
+        
+        coefficient_info = f"β = {coeff_val:,.4f}, 기여분 = β × {unit_desc}"
+        
+        return f"{base_formula}<br>{ridge_info}{hessian_info}{coefficient_info}"
+    
     # Get feature costs from cost structure
     feature_costs = cost_structure.get('feature_costs', {})
     if not feature_costs:
@@ -62,14 +102,14 @@ def generate_feature_rates_table_html(cost_structure):
     html = """
     <div class="summary">
         <h3>🔢 기능별 한계비용 계수 (Feature Marginal Cost Coefficients)</h3>
-        <p>각 기능의 한계비용 계수입니다. 이 값들이 CS 비율 계산의 기준이 됩니다.</p>
+        <p>각 기능의 한계비용 계수와 실제 수학적 계산식입니다. 이 값들이 CS 비율 계산의 기준이 됩니다.</p>
         <table style="width: auto; margin: 10px 0;">
             <thead>
                 <tr>
                     <th style="text-align: left;">기능 (Feature)</th>
                     <th style="text-align: center;">한계비용 계수</th>
                     <th style="text-align: center;">단위 (Unit)</th>
-                    <th style="text-align: left;">설명</th>
+                    <th style="text-align: left;">수학적 계산식</th>
                 </tr>
             </thead>
             <tbody>
@@ -83,7 +123,7 @@ def generate_feature_rates_table_html(cost_structure):
                     <td style="font-weight: bold;">기본 인프라 (Base Cost)</td>
                     <td style="text-align: center; font-weight: bold;">{format_coefficient(base_cost)}</td>
                     <td style="text-align: center;">₩/요금제</td>
-                    <td>네트워크 유지, 청구 시스템 등 기본 비용</td>
+                    <td><code>β₀ = {base_cost}</code><br><small>고정 기본비용</small></td>
                 </tr>
         """
     
@@ -102,53 +142,15 @@ def generate_feature_rates_table_html(cost_structure):
         
         coeff_display = format_coefficient(coefficient)
         
-        # Generate detailed calculation description based on feature type and coefficient
-        if isinstance(cost_data, dict):
-            # Extract calculation details from cost_data
-            calculation_method = cost_data.get('method', 'regression')
-            r_squared = cost_data.get('r_squared', None)
-            samples_used = cost_data.get('samples_used', None)
-            
-            base_description = ""
-            if feature.endswith('_unlimited'):
-                base_description = "무제한 기능 활성화 시 적용되는 가치"
-            elif feature in ['data_throttled_after_quota', 'data_unlimited_speed']:
-                base_description = "데이터 소진 후 처리 방식에 따른 고정 가치"
-            elif feature == 'is_5g':
-                base_description = "5G 네트워크 지원에 따른 기술 프리미엄"
-            else:
-                base_description = f"{info['name']} 1단위 증가 시 추가되는 한계비용"
-            
-            # Add calculation details
-            calc_details = []
-            if calculation_method:
-                calc_details.append(f"방법: {calculation_method}")
-            if r_squared is not None:
-                calc_details.append(f"R²: {r_squared:.3f}")
-            if samples_used is not None:
-                calc_details.append(f"샘플수: {samples_used}")
-            
-            if calc_details:
-                description = f"{base_description}<br><small>계산상세: {', '.join(calc_details)}</small>"
-            else:
-                description = base_description
-        else:
-            # Simple coefficient value - show calculation formula
-            if feature.endswith('_unlimited'):
-                description = "무제한 기능 활성화 시 적용되는 가치"
-            elif feature in ['data_throttled_after_quota', 'data_unlimited_speed']:
-                description = "데이터 소진 후 처리 방식에 따른 고정 가치"
-            elif feature == 'is_5g':
-                description = "5G 네트워크 지원에 따른 기술 프리미엄"
-            else:
-                description = f"{info['name']} 1단위 증가 시 추가되는 한계비용<br><small>계산: {coefficient:.4f} × 기능값 = 기여분</small>"
+        # Generate mathematical formula
+        formula = get_mathematical_formula(feature, coefficient, cost_data)
         
         html += f"""
                 <tr>
                     <td>{info['name']}</td>
                     <td style="text-align: center;">{coeff_display}</td>
                     <td style="text-align: center;">{info['unit']}</td>
-                    <td style="font-size: 0.9em; color: #666;">{description}</td>
+                    <td style="font-size: 0.9em; color: #666;">{formula}</td>
                 </tr>
         """
     
@@ -156,8 +158,12 @@ def generate_feature_rates_table_html(cost_structure):
             </tbody>
         </table>
         <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
-            <strong>참고:</strong> 이 계수들은 전체 데이터셋 회귀 분석을 통해 도출된 각 기능의 순수 한계비용입니다. 
-            CS 비율은 이 계수들을 사용하여 계산된 기준 비용과 실제 요금제 가격의 비율입니다.
+            <strong>수식 설명:</strong> 
+            <code>min ||Xβ - y||² + α||β||²</code> = Ridge 정규화된 제약 최적화로 다중공선성 문제 해결<br>
+            <strong>Ridge 정규화</strong>: α||β||² 항이 계수 크기를 제한하여 안정적인 해 도출<br>
+            <strong>정확한 헤시안</strong>: H = 2X'X + 2αI (잘 조건화된 행렬)<br>
+            <strong>X</strong> = 기능 행렬, <strong>β</strong> = 계수 벡터, <strong>y</strong> = 실제 요금, <strong>α</strong> = 정규화 강도<br>
+            각 기능의 기여분은 <strong>β × 기능값</strong>으로 계산되어 총 예상 요금에 합산됩니다.
         </p>
     </div>
     """
