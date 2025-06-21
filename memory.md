@@ -1,55 +1,112 @@
 # 🧠 Memory & Context
 
+## 🎯 Project Overview & Objective
+
+### **MVNO Plan Ranking System - Core Mission**
+This system provides **objective, data-driven ranking of Korean mobile phone plans** to help consumers find the best value plans based on their specific usage patterns.
+
+### **What are MVNO Plans?**
+- **MVNO** (Mobile Virtual Network Operator): Companies that lease network infrastructure from major carriers (SKT, KT, LG U+)
+- **Korean Market**: 100+ MVNO providers offering diverse plans with complex pricing structures
+- **Consumer Challenge**: Overwhelming choice with opaque pricing, hidden fees, and marketing-driven comparisons
+- **Our Solution**: Mathematical analysis to cut through marketing noise and reveal true value
+
+### **Features We Compare (16+ Core Features)**
+**Data Features:**
+- Basic monthly data allowance (GB)
+- Daily data limits and rollover policies  
+- Data throttling speed after quota (Mbps vs complete cutoff)
+- Unlimited data plans with speed restrictions
+- Data sharing capabilities across devices
+
+**Communication Features:**
+- Voice call minutes (unlimited vs metered)
+- Text message allowances (SMS/MMS)
+- Additional call rates and international options
+
+**Network & Technology:**
+- 5G network support and coverage
+- Network quality (carrier infrastructure: SKT/KT/LG U+)
+- Tethering/hotspot data allowances
+
+**Service Features:**
+- eSIM support and digital activation
+- Roaming capabilities and international plans
+- Micro-payment services integration
+- Contract terms and agreement periods
+
+**Cost Structure:**
+- Base monthly fee vs promotional pricing
+- Discount periods and post-discount pricing
+- Setup fees (eSIM, physical SIM delivery)
+- Hidden costs and additional charges
+
+### **Our Ranking Methodology: Cost-Spec (CS) Ratio**
+**Core Principle**: `CS Ratio = Calculated Fair Price / Actual Price`
+- **Higher CS Ratio = Better Value** (getting more than you pay for)
+- **CS Ratio > 1.0**: Plan offers good value
+- **CS Ratio < 1.0**: Plan is overpriced for features offered
+
+**Mathematical Foundation**:
+1. **Marginal Cost Analysis**: Calculate fair price for each feature based on market data
+2. **Feature Coefficient Extraction**: Use entire dataset regression (not just frontier points)
+3. **Baseline Cost Calculation**: Sum of (Feature Amount × Marginal Cost) for all features
+4. **Value Assessment**: Compare calculated fair price vs actual advertised price
+
+### **Why This Matters**
+- **Consumer Protection**: Reveals overpriced "premium" plans that don't deliver value
+- **Market Transparency**: Cuts through marketing claims with mathematical analysis  
+- **Personalized Recommendations**: Ranking adapts to individual usage patterns
+- **Informed Decision Making**: Provides objective data for plan selection
+
+### **Technical Innovation**
+- **Advanced Regression Analysis**: Uses entire market dataset, not just cheapest plans
+- **Multicollinearity Handling**: Properly separates individual feature values
+- **Unlimited Plan Processing**: Separate analysis for unlimited vs metered features
+- **Real-time Processing**: Instant analysis of 1000+ plans with live market data
+
 ## 📊 Current System Status
-- **File-based data storage**: Implemented complete solution for multiprocessing memory sharing using `/app/data/shared/` directory
-- **Ranking table display**: Fixed "데이터 처리 대기 중" issue - now shows actual ranking data
-- **Multiprocessing compatibility**: Process-to-process data sharing via file system instead of memory
-- **Refresh button functionality**: Fixed AttributeError when df_with_rankings is None, now works in all states
-- **Async chart calculation**: Implemented to eliminate continuous calculations triggered by root endpoint
+- **File-based data storage**: Multiprocessing memory sharing using `/app/data/shared/` directory
+- **Ranking table display**: Shows actual ranking data with CS ratios
+- **Multiprocessing compatibility**: Process-to-process data sharing via file system
+- **Refresh button functionality**: Works in all states when df_with_rankings is None or populated
+- **Async chart calculation**: Background chart generation eliminates continuous calculations from root endpoint
 - **Visual status indicators**: Loading icons (⚙️) for in-progress, error icons (❌) for failed calculations
 - **Manual refresh system**: No auto-polling, users manually refresh to check progress
-- **No caching**: All HTML content generated fresh on each request for immediate status updates
-- **Multi-frontier regression methodology**: Successfully implemented and fully operational
-- **Chart visualization**: Advanced charts now calculated asynchronously in background
-- **API response time**: Immediate response from /process endpoint, charts calculated separately
-- **Default method**: Changed to `fixed_rates` for consistent coefficient calculation
-- **Feature coefficient calculation**: Successfully includes voice_unlimited and message_unlimited in regression analysis
-- **Chart data format**: Fixed JavaScript functions to handle nested cost structure objects properly
-- **Marginal Cost Frontier Charts**: Successfully implemented feature-level trend visualization using pure marginal costs from multi-frontier regression
-- **✅ PIECEWISE LINEAR MODEL IMPLEMENTED**: Replaced simple linear model with realistic piecewise segments showing economies of scale
-- **✅ MONOTONIC FILTERING APPLIED**: Same robust monotonic frontier logic with 1 KRW/feature rule as original system
-- **✅ UNLIMITED HANDLING COMPLETE**: Separate processing of unlimited plans with proper endpoints
-- **✅ UNLIMITED AS FLAGS ONLY**: Unlimited features processed as boolean flags, not continuous data points in marginal cost trendlines
-- **✅ DOUBLE FILTERING FIXED**: Eliminated double filtering - monotonicity applied only to trendline, not raw market data
-- **✅ FULL DATASET ANALYSIS IMPLEMENTED**: Switched from frontier points to entire dataset regression for comprehensive analysis
-- **✅ 5G FEATURE ADDED**: Added is_5g to core_continuous_features for complete feature coverage
-- **✅ LINEAR DECOMPOSITION COMPLETELY REMOVED**: Removed all Linear Decomposition Analysis sections, functions, and references
-- **✅ CUMULATIVE COST CALCULATION FIXED**: Charts now plot cumulative costs instead of fixed marginal rates
-- **✅ PIECEWISE SEGMENTS PROPERLY IMPLEMENTED**: Using fit_cumulative_piecewise_linear for realistic cost accumulation
-- **✅ MULTI-FEATURE FRONTIER REGRESSION ANALYSIS REMOVED**: Deleted entire section from HTML and related calculation code per user request
-- **✅ FIXED RATES METHOD IMPLEMENTED**: New ranking calculation using pure coefficients for entire dataset without filtering
-- **✅ UNLIMITED FLAGS IN REGRESSION**: voice_unlimited and message_unlimited now properly included in Feature Marginal Cost Coefficients table
-- **✅ MULTICOLLINEARITY ISSUE RESOLVED**: Removed problematic features from coefficient calculation pipeline ('data_stops_after_quota' and other highly correlated features), switched from Ridge to LinearRegression, enforced positive coefficient bounds for key features
-- **✅ ENHANCED COEFFICIENT TABLE**: Added unconstrained (raw OLS) vs constrained (bounded) coefficient comparison with color-coded adjustments
-- **✅ ASYNC PROCESSING SEQUENCE VERIFIED**: Response returned immediately after ranking calculation, validation and charts run in background only
-- **✅ DETAILED CALCULATION FORMULAS**: HTML coefficient table now shows exact mathematical steps including multicollinearity redistribution formulas
-- **F-string backslash error fixed**: HTML JavaScript code in f-string was using backslashes directly, moved to variable for proper syntax
-- **✅ MULTIPROCESSING MEMORY SHARING SOLVED**: Implemented file-based data storage system to replace global variable sharing
-- **✅ FILE-BASED STORAGE ARCHITECTURE**: Created data_storage.py module with save/load functions for DataFrame and cost structure
-- **✅ PROCESS-TO-PROCESS DATA SHARING**: Uses file system (/app/data/shared/) for reliable data exchange between FastAPI processes
-- **Process endpoint**: ✅ Working correctly - returns 1000+ ranked plans with CS ratios (JSON response successful) + saves to files
-- **Root endpoint**: ✅ Fixed - loads data from files instead of relying on global variables
-- **✅ ERROR LOG ANALYSIS COMPLETE**: 500+ line error.log contains only 1 actual error (empty data processing) and 500+ normal HF Space keep-alive polling logs
-- **✅ ENDPOINT LOGIC ANALYSIS COMPLETE**: Detailed code flow understanding for both / and /process endpoints for system documentation
-- **✅ PERFORMANCE OPTIMIZATION COMPLETE**: /process에서 랭킹 계산 즉시 완료 후 응답, 차트는 백그라운드에서 비동기 계산
-- **✅ BACKGROUND CHART CALCULATION**: Charts calculated asynchronously after response, saved to files when complete
-- **✅ FILE-BASED BACKGROUND SHARING**: Background tasks use file storage for data persistence and sharing
-- **✅ ALWAYS LATEST FILE ACCESS**: / endpoint always loads most recent files, never caches, always shows current data
-- **✅ DOCKER DIRECTORY SETUP**: Added /app/data/shared directory creation in Dockerfile for storage reliability
-- **✅ DOCUMENTATION SYNCHRONIZATION**: README.md completely aligned with current codebase architecture, endpoints, and implementation details
-- **✅ MATHEMATICAL FOUNDATION DOCUMENTED**: Complete mathematical modeling documentation with formulas, algorithms, and statistical principles
-- **✅ ADVANCED IMPLEMENTATION DETAILS ADDED**: README enhanced with comprehensive technical details including categorical handlers, piecewise regression, Korean ranking system, and code examples
-- **✅ CODE MODULARIZATION PHASE 0 COMPLETED**: Successfully refactored major classes and functions into organized modules
+- **Real-time content generation**: All HTML content generated fresh on each request
+- **Multi-frontier regression methodology**: Full dataset analysis for coefficient extraction
+- **Chart visualization**: Advanced charts calculated asynchronously in background
+- **API response pattern**: Immediate response from /process endpoint, charts calculated separately
+- **Default ranking method**: `fixed_rates` for consistent coefficient calculation
+- **Feature coefficient calculation**: Includes voice_unlimited and message_unlimited in regression analysis
+- **Chart data format**: JavaScript functions handle nested cost structure objects
+- **Marginal Cost Frontier Charts**: Feature-level trend visualization using pure marginal costs
+- **Piecewise linear modeling**: Realistic piecewise segments showing economies of scale
+- **Monotonic filtering**: Robust monotonic frontier logic with 1 KRW/feature rule
+- **Unlimited plan handling**: Separate processing with proper endpoints
+- **Unlimited feature flags**: Boolean flags, not continuous data points in marginal cost trendlines
+- **Single filtering approach**: Monotonicity applied only to trendline, not raw market data
+- **Full dataset analysis**: Uses entire dataset regression for comprehensive analysis
+- **Complete feature coverage**: Includes is_5g in core_continuous_features
+- **Cumulative cost calculation**: Charts plot cumulative costs through piecewise segments
+- **Fixed rates ranking**: Pure coefficients from entire dataset without filtering
+- **Regression feature inclusion**: voice_unlimited and message_unlimited in coefficient tables
+- **Multicollinearity handling**: Uses LinearRegression with positive bounds, removes problematic correlated features
+- **Enhanced coefficient display**: Shows unconstrained vs constrained coefficients with color-coded adjustments
+- **Async processing sequence**: Immediate response after ranking calculation, background chart generation
+- **Calculation transparency**: HTML coefficient table shows exact mathematical steps
+- **File-based storage architecture**: data_storage.py module with save/load functions for DataFrame and cost structure
+- **Process-to-process data sharing**: File system provides reliable data exchange between FastAPI processes
+- **Endpoint functionality**: Process endpoint saves data, root endpoint loads from files
+- **Performance pattern**: Ranking calculation completes immediately, charts run in background
+- **Background chart calculation**: Charts saved to files when complete
+- **File-based background sharing**: Background tasks use file storage for persistence
+- **Latest file access**: Root endpoint always loads most recent files, no caching
+- **Docker directory setup**: /app/data/shared directory creation in Dockerfile
+- **Documentation alignment**: README.md reflects current codebase architecture
+- **Mathematical foundation**: Complete mathematical modeling with formulas and algorithms
+- **Advanced implementation**: Categorical handlers, piecewise regression, Korean ranking system
+- **Modular architecture**: Major classes and functions organized into focused modules
 
 ## 🎯 Key Achievements - Code Refactoring
 
@@ -110,111 +167,60 @@
 - **구조 개선**: 모든 모듈이 Facade 패턴으로 후방호환성 유지
 - **테스트 완료**: 모든 새 모듈 import 및 기능 테스트 통과
 
-## 🏗️ **Refactored Module Structure**
+## 🏗️ System Architecture
 
-### **modules/charts/** (Updated)
-- `marginal_cost.py` (26 lines): Facade module importing from sub-modules
-- `basic_marginal_cost.py` (283 lines): Basic piecewise linear frontier charts
-- `granular_segments.py` (214 lines): Granular segment creation and calculation
-- `comprehensive_analysis.py` (285 lines): Comprehensive analysis using entire dataset
-- `feature_frontier.py` (502 lines): Feature frontier chart data preparation
-- `multi_frontier.py` (150 lines): Multi-frontier analysis
-- `piecewise_utils.py` (200 lines): Piecewise linear regression utilities
-- `__init__.py` (60 lines): Updated to export all sub-modules
+### **Core Module Structure**
+```
+modules/
+├── charts/          # Chart 데이터 생성 (8개 모듈)
+├── config.py        # 설정 및 상수 정의
+├── cost_spec/       # CS 비율 계산 (4개 모듈)
+├── frontier/        # 프론티어 분석 (3개 모듈)
+├── regression/      # 회귀 분석 (14개 모듈)
+├── report/          # HTML/차트 생성 (8개 모듈)
+└── templates/       # JavaScript 템플릿 (4개 모듈)
+```
 
-### **modules/regression/**
-- `full_dataset.py` (830 lines): FullDatasetMultiFeatureRegression class
-- `multi_feature.py` (800 lines): MultiFeatureFrontierRegression class  
-- `__init__.py` (12 lines): Module exports
+### **Data Processing Flow**
+1. **Raw Data** → preprocess.py (feature engineering)
+2. **Feature Engineering** → 67개 피처 생성
+3. **CS 비율 계산** → cost_spec/ 모듈군
+4. **프론티어 분석** → frontier/ 모듈군
+5. **회귀 분석** → regression/ 모듈군
+6. **HTML 생성** → report/ 모듈군
 
-### **modules/frontier/**
-- `core.py` (353 lines): create_robust_monotonic_frontier, calculate_feature_frontiers, estimate_frontier_value, calculate_plan_baseline_cost
-- `__init__.py` (19 lines): Module exports
-
-### **modules/cost_spec/**
-- `ratio.py` (423 lines): calculate_cs_ratio, rank_plans_by_cs, calculate_cs_ratio_enhanced, rank_plans_by_cs_enhanced
-- `__init__.py` (19 lines): Module exports
-
-### **Legacy Files**
-- `cost_spec_legacy.py` (291 lines): LinearDecomposition class and helper functions
-- `marginal_cost_original.py` (960 lines): Original marginal cost module backup
-- Original large files preserved for reference
-
-## 🔧 Technical Implementation - Refactoring
-
-### **Marginal Cost Module Decomposition**
-- **Facade Pattern**: Main module serves as import interface
+### **Module Organization Principles**
+- **Facade Pattern**: Main modules serve as import interfaces
 - **Functional Separation**: Each sub-module has distinct responsibility
-- **Basic Functions**: prepare_marginal_cost_frontier_data for standard charts
-- **Granular Analysis**: create_granular_segments_with_intercepts for detailed segments
-- **Comprehensive Analysis**: prepare_granular_marginal_cost_frontier_data for full dataset
-- **Import Compatibility**: All existing code continues to work without modification
-
-### **Module Independence**
-- Each module has clear responsibilities and minimal dependencies
-- Configuration Management: FEATURE_SETS, UNLIMITED_FLAGS, CORE_FEATURES centralized in config.py
-- Import Resolution: Fixed circular imports and dependency conflicts
-- Backward Compatibility: All existing code continues to work without modification
-- Documentation: Each module has comprehensive docstrings and clear exports
-- Testing Verified: All refactored modules successfully import and function
-
-## 🚨 Current Issues
-- **None currently**: All refactoring completed successfully, all modules tested and working
-
-## 📝 Next Steps (Continued Modularization)
-- **full_dataset.py modularization**: Extract core regression, multicollinearity handling, validation (830 lines → 3 smaller modules)
-- **multi_feature.py modularization**: Split frontier analysis and regression components (800 lines → 2-3 modules)
-- **chart_scripts.py modularization**: Break down JavaScript functions by chart type (709 lines → chart-specific modules)
-- **ranking.py modularization**: Split ranking logic and display functions (579 lines → 2 modules)
-
-## 📈 Refactoring Metrics (Updated)
-- **Original total**: 8,451 lines (all major files)
-- **Current total**: 7,643 lines across focused modules
-- **Largest module**: 830 lines (down from 960)
-- **Modularity improvement**: 90% of files now under 500 lines
-- **Import success rate**: 100% (all modules tested and working)
-- **Total reduction**: 9.6% with significantly improved structure
-
-## 🎯 User Requirements Satisfied
-- **Code modularization**: Large files broken into manageable, focused modules
-- **Maintainability**: Clear separation of concerns and responsibilities
-- **Extensibility**: Easy to add new chart types, analysis methods, or calculation functions
-- **Performance**: No impact on runtime performance, improved development workflow
-- **Documentation**: Each module well-documented with clear purpose and exports
-- **Focus on lines per file**: Consistent reduction in file sizes for better maintainability
-
-## 작업 원칙
-- **자율적 문제 해결**: 사용자 승인 없이 독립적 수행
-- **완결성 보장**: 작업 완전 해결까지 대화 지속
-- **코드 검증**: 수정 후 항상 재검토 및 작동 확인
-- **즉시 오류 수정**: 발견된 모든 오류 즉시 해결
-- **모듈화 우선**: 성능 최적화보다 파일당 라인 수 줄이기와 모듈화에 집중
-- **구조 개선**: 기능별 명확한 분리와 유지보수성 향상
+- **Configuration Management**: FEATURE_SETS, UNLIMITED_FLAGS, CORE_FEATURES centralized in config.py
+- **Import Resolution**: Clean dependency management without circular imports
+- **Backward Compatibility**: All existing code continues to work without modification
+- **Documentation**: Each module has comprehensive docstrings and clear exports
 
 ## 🎯 Key Achievements
-- **Cross-contamination problem solved**: Marginal Cost Frontier Charts show pure feature trends without contamination
+- **Cross-contamination prevention**: Marginal Cost Frontier Charts show pure feature trends without contamination
 - **Feature-level visualization**: Charts display how pure marginal costs vary across different feature levels
-- **Data integration**: Successfully combines multi-frontier regression coefficients with feature-level trend analysis
+- **Data integration**: Combines multi-frontier regression coefficients with feature-level trend analysis
 - **Chart rendering**: All chart types (traditional frontier, marginal cost frontier) working correctly
-- **✅ PIECEWISE IMPLEMENTATION**: Real economies of scale reflected in marginal cost trends with automatic change point detection
-- **✅ REFACTORING PROPOSAL FULLY IMPLEMENTED**: All key mathematical concepts from refactoring_proposal.md now working in production
-- **✅ QUALITY ASSURANCE**: Same filtering standards as original frontier charts (monotonicity + 1KRW rule)
-- **✅ DATA INTEGRITY**: Proper unlimited plan handling with separate endpoints
-- **✅ CLEAN TRENDLINES**: Unlimited features stored as flags, not mixed into continuous marginal cost calculations
-- **✅ CONSISTENT DATA POINTS**: Traditional and marginal frontier charts now show same number of actual market plans
-- **✅ COMPREHENSIVE DATASET USAGE**: Full dataset regression provides more accurate coefficients than frontier-only analysis
-- **✅ COMPLETE FEATURE COVERAGE**: All 5 core features (data, voice, messages, tethering, 5G) now analyzed
-- **✅ UI SIMPLIFICATION**: Both Linear Decomposition Analysis and Multi-Feature Frontier Regression Analysis sections removed for cleaner interface
-- **✅ PROPER COST ACCUMULATION**: Charts show cumulative costs building up through piecewise segments
-- **✅ REALISTIC MARGINAL COST STRUCTURE**: Piecewise segments displayed in coefficient table instead of fixed rates
-- **✅ FIXED RATES RANKING**: Ranking table now uses pure marginal coefficients from entire dataset for CS calculation
-- **✅ COMPREHENSIVE COEFFICIENT INVESTIGATION**: Systematic analysis of negative coefficient causes completed with definitive root cause identification
-- **✅ COEFFICIENT COMPARISON ENHANCEMENT**: Feature coefficient table now shows both unconstrained (raw) and constrained (bounded) values with difference calculation
-- **✅ MATHEMATICAL TRANSPARENCY**: Coefficient table displays exact calculation steps including multicollinearity redistribution with formulas like "(70.2 + 49.8) / 2 = 60.0"
-- **✅ MULTIPROCESSING ARCHITECTURE SOLVED**: File-based storage eliminates global variable sharing issues in FastAPI multiprocessing environment
-- **✅ COMPLETE DOCUMENTATION**: README.md fully reflects current system architecture with comprehensive technical details
-- **✅ MATHEMATICAL MODELING DOCUMENTED**: Comprehensive mathematical foundation including marginal cost theory, regression formulations, and statistical validation
-- **✅ ADVANCED TECHNICAL DOCUMENTATION**: README enhanced with implementation details, code examples, and class/function specifications
+- **Piecewise implementation**: Real economies of scale reflected in marginal cost trends with automatic change point detection
+- **Mathematical foundation**: Key mathematical concepts from economic theory implemented in production
+- **Quality assurance**: Same filtering standards as original frontier charts (monotonicity + 1KRW rule)
+- **Data integrity**: Proper unlimited plan handling with separate endpoints
+- **Clean trendlines**: Unlimited features stored as flags, not mixed into continuous marginal cost calculations
+- **Consistent data points**: Traditional and marginal frontier charts show same number of actual market plans
+- **Comprehensive dataset usage**: Full dataset regression provides more accurate coefficients than frontier-only analysis
+- **Complete feature coverage**: All 5 core features (data, voice, messages, tethering, 5G) analyzed
+- **UI simplification**: Streamlined interface with focused analysis sections
+- **Proper cost accumulation**: Charts show cumulative costs building up through piecewise segments
+- **Realistic marginal cost structure**: Piecewise segments displayed in coefficient table instead of fixed rates
+- **Fixed rates ranking**: Ranking table uses pure marginal coefficients from entire dataset for CS calculation
+- **Comprehensive coefficient investigation**: Systematic analysis of coefficient calculation with definitive root cause identification
+- **Coefficient comparison enhancement**: Feature coefficient table shows both unconstrained (raw) and constrained (bounded) values
+- **Mathematical transparency**: Coefficient table displays exact calculation steps including multicollinearity redistribution formulas
+- **Multiprocessing architecture**: File-based storage eliminates global variable sharing issues in FastAPI multiprocessing environment
+- **Complete documentation**: README.md fully reflects current system architecture with comprehensive technical details
+- **Mathematical modeling**: Comprehensive mathematical foundation including marginal cost theory, regression formulations, and statistical validation
+- **Advanced technical documentation**: Implementation details, code examples, and class/function specifications
 
 ## 🔌 Endpoint Architecture
 **/ endpoint (Root HTML Interface)**:
@@ -341,7 +347,7 @@
 - **Inter-process communication**: File system provides reliable data sharing between FastAPI processes
 - **Error resilience**: Graceful handling of missing files with fallback to None values
 - **Infinite loop fix**: Added safety counters and division-by-zero checks in `prepare_feature_frontier_data`
-- **Logging optimization**: Reduced verbose logging to prevent SSH polling spam
+- **Response optimization**: Reduced unnecessary processing overhead
 - **Chart data handling**: JavaScript functions handle full dataset analysis results
 - **Background processing**: Chart calculations run asynchronously without blocking API responses
 - **Full dataset regression**: FullDatasetMultiFeatureRegression provides comprehensive coefficient analysis
@@ -375,7 +381,7 @@
 - **Method integration**: Fixed rates methods integrated into existing cost_spec.py structure
 - **Error handling**: Robust type conversion and safety measures
 - **Testing workflow**: Using raw data files from /data/raw/ directory
-- **Clean server startup**: Direct uvicorn command in Dockerfile, log monitoring via app.py startup event
+- **Clean server startup**: Direct uvicorn command in Dockerfile with proper initialization
 - **Root cause analysis**: Comprehensive investigation of technical issues before implementing solutions
 - **Documentation enhancement pattern**: Regular codebase review to identify and document advanced implementation details
 
@@ -410,33 +416,16 @@
 - **✅ 구간별 변화**: 고정 요율 대신 구간별로 다른 한계비용 적용
 - **✅ 고정 요율 랭킹**: 전체 데이터셋에서 순수 한계비용 계수를 사용한 랭킹 테이블
 
-## Hugging Face Dev Mode 환경 ⭐ 중요
-- **현재 환경**: Hugging Face Space에서 Dev Mode 활성화 상태
-- **서버 상태**: localhost:7860에서 상시 실행 중 (절대 종료 금지)
-- **로그 모니터링**: simple_log_monitor.sh 스크립트 정상 작동 중
-- **자동화 완료**: Dockerfile 수정으로 서버 시작 후 로그 모니터링 자동 실행
-- **쉘 호환성**: sh 쉘 사용으로 Docker 환경 호환성 확보
-- **실행 순서**: 서버 먼저 시작 → 3초 대기 → 로그 모니터링 시작 (PID 찾기 문제 해결)
-- **최근 상태**: 로그 모니터링 시스템 완전 복구 완료
-- **코드 반영**: 파일 수정 시 서버에 즉시 반영됨 (재시작 불필요)
-- **Git 상태**: Dev Mode에서의 변경사항은 자동으로 Git에 저장되지 않음
-- **중요사항**: 서버 종료 시 Dev Mode 비활성화될 위험 있음 → 절대 프로세스 kill 금지
-- **참고**: [Hugging Face Dev Mode 문서](https://huggingface.co/docs/hub/spaces-dev-mode)
+## 개발 환경
+- **Hugging Face Spaces**: Dev Mode 활성화 상태로 실시간 개발
+- **서버 상태**: localhost:7860에서 상시 실행
+- **코드 반영**: 파일 수정 시 서버에 즉시 반영 (재시작 불필요)
+- **쉘 환경**: /bin/sh 사용으로 Docker 호환성 확보
 
-## 무한 루프 문제 해결 ⭐ 해결 완료
-- **문제 발생**: 2025-06-12 05:48:03~05:49:38 동안 modules.report_charts에서 무한 반복
-- **원인**: prepare_feature_frontier_data 함수의 이중 while 루프 (113-138번 줄)
-- **해결책**: 반복 횟수 제한, 0으로 나누기 방지, 안전장치 추가
-- **결과**: 05:49:43 이후 정상 작동, 무한 루프 완전 해결
-
-## 연속 계산 문제 해결 ⭐ 해결 완료
-- **문제**: SSH 원격 연결 폴링으로 인한 "/" 엔드포인트 연속 호출
-- **원인**: 루트 엔드포인트에서 매번 generate_html_report 호출로 차트 계산 트리거
-- **해결책**: 비동기 차트 계산 시스템 구현
-  - /process 엔드포인트: 즉시 API 응답 반환
-  - 백그라운드: 차트 계산 비동기 실행
-  - 루트 엔드포인트: 캐시된 콘텐츠 제공 또는 진행 상태 표시
-- **결과**: 연속 계산 완전 제거, 응답 시간 대폭 개선
+## 주요 기술적 해결사항
+- **무한 루프 방지**: prepare_feature_frontier_data 함수에 안전장치 추가
+- **비동기 처리**: 차트 계산을 백그라운드로 분리하여 응답 시간 개선
+- **파일 기반 저장**: 멀티프로세싱 환경에서 안정적인 데이터 공유
 
 ## 🔍 **Negative Coefficient Investigation** ⭐ **ROOT CAUSE IDENTIFIED**
 
@@ -580,9 +569,7 @@ cat /proc/$PID/fd/1
 - **로그 모니터링 필수**: 코드 수정 후 반드시 로그 모니터링 상태에서 테스트
 - **서버 종료 금지**: Dev Mode 환경에서 서버 프로세스 절대 종료하지 말 것
 - **동시 실행**: 로그 모니터링과 테스트를 동시에 실행하여 실시간 피드백 확보
-- **완전한 테스트**: 단순 API 응답뿐만 아니라 웹 인터페이스까지 전체 확인
-
-# 현재 상태
+- **완전한 테스트**: 단순 API 응답뿐만 아니라 웹 인터페이스까지 전체 확인# 현재 상태
 
 ## 작업된 주요 기능
 - **File-based data storage**: Complete multiprocessing memory sharing solution implemented
@@ -750,7 +737,7 @@ cat /proc/$PID/fd/1
 #### **검증 결과**
 - **Import 테스트**: ✅ 100% 통과
 - **기능 테스트**: ✅ 모든 메소드 정상 작동
-- **Legacy Handling**: ✅ linear_decomposition → fixed_rates 리디렉션
+- **Legacy Handling**: ✅ linear_decomposition → fixed_rates 자동 리디렉션
 - **HTML 생성**: ✅ 44,210자 완전 생성
 - **Backward Compatibility**: ✅ 100% 보장
 
@@ -833,27 +820,30 @@ modules/
 └── templates/       # JavaScript 템플릿 (4개 모듈)
 ```
 
-### 데이터 처리 흐름
-1. **Raw Data** → preprocess.py (489 lines)
+### **Data Processing Flow**
+1. **Raw Data** → preprocess.py (feature engineering)
 2. **Feature Engineering** → 67개 피처 생성
 3. **CS 비율 계산** → cost_spec/ 모듈군
 4. **프론티어 분석** → frontier/ 모듈군
 5. **회귀 분석** → regression/ 모듈군
 6. **HTML 생성** → report/ 모듈군
 
-## 기술적 세부사항
+### **Module Organization Principles**
+- **Facade Pattern**: Main modules serve as import interfaces
+- **Functional Separation**: Each sub-module has distinct responsibility
+- **Configuration Management**: FEATURE_SETS, UNLIMITED_FLAGS, CORE_FEATURES centralized in config.py
+- **Import Resolution**: Clean dependency management without circular imports
+- **Backward Compatibility**: All existing code continues to work without modification
+- **Documentation**: Each module has comprehensive docstrings and clear exports
 
-### Facade 패턴 구현
-- **backward compatibility**: 기존 API 100% 호환
-- **internal refactoring**: 내부 모듈 완전 분리
-- **error handling**: 적절한 fallback 메커니즘
+## 작업 원칙
+- **자율적 문제 해결**: 독립적 판단과 실행
+- **완결성 보장**: 작업 완전 해결까지 지속
+- **코드 검증**: 수정 후 항상 재검토 및 작동 확인
+- **즉시 오류 수정**: 발견된 오류 즉시 해결
+- **상태 문서 작성**: 현재 상태만 기록, 변경 로그 지양
+- **Memory vs Todolist 구분**: Memory는 메타데이터, Todolist는 실제 작업 항목
+- **근본 원인 조사**: 빠른 해결책보다 근본적 원인 파악 우선
 
-### 파일 기반 저장소
-- **multiprocessing 지원**: 멀티프로세스 환경 호환
-- **shared data**: data/shared/ 디렉토리 활용
-- **cache efficiency**: JSON 기반 고속 캐싱
+## 🧮 Mathematical & Technical Capabilities
 
-### 수학적 모델링
-- **marginal cost theory**: 한계비용 이론 적용
-- **monotonic frontier**: 단조 프론티어 알고리즘
-- **multicollinearity handling**: 다중공선성 처리
