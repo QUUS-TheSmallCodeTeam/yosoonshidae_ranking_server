@@ -130,7 +130,7 @@ def generate_feature_rates_table_html(cost_structure):
                     <th style="text-align: center;">원본 계수</th>
                     <th style="text-align: center;">재분배 계수</th>
                     <th style="text-align: center;">단위 (Unit)</th>
-                    <th style="text-align: left;">다중공선성 처리 과정</th>
+                    <th style="text-align: left;">수학적 계산식 & 다중공선성 처리</th>
                 </tr>
             </thead>
         """
@@ -156,13 +156,25 @@ def generate_feature_rates_table_html(cost_structure):
     base_cost = cost_structure.get('base_cost', 0)
     if base_cost and base_cost != 0:
         if has_multicollinearity:
+            base_formula = f"<code>β₀ = {base_cost}</code><br><small>고정 기본비용</small>"
+            base_description = f"""
+                <div>
+                    <strong style="color: #2c3e50;">수학적 계산식:</strong><br>
+                    <div style="font-size: 0.9em; color: #666; margin-left: 10px;">
+                        {base_formula}
+                    </div>
+                    <div style="margin-top: 8px; padding-top: 5px; border-top: 1px solid #eee;">
+                        <small style="color: #6c757d;">기본비용은 다중공선성 영향 없음</small>
+                    </div>
+                </div>
+            """
             html += f"""
                     <tr style="background-color: #e8f4fd;">
                         <td style="font-weight: bold;">기본 인프라 (Base Cost)</td>
                         <td style="text-align: center; font-weight: bold;">{format_coefficient(base_cost)}</td>
                         <td style="text-align: center; font-weight: bold;">{format_coefficient(base_cost)}</td>
                         <td style="text-align: center;">₩/요금제</td>
-                        <td><small>기본비용은 다중공선성 영향 없음</small></td>
+                        <td>{base_description}</td>
                     </tr>
             """
         else:
@@ -199,14 +211,24 @@ def generate_feature_rates_table_html(cost_structure):
             correlation = fix_info['correlation']
             formula = fix_info['calculation_formula']
             
-            # Create detailed multicollinearity process description
-            multicollinearity_process = f"""
-                <div style="font-size: 0.85em;">
-                    <strong style="color: #d63384;">상관관계:</strong> {paired_feature} (r={correlation:.3f})<br>
-                    <strong style="color: #0d6efd;">계산식:</strong> <code>{formula}</code><br>
-                    <small style="color: #6c757d;">
-                        균등분배 = (원본₁ + 원본₂) ÷ 2
-                    </small>
+            # Generate mathematical formula for the feature
+            base_formula = get_mathematical_formula(feature, redistributed_coeff, cost_data)
+            
+            # Create combined description with both mathematical formula and multicollinearity process
+            combined_description = f"""
+                <div style="margin-bottom: 10px;">
+                    <strong style="color: #2c3e50;">수학적 계산식:</strong><br>
+                    <div style="font-size: 0.9em; color: #666; margin-left: 10px;">
+                        {base_formula}
+                    </div>
+                </div>
+                <div style="border-top: 1px solid #ddd; padding-top: 8px;">
+                    <strong style="color: #d63384;">다중공선성 처리:</strong><br>
+                    <div style="font-size: 0.85em; margin-left: 10px;">
+                        <strong>상관관계:</strong> {paired_feature} (r={correlation:.3f})<br>
+                        <strong>재분배 계산:</strong> <code>{formula}</code><br>
+                        <small style="color: #6c757d;">균등분배 = (원본₁ + 원본₂) ÷ 2</small>
+                    </div>
                 </div>
             """
             
@@ -216,7 +238,7 @@ def generate_feature_rates_table_html(cost_structure):
                         <td style="text-align: center; color: #dc3545;">{format_coefficient(original_coeff)}</td>
                         <td style="text-align: center; color: #0d6efd; font-weight: bold;">{format_coefficient(redistributed_coeff)}</td>
                         <td style="text-align: center;">{info['unit']}</td>
-                        <td>{multicollinearity_process}</td>
+                        <td>{combined_description}</td>
                     </tr>
             """
         else:
@@ -224,13 +246,26 @@ def generate_feature_rates_table_html(cost_structure):
             formula = get_mathematical_formula(feature, coefficient, cost_data)
             
             if has_multicollinearity:
+                # For features without multicollinearity, still show the mathematical formula
+                combined_description = f"""
+                    <div>
+                        <strong style="color: #2c3e50;">수학적 계산식:</strong><br>
+                        <div style="font-size: 0.9em; color: #666; margin-left: 10px;">
+                            {formula}
+                        </div>
+                        <div style="margin-top: 8px; padding-top: 5px; border-top: 1px solid #eee;">
+                            <small style="color: #6c757d;">다중공선성 영향 없음</small>
+                        </div>
+                    </div>
+                """
+                
                 html += f"""
                         <tr>
                             <td>{info['name']}</td>
                             <td style="text-align: center;">{coeff_display}</td>
                             <td style="text-align: center;">{coeff_display}</td>
                             <td style="text-align: center;">{info['unit']}</td>
-                            <td><small style="color: #6c757d;">다중공선성 영향 없음</small></td>
+                            <td>{combined_description}</td>
                         </tr>
                 """
             else:
