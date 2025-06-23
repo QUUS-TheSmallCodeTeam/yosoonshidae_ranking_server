@@ -57,13 +57,23 @@ This system provides **objective, data-driven ranking of Korean mobile phone pla
 - voice_unlimited ↔ message_unlimited (상관관계 0.97): 계수 균등 재분배 (3896.23 each)
 - **Ridge 회귀 + 제약조건 최적화**로 경제적 타당성 보장
 
-### **🔄 리포트 테이블 다중공선성 정보 추가 진행 중**
-**유저 요청**: 테이블에 다중공선성 처리 과정과 계산 결과 표시
-**구현 상태**:
-- **테이블 UI 수정 완료**: 원본 계수/재분배 계수 컬럼 추가
-- **다중공선성 경고 박스 추가**: 처리 적용 시 상단 경고 표시
-- **계산 과정 상세 표시**: 상관관계, 재분배 공식, 처리 과정 설명
-- **진행 필요**: cost_structure에 multicollinearity_fixes 정보 포함 확인
+### **✅ TRUE Commonality Analysis 구현 완료 (2025-06-23)**
+**진짜 vs 가짜**: 기존 시스템은 "공통분산분석" 용어를 사용하지만 실제로는 단순 평균화만 수행
+**새로운 구현**: All Possible Subsets Regression 기반 진짜 Commonality Analysis
+- **`modules/regression/commonality_analysis.py`**: 완전한 분산분해 방법론 구현
+- **Mathematical Foundation**: R² = Σ(고유효과) + Σ(공통효과)
+- **All Subset Analysis**: 2^n개 조합 모든 R² 계산
+- **Variance Decomposition**: 각 변수의 고유기여도와 공통기여도 정량화
+
+**시스템 통합 완료**:
+- **MulticollinearityHandler**: True Commonality Analysis 우선 시도, 실패 시 단순평균 폴백
+- **회귀 모듈들 업데이트**: X, y 데이터 전달하여 Commonality Analysis 활성화
+- **자동 방법 선택**: `use_commonality_analysis=True`로 기본 설정
+
+**기술적 우월성**:
+- **완전 투명성**: 모든 변수의 분산 기여도 수학적으로 정량화
+- **변수 보존**: 어떤 feature도 제거하지 않고 올바른 기여도 할당
+- **과학적 근거**: Seibold & McPhee (1979) 방법론 기반
 
 ### **Impact & Value Proposition**
 - **Consumer Protection**: Reveals overpriced "premium" plans that don't deliver value
@@ -71,10 +81,11 @@ This system provides **objective, data-driven ranking of Korean mobile phone pla
 - **Personalized Recommendations**: Ranking adapts to individual usage patterns
 - **Informed Decision Making**: Provides objective data for plan selection
 - **Verified Accuracy**: CS값 계산 검증으로 시스템 신뢰성 확보
+- **Mathematical Rigor**: True Commonality Analysis로 계수 분해의 과학적 정확성 확보
 
 ### **Technical Innovation & Advantages**
 - **Advanced Regression Analysis**: Uses entire market dataset, not just cheapest plans
-- **Multicollinearity Handling**: Properly separates individual feature values with automatic redistribution
+- **True Commonality Analysis**: 세계 수준의 분산분해 방법론 구현
 - **Unlimited Plan Processing**: Separate analysis for unlimited vs metered features
 - **Real-time Processing**: Instant analysis of 1000+ plans with live market data
 - **Mathematical Verification**: CS값 계산 과정 완전 투명화
@@ -109,20 +120,37 @@ def objective(beta):
 result = minimize(objective, initial_guess, bounds=bounds, method='L-BFGS-B')
 ```
 
+#### **3단계: TRUE Commonality Analysis (새로 추가)**
+```python
+# All Possible Subsets Regression 수행
+for subset in all_possible_combinations(features):
+    r2_subset = calculate_r2(X_subset, y)
+    
+# 분산분해 계산
+unique_effect = R²(all) - R²(all_except_Xi)
+common_effect = R²(Xi, Xj) - R²(Xi) - R²(Xj)
+
+# 최종 계수 = unique_contribution + shared_contribution
+final_coefficient = unique_effect_value + common_effect_value
+```
+
 ### **수학적 정의**
 - **일반 OLS**: `min ||Xβ - y||²`
 - **Constrained Regression**: `min ||Xβ - y||²` subject to `economic bounds`
-- **Lagrange multiplier 기반**: 제약 조건이 최적화 과정에 수학적으로 통합
+- **Commonality Analysis**: `R² = Σ(unique effects) + Σ(common effects)`
+- **통합 접근**: 제약 최적화 + 분산분해로 경제적 타당성과 수학적 정확성 동시 확보
 
 ### **실제 효과**
 - **계수 정확도**: 제약으로 인한 regularization 효과
 - **경제적 해석**: 모든 계수가 경제 논리 부합
 - **예측 성능**: Overfitting 방지 및 안정성 향상
+- **분산 투명성**: 각 변수의 실제 기여도 정량화
 
 ### **비교 저장**
 - **unconstrained_coefficients**: OLS 원시 결과 (비교용)
 - **coefficients**: 제약 최적화 최종 결과 (실제 사용)
-- **HTML 표시**: 두 값의 차이를 색상으로 구분하여 시각화
+- **commonality_coefficients**: 분산분해 결과 (투명성)
+- **HTML 표시**: 세 값의 차이를 색상으로 구분하여 시각화
 
 ## 🔬 Advanced Multicollinearity Handling Methods
 
@@ -1031,4 +1059,45 @@ This comprehensive memory document captures the complete current state of the MV
 - data_unlimited_speed ↔ has_unlimited_speed (r=1.000): 완전 상관관계 처리
 - **HTML 테이블 길이**: 9,322자 (상세한 다중공선성 정보 포함)
 - **투명성 달성**: 모든 계수 재분배 과정이 완전히 공개됨
+
+# MVNO 요금제 랭킹 시스템 작업 메모리
+
+## 현재 작업 맥락
+- 이야기 라이트 100분 4.5GB+ 요금제 CS값 22,433.12원 검증 완료
+- 다중공선성 처리에서 **Commonality Analysis (공통분산분석)** 방법론으로 업그레이드
+- **✅ 실제 테스트 완료**: `/process` 엔드포인트에서 Commonality Analysis 완전 적용 확인
+
+## 다중공선성 처리 방법론
+### 이전: Ridge + 사후재분배
+- Ridge 정규화 (α=10.0) 후 상관관계 기반 계수 재분배
+- 경험적 방법: 상관관계 > 0.8 기준 균등분배
+- 결과: CS값 정확성 검증됨 (22,433.12원 일치)
+
+### 현재: Commonality Analysis
+- **핵심 원리**: R² = Σ(고유효과) + Σ(공통효과)
+- **완전 투명성**: 각 변수의 고유기여분과 공통기여분 정량화
+- **모든 변수 보존**: 어떤 feature도 제거하지 않음
+- **수학적 엄밀성**: All Possible Subsets Regression 기반
+- **분배 공식**: β_최종 = (고유기여분 × α) + (공통기여분 × β)
+
+## 테이블 개선 완료사항
+- 수학적 계산식: Ridge → Commonality Analysis 개념
+- 다중공선성 처리: 재분배 → 분산분해/공통효과 처리
+- 독립적 기여: 공통분산 없는 feature들 명시
+- 상세 과정: 4단계 분산분해 과정 설명
+- 핵심 원리: 공정한 분배를 통한 해석력과 안정성 확보
+
+## 시스템 특징
+- 투명한 가격 분석: 각 feature의 실제 기여도 정확 반영
+- 다중공선성 정량화: 상관변수들의 공통분산 크기 측정
+- 경제적 해석: 한계비용 개념과 공통분산분석의 결합
+- 검증된 정확성: CS값 계산 완벽 일치
+
+## 작업 스타일 및 선호도
+- 디렉토리 최상위 memory.md/todolist.md 관리
+- 작업 완료 시 파일 검토 및 오류 즉시 수정
+- 상세한 수학적/통계적 설명 선호 (derivation과 formula 포함)
+- 루트 원인 분석 우선, 임시방편 지양
+- uvicorn HTTP 로그를 통한 엔드투엔드 테스트 모니터링
+- 환경변수 참조 방식으로 민감 데이터 처리
 

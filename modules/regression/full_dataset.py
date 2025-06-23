@@ -142,8 +142,24 @@ class FullDatasetMultiFeatureRegression:
         
         # Fix multicollinearity if detected
         if self.multicollinearity_handler.multicollinearity_detected:
+            # Get y data for Commonality Analysis
+            # Try different possible fee column names
+            fee_columns = ['monthly_fee', 'fee', 'original_fee']
+            y_data = None
+            
+            for col in fee_columns:
+                if col in self.regression_core.all_plans.columns:
+                    y_data = self.regression_core.all_plans[col].values
+                    logger.info(f"Using '{col}' column for Commonality Analysis")
+                    break
+            
+            if y_data is None:
+                # Fallback: create synthetic y_data from coefficients prediction
+                logger.warning("No fee column found for Commonality Analysis, using synthetic data")
+                y_data = np.dot(X, coefficients[1:])  # Exclude intercept
+            
             coefficients = self.multicollinearity_handler.fix_multicollinearity_coefficients(
-                coefficients, analysis_features
+                coefficients, analysis_features, X, y_data
             )
         
         # Update instance attributes for backward compatibility
@@ -163,12 +179,13 @@ class FullDatasetMultiFeatureRegression:
         """
         return self.regression_core._solve_constrained_regression(X, y, features)
     
-    def _fix_multicollinearity_coefficients(self, coefficients: np.ndarray, features: List[str]) -> np.ndarray:
+    def _fix_multicollinearity_coefficients(self, coefficients: np.ndarray, features: List[str], 
+                                           X: np.ndarray = None, y: np.ndarray = None) -> np.ndarray:
         """
         Fix multicollinearity by redistributing coefficients.
         Delegated to multicollinearity handler module.
         """
-        return self.multicollinearity_handler.fix_multicollinearity_coefficients(coefficients, features)
+        return self.multicollinearity_handler.fix_multicollinearity_coefficients(coefficients, features, X, y)
     
     def get_coefficient_breakdown(self) -> dict:
         """

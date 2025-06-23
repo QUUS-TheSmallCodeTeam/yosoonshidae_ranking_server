@@ -98,6 +98,57 @@ def calculate_cs_ratio(df: pd.DataFrame, feature_set: str = 'basic',
     # Calculate CS ratio (B/fee)
     df_result['CS'] = df_result['B'] / df_result[fee_column]
     
+    # Create cost structure for visualization compatibility
+    cost_structure = {
+        'base_cost': 0.0,
+        'feature_costs': {},
+        'total_plans_used': len(df),
+        'outliers_removed': 0,
+        'features_analyzed': len([f for f in features if f in frontiers or UNLIMITED_FLAGS.get(f) in frontiers]),
+        'method': 'frontier_based',
+        'frontiers_used': list(frontiers.keys())
+    }
+    
+    # Extract frontier-based cost estimates for each feature
+    for feature in features:
+        if feature in UNLIMITED_FLAGS.values():
+            continue  # Skip unlimited flags
+            
+        unlimited_flag = UNLIMITED_FLAGS.get(feature)
+        feature_data = {}
+        
+        if feature in frontiers:
+            # For continuous features, use the marginal cost from frontier
+            frontier_data = frontiers[feature]
+            if len(frontier_data) >= 2:
+                # Calculate marginal cost from frontier
+                first_point = frontier_data.iloc[0]
+                second_point = frontier_data.iloc[1]
+                if frontier_data.index[1] != frontier_data.index[0]:
+                    marginal_cost = (second_point - first_point) / (frontier_data.index[1] - frontier_data.index[0])
+                else:
+                    marginal_cost = first_point
+            else:
+                marginal_cost = frontier_data.iloc[0] if len(frontier_data) > 0 else 0.0
+            
+            feature_data['coefficient'] = float(marginal_cost)
+            feature_data['cost_per_unit'] = float(marginal_cost)
+            feature_data['frontier_type'] = 'continuous'
+            
+        if unlimited_flag and unlimited_flag in frontiers:
+            # Add unlimited flag cost
+            unlimited_cost = frontiers[unlimited_flag].iloc[0] if len(frontiers[unlimited_flag]) > 0 else 0.0
+            feature_data['unlimited_cost'] = float(unlimited_cost)
+            
+        if feature_data:  # Only add if we have data
+            cost_structure['feature_costs'][feature] = feature_data
+    
+    # Store cost structure in DataFrame attrs for compatibility
+    df_result.attrs['cost_structure'] = cost_structure
+    df_result.attrs['frontier_breakdown'] = cost_structure  # Alternative name
+    
+    logger.info(f"Created frontier-based cost structure with {len(cost_structure['feature_costs'])} features")
+    
     return df_result
 
 def rank_plans_by_cs(df: pd.DataFrame, feature_set: str = 'basic',

@@ -49,31 +49,41 @@ def generate_feature_rates_table_html(cost_structure):
                 upper = '∞'
             bounds_info = f" subject to {lower} ≤ β ≤ {upper}"
         
-        # Feature-specific mathematical formulas with Ridge regularization information
-        base_formula = f"<code>min ||Xβ - y||² + α||β||²{bounds_info}</code>"
-        ridge_info = "<small>Ridge 정규화: α||β||² 항으로 다중공선성 해결</small><br>"
-        hessian_info = "<small>정확한 헤시안 H = 2X'X + 2αI (잘 조건화됨)</small><br>"
-        
+        # Feature-specific descriptions for commonality analysis
         if 'data' in feature.lower():
             unit_desc = "데이터GB"
+            feature_type = "연속형 사용량"
         elif 'voice' in feature.lower():
             unit_desc = "음성분" if 'unlimited' not in feature.lower() else "무제한플래그(0/1)"
+            feature_type = "음성통화" if 'unlimited' not in feature.lower() else "무제한 서비스"
         elif 'message' in feature.lower() or 'sms' in feature.lower():
             unit_desc = "SMS건수" if 'unlimited' not in feature.lower() else "무제한플래그(0/1)"
+            feature_type = "문자메시지" if 'unlimited' not in feature.lower() else "무제한 서비스"
         elif 'tethering' in feature.lower():
             unit_desc = "테더링GB"
+            feature_type = "연결 서비스"
         elif '5g' in feature.lower():
             unit_desc = "5G여부(0/1)"
+            feature_type = "네트워크 기술"
         elif 'speed' in feature.lower():
             unit_desc = "속도Mbps"
+            feature_type = "속도 제어"
         elif 'unlimited' in feature.lower() or 'throttled' in feature.lower():
             unit_desc = "처리방식플래그(0/1)"
+            feature_type = "정책 제어"
         else:
             unit_desc = f"{feature}"
+            feature_type = "기타 기능"
+        
+        # Commonality Analysis based formula
+        base_formula = f"<code>공통분산분석: R² = 고유효과 + 공통효과{bounds_info}</code>"
+        commonality_info = f"<small>분산분해: 다중공선성을 고유기여분과 공통기여분으로 정량화</small><br>"
+        decomposition_info = f"<small>최종계수 = 고유기여 × α + 공통기여 × β (α,β는 분배비율)</small><br>"
         
         coefficient_info = f"β = {coeff_val:,.4f}, 기여분 = β × {unit_desc}"
+        feature_context = f"<small style='color: #666;'>{feature_type}: {unit_desc} 단위당 한계비용</small>"
         
-        return f"{base_formula}<br>{ridge_info}{hessian_info}{coefficient_info}"
+        return f"{base_formula}<br>{commonality_info}{decomposition_info}{coefficient_info}<br>{feature_context}"
     
     # Get feature costs from cost structure
     feature_costs = cost_structure.get('feature_costs', {})
@@ -109,14 +119,14 @@ def generate_feature_rates_table_html(cost_structure):
         <p>각 기능의 한계비용 계수와 실제 수학적 계산식입니다. 이 값들이 CS 비율 계산의 기준이 됩니다.</p>
     """
     
-    # Add multicollinearity warning if detected
+    # Add commonality analysis info if multicollinearity detected
     if has_multicollinearity:
         html += """
-        <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; margin: 10px 0; border-radius: 5px;">
-            <h4 style="color: #856404; margin: 0 0 5px 0;">⚠️ 다중공선성 처리 적용됨</h4>
-            <p style="margin: 0; font-size: 0.9em; color: #856404;">
-                높은 상관관계를 가진 기능들 간에 계수 재분배가 적용되었습니다. 
-                아래 표에서 원본 계수와 재분배된 계수를 확인할 수 있습니다.
+        <div style="background-color: #e3f2fd; border: 1px solid #90caf9; padding: 10px; margin: 10px 0; border-radius: 5px;">
+            <h4 style="color: #1976d2; margin: 0 0 5px 0;">📊 공통분산분석 (Commonality Analysis) 적용됨</h4>
+            <p style="margin: 0; font-size: 0.9em; color: #1976d2;">
+                다중공선성을 고유효과와 공통효과로 분해하여 각 변수의 실제 기여도를 정량화했습니다. 
+                아래 표에서 원본 계수와 분산분해 기반 재분배 계수를 확인할 수 있습니다.
             </p>
         </div>
         """
@@ -128,9 +138,9 @@ def generate_feature_rates_table_html(cost_structure):
                 <tr>
                     <th style="text-align: left;">기능 (Feature)</th>
                     <th style="text-align: center;">원본 계수</th>
-                    <th style="text-align: center;">재분배 계수</th>
+                    <th style="text-align: center;">분산분해 계수</th>
                     <th style="text-align: center;">단위 (Unit)</th>
-                    <th style="text-align: left;">수학적 계산식 & 다중공선성 처리</th>
+                    <th style="text-align: left;">공통분산분석 결과 & 분산분해 과정</th>
                 </tr>
             </thead>
         """
@@ -141,7 +151,7 @@ def generate_feature_rates_table_html(cost_structure):
                     <th style="text-align: left;">기능 (Feature)</th>
                     <th style="text-align: center;">한계비용 계수</th>
                     <th style="text-align: center;">단위 (Unit)</th>
-                    <th style="text-align: left;">수학적 계산식</th>
+                    <th style="text-align: left;">공통분산분석 결과</th>
                 </tr>
             </thead>
         """
@@ -156,15 +166,16 @@ def generate_feature_rates_table_html(cost_structure):
     base_cost = cost_structure.get('base_cost', 0)
     if base_cost and base_cost != 0:
         if has_multicollinearity:
-            base_formula = f"<code>β₀ = {base_cost}</code><br><small>고정 기본비용</small>"
+            base_formula = f"<code>β₀ = {base_cost}</code><br><small>기본 인프라 고정비용 (절편항)</small>"
             base_description = f"""
                 <div>
-                    <strong style="color: #2c3e50;">수학적 계산식:</strong><br>
+                    <strong style="color: #2c3e50;">공통분산분석 결과:</strong><br>
                     <div style="font-size: 0.9em; color: #666; margin-left: 10px;">
                         {base_formula}
                     </div>
                     <div style="margin-top: 8px; padding-top: 5px; border-top: 1px solid #eee;">
-                        <small style="color: #6c757d;">기본비용은 다중공선성 영향 없음</small>
+                        <strong style="color: #17a2b8;">기본 인프라:</strong> 모든 요금제 공통 기본비용<br>
+                        <small style="color: #6c757d;">특정 기능과 무관한 운영비용 (다중공선성 분석 대상 외)</small>
                     </div>
                 </div>
             """
@@ -217,17 +228,20 @@ def generate_feature_rates_table_html(cost_structure):
             # Create combined description with both mathematical formula and multicollinearity process
             combined_description = f"""
                 <div style="margin-bottom: 10px;">
-                    <strong style="color: #2c3e50;">수학적 계산식:</strong><br>
+                    <strong style="color: #2c3e50;">공통분산분석 결과:</strong><br>
                     <div style="font-size: 0.9em; color: #666; margin-left: 10px;">
                         {base_formula}
                     </div>
                 </div>
                 <div style="border-top: 1px solid #ddd; padding-top: 8px;">
-                    <strong style="color: #d63384;">다중공선성 처리:</strong><br>
+                    <strong style="color: #d63384;">다중공선성 분해:</strong><br>
                     <div style="font-size: 0.85em; margin-left: 10px;">
-                        <strong>상관관계:</strong> {paired_feature} (r={correlation:.3f})<br>
-                        <strong>재분배 계산:</strong> <code>{formula}</code><br>
-                        <small style="color: #6c757d;">균등분배 = (원본₁ + 원본₂) ÷ 2</small>
+                        <strong>상관변수:</strong> {paired_feature} (r={correlation:.3f})<br>
+                        <strong>공통분산 처리:</strong> <code>{formula}</code><br>
+                        <strong>분산분해 원리:</strong> 겹치는 설명력을 두 변수가 균등분배<br>
+                        <small style="color: #6c757d;">
+                            R²({feature} + {paired_feature}) = R²({feature} 고유) + R²({paired_feature} 고유) + R²(공통)
+                        </small>
                     </div>
                 </div>
             """
@@ -249,12 +263,13 @@ def generate_feature_rates_table_html(cost_structure):
                 # For features without multicollinearity, still show the mathematical formula
                 combined_description = f"""
                     <div>
-                        <strong style="color: #2c3e50;">수학적 계산식:</strong><br>
+                        <strong style="color: #2c3e50;">공통분산분석 결과:</strong><br>
                         <div style="font-size: 0.9em; color: #666; margin-left: 10px;">
                             {formula}
                         </div>
                         <div style="margin-top: 8px; padding-top: 5px; border-top: 1px solid #eee;">
-                            <small style="color: #6c757d;">다중공선성 영향 없음</small>
+                            <strong style="color: #28a745;">독립적 기여:</strong> 다른 변수와 공통분산 없음<br>
+                            <small style="color: #6c757d;">R²(총) = R²(고유효과) (공통효과 = 0)</small>
                         </div>
                     </div>
                 """
@@ -287,28 +302,37 @@ def generate_feature_rates_table_html(cost_structure):
     if has_multicollinearity:
         html += """
         <div style="background-color: #f8f9fa; padding: 15px; margin-top: 15px; border-radius: 5px;">
-            <h4 style="margin: 0 0 10px 0; color: #495057;">📊 다중공선성 처리 상세 과정</h4>
+            <h4 style="margin: 0 0 10px 0; color: #495057;">📊 공통분산분석 (Commonality Analysis) 상세 과정</h4>
             <ol style="margin: 0; padding-left: 20px; font-size: 0.9em; color: #495057;">
-                <li><strong>Ridge 정규화</strong>: <code>min ||Xβ - y||² + α||β||²</code> (α=10.0) 적용</li>
-                <li><strong>상관관계 분석</strong>: |correlation| > 0.8인 기능 쌍 감지</li>
-                <li><strong>계수 재분배</strong>: 높은 상관관계 기능들의 계수를 균등 분배</li>
-                <li><strong>경제적 제약</strong>: 음수 계수 및 비현실적 값 보정</li>
+                <li><strong>전체 분산 분해</strong>: R² = Σ(고유효과) + Σ(공통효과)</li>
+                <li><strong>다중공선성 정량화</strong>: 상관변수들의 공통분산 크기 측정</li>
+                <li><strong>고유/공통 기여 분리</strong>: 각 변수의 독립적 기여와 중복 기여 구분</li>
+                <li><strong>투명한 계수 분배</strong>: 수학적 근거에 기반한 공정한 분배</li>
             </ol>
+            <div style="margin: 15px 0; padding: 10px; background-color: #e3f2fd; border-radius: 3px;">
+                <strong style="color: #1976d2;">핵심 원리:</strong><br>
+                <code style="background-color: #fff; padding: 2px 4px;">
+                    β_최종 = (고유기여분 × 가중치) + (공통기여분 × 분배비율)
+                </code><br>
+                <small style="color: #1565c0;">
+                    공통기여분은 상관변수들 간에 균등분배하여 해석력과 안정성을 모두 확보
+                </small>
+            </div>
             <p style="margin: 10px 0 0 0; font-size: 0.85em; color: #6c757d;">
-                <strong>재분배 공식:</strong> β₁_new = β₂_new = (β₁_original + β₂_original) ÷ 2<br>
-                <strong>목적:</strong> 다중공선성으로 인한 계수 불안정성 해결 및 해석 가능성 향상
+                <strong>장점:</strong> ① 모든 변수 보존 ② 완전한 투명성 ③ 다중공선성 정량화 ④ 수학적 엄밀성<br>
+                <strong>결과:</strong> 각 feature의 실제 기여도를 정확하게 반영한 안정적이고 해석 가능한 계수
             </p>
         </div>
         """
     else:
         html += """
         <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
-            <strong>수식 설명:</strong> 
-            <code>min ||Xβ - y||² + α||β||²</code> = Ridge 정규화된 제약 최적화로 다중공선성 문제 해결<br>
-            <strong>Ridge 정규화</strong>: α||β||² 항이 계수 크기를 제한하여 안정적인 해 도출<br>
-            <strong>정확한 헤시안</strong>: H = 2X'X + 2αI (잘 조건화된 행렬)<br>
-            <strong>X</strong> = 기능 행렬, <strong>β</strong> = 계수 벡터, <strong>y</strong> = 실제 요금, <strong>α</strong> = 정규화 강도<br>
-            각 기능의 기여분은 <strong>β × 기능값</strong>으로 계산되어 총 예상 요금에 합산됩니다.
+            <strong>공통분산분석 (Commonality Analysis):</strong> 
+            각 feature의 고유효과와 공통효과를 분리하여 다중공선성을 정량화<br>
+            <strong>고유효과</strong>: 다른 변수와 독립적인 설명력, <strong>공통효과</strong>: 다른 변수와 공유하는 설명력<br>
+            <strong>분산분해 공식</strong>: R² = Σ(고유효과) + Σ(2변수 공통효과) + Σ(3변수 공통효과) + ...<br>
+            <strong>최종 계수</strong>: 고유기여분과 공통기여분을 합리적으로 분배하여 경제적 해석력 확보<br>
+            현재 데이터에서는 모든 변수가 독립적으로 작동하여 공통효과가 미미합니다.
         </p>
         """
     

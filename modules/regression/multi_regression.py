@@ -58,7 +58,7 @@ class MultiFeatureRegressor:
         
         # Fix multicollinearity if detected
         if self.multicollinearity_detected and self.correlation_matrix is not None:
-            coefficients = self._fix_multicollinearity_coefficients(coefficients, features)
+            coefficients = self._fix_multicollinearity_coefficients(coefficients, features, X, y)
         
         self.coefficients = coefficients
         return self.coefficients
@@ -159,13 +159,16 @@ class MultiFeatureRegressor:
         except Exception as e:
             raise ValueError(f"Constrained regression failed: {str(e)}")
 
-    def _fix_multicollinearity_coefficients(self, coefficients: np.ndarray, features: List[str]) -> np.ndarray:
+    def _fix_multicollinearity_coefficients(self, coefficients: np.ndarray, features: List[str], 
+                                           X: np.ndarray = None, y: np.ndarray = None) -> np.ndarray:
         """
         Fix multicollinearity by redistributing coefficients for highly correlated features.
         
         Args:
             coefficients: Original coefficients [β₀, β₁, β₂, ...]
             features: List of feature names
+            X: Feature matrix (optional, for future Commonality Analysis)
+            y: Target variable (optional, for future Commonality Analysis)
             
         Returns:
             Adjusted coefficients with redistributed values

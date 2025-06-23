@@ -2,7 +2,7 @@
 Multicollinearity Handler Module
 
 Contains multicollinearity detection and coefficient redistribution functionality.
-Extracted from full_dataset.py for better modularity.
+Now uses true Commonality Analysis instead of simple averaging.
 
 Classes:
 - MulticollinearityHandler: Handles correlation analysis and coefficient redistribution
@@ -12,20 +12,23 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional
 import logging
+from .commonality_analysis import CommonalityAnalyzer
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 class MulticollinearityHandler:
     """
-    Handles multicollinearity detection and coefficient redistribution for regression analysis.
+    Handles multicollinearity detection and coefficient redistribution using true Commonality Analysis.
     """
     
-    def __init__(self, threshold: float = 0.8):
+    def __init__(self, threshold: float = 0.8, use_commonality_analysis: bool = True):
         self.threshold = threshold
+        self.use_commonality_analysis = use_commonality_analysis
         self.correlation_matrix = None
         self.multicollinearity_detected = False
         self.multicollinearity_fixes = {}
+        self.commonality_analyzer = CommonalityAnalyzer() if use_commonality_analysis else None
         
     def detect_multicollinearity(self, X: np.ndarray, feature_names: List[str]) -> Dict:
         """
@@ -71,13 +74,16 @@ class MulticollinearityHandler:
         
         return analysis
 
-    def fix_multicollinearity_coefficients(self, coefficients: np.ndarray, features: List[str]) -> np.ndarray:
+    def fix_multicollinearity_coefficients(self, coefficients: np.ndarray, features: List[str], 
+                                         X: Optional[np.ndarray] = None, y: Optional[np.ndarray] = None) -> np.ndarray:
         """
-        Fix multicollinearity by redistributing coefficients for highly correlated features.
+        Fix multicollinearity using true Commonality Analysis or simple averaging fallback.
         
         Args:
             coefficients: Original coefficients [β₀, β₁, β₂, ...]
             features: List of feature names
+            X: Feature matrix (required for Commonality Analysis)
+            y: Target variable (required for Commonality Analysis)
             
         Returns:
             Adjusted coefficients with redistributed values
@@ -88,7 +94,85 @@ class MulticollinearityHandler:
         
         fixed_coefficients = coefficients.copy()
         
-        # Store multicollinearity fixes for detailed reporting
+        # Try Commonality Analysis if enabled and data is available
+        if self.use_commonality_analysis and X is not None and y is not None:
+            try:
+                logger.info("🔬 Applying TRUE Commonality Analysis for coefficient redistribution")
+                return self._fix_with_commonality_analysis(coefficients, features, X, y)
+            except Exception as e:
+                logger.warning(f"Commonality Analysis failed: {e}, falling back to simple averaging")
+                self.use_commonality_analysis = False
+        
+        # Fallback to simple averaging method
+        logger.info("📊 Applying simple averaging method for coefficient redistribution")
+        return self._fix_with_simple_averaging(coefficients, features)
+    
+    def _fix_with_commonality_analysis(self, coefficients: np.ndarray, features: List[str], 
+                                     X: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """
+        Apply true Commonality Analysis to redistribute coefficients.
+        """
+        # Perform Commonality Analysis
+        results = self.commonality_analyzer.fit(X, y, features)
+        
+        # Get the adjusted coefficients from commonality analysis
+        adjusted_coeffs = results['final_coefficients']
+        
+        # Create new coefficient array
+        fixed_coefficients = coefficients.copy()
+        
+        # Update coefficients based on commonality analysis
+        for i, feature in enumerate(features):
+            if feature in adjusted_coeffs:
+                old_coeff = fixed_coefficients[i+1]  # Skip intercept
+                new_coeff = adjusted_coeffs[feature]
+                
+                # Store detailed information for reporting
+                unique_effect = results['commonality_coefficients'].get(f"{feature}_unique", {}).get('value', 0)
+                
+                # Find common effects involving this feature
+                common_effects = []
+                total_common = 0
+                for key, coeff_info in results['commonality_coefficients'].items():
+                    if coeff_info['type'] == 'common' and feature in coeff_info['features']:
+                        common_val = coeff_info['value'] / len(coeff_info['features'])
+                        common_effects.append({
+                            'paired_with': [f for f in coeff_info['features'] if f != feature][0],
+                            'value': common_val,
+                            'correlation': self._get_correlation(feature, coeff_info['features'])
+                        })
+                        total_common += common_val
+                
+                # Update coefficient
+                fixed_coefficients[i+1] = new_coeff
+                
+                # Store fix information for HTML reporting
+                if len(common_effects) > 0:
+                    paired_feature = common_effects[0]['paired_with']
+                    correlation = common_effects[0]['correlation']
+                    
+                    self.multicollinearity_fixes[feature] = {
+                        'paired_with': paired_feature,
+                        'correlation': correlation,
+                        'original_value': old_coeff,
+                        'redistributed_value': new_coeff,
+                        'unique_effect': unique_effect,
+                        'common_effect': total_common,
+                        'total_contribution': unique_effect + total_common,
+                        'method': 'true_commonality_analysis',
+                        'calculation_formula': f"unique({unique_effect:.4f}) + common({total_common:.4f}) = {new_coeff:.4f}"
+                    }
+                    
+                    logger.info(f"  {feature}: {old_coeff:.4f} → {new_coeff:.4f} "
+                               f"(unique={unique_effect:.4f}, common={total_common:.4f})")
+        
+        return fixed_coefficients
+    
+    def _fix_with_simple_averaging(self, coefficients: np.ndarray, features: List[str]) -> np.ndarray:
+        """
+        Apply simple averaging method (original fallback approach).
+        """
+        fixed_coefficients = coefficients.copy()
         self.multicollinearity_fixes = {}
         
         # Find high correlation pairs (threshold)
@@ -121,6 +205,7 @@ class MulticollinearityHandler:
                             'partner_original_value': coeff2,
                             'total_value': total_value,
                             'redistributed_value': redistributed_value,
+                            'method': 'simple_averaging',
                             'calculation_formula': f"({coeff1:.2f} + {coeff2:.2f}) / 2 = {redistributed_value:.2f}"
                         }
                         
@@ -131,6 +216,7 @@ class MulticollinearityHandler:
                             'partner_original_value': coeff1,
                             'total_value': total_value,
                             'redistributed_value': redistributed_value,
+                            'method': 'simple_averaging',
                             'calculation_formula': f"({coeff1:.2f} + {coeff2:.2f}) / 2 = {redistributed_value:.2f}"
                         }
                         
@@ -139,6 +225,15 @@ class MulticollinearityHandler:
                         fixed_coefficients[j+1] = redistributed_value
         
         return fixed_coefficients
+    
+    def _get_correlation(self, feature: str, feature_list: List[str]) -> float:
+        """Get correlation between feature and other features in the list."""
+        for other_feature in feature_list:
+            if other_feature != feature:
+                if (feature in self.correlation_matrix.index and 
+                    other_feature in self.correlation_matrix.columns):
+                    return abs(self.correlation_matrix.loc[feature, other_feature])
+        return 0.0
     
     def get_multicollinearity_report(self) -> Dict:
         """
@@ -150,6 +245,7 @@ class MulticollinearityHandler:
         return {
             'detected': self.multicollinearity_detected,
             'threshold': self.threshold,
+            'method': 'true_commonality_analysis' if self.use_commonality_analysis else 'simple_averaging',
             'correlation_matrix': self.correlation_matrix,
             'fixes_applied': self.multicollinearity_fixes,
             'total_fixes': len(self.multicollinearity_fixes)

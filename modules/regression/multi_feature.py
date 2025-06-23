@@ -129,12 +129,13 @@ class MultiFeatureFrontierRegression:
         """
         return self.regressor._solve_constrained_regression(X, y, features)
     
-    def _fix_multicollinearity_coefficients(self, coefficients: np.ndarray, features: List[str]) -> np.ndarray:
+    def _fix_multicollinearity_coefficients(self, coefficients: np.ndarray, features: List[str], 
+                                           X: np.ndarray = None, y: np.ndarray = None) -> np.ndarray:
         """
         Fix multicollinearity by redistributing coefficients.
         Delegated to regressor module.
         """
-        return self.regressor._fix_multicollinearity_coefficients(coefficients, features)
+        return self.regressor._fix_multicollinearity_coefficients(coefficients, features, X, y)
     
     def get_coefficient_breakdown(self) -> dict:
         """
