@@ -80,6 +80,10 @@ def generate_feature_rates_table_html(cost_structure):
     if not feature_costs:
         feature_costs = {k: v for k, v in cost_structure.items() if k != 'base_cost'}
     
+    # Get multicollinearity information if available
+    multicollinearity_fixes = cost_structure.get('multicollinearity_fixes', {})
+    has_multicollinearity = len(multicollinearity_fixes) > 0
+    
     if not feature_costs:
         return ""
     
@@ -103,7 +107,35 @@ def generate_feature_rates_table_html(cost_structure):
     <div class="summary">
         <h3>🔢 기능별 한계비용 계수 (Feature Marginal Cost Coefficients)</h3>
         <p>각 기능의 한계비용 계수와 실제 수학적 계산식입니다. 이 값들이 CS 비율 계산의 기준이 됩니다.</p>
-        <table style="width: auto; margin: 10px 0;">
+    """
+    
+    # Add multicollinearity warning if detected
+    if has_multicollinearity:
+        html += """
+        <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; margin: 10px 0; border-radius: 5px;">
+            <h4 style="color: #856404; margin: 0 0 5px 0;">⚠️ 다중공선성 처리 적용됨</h4>
+            <p style="margin: 0; font-size: 0.9em; color: #856404;">
+                높은 상관관계를 가진 기능들 간에 계수 재분배가 적용되었습니다. 
+                아래 표에서 원본 계수와 재분배된 계수를 확인할 수 있습니다.
+            </p>
+        </div>
+        """
+    
+    # Determine table headers based on whether multicollinearity fixes exist
+    if has_multicollinearity:
+        table_headers = """
+            <thead>
+                <tr>
+                    <th style="text-align: left;">기능 (Feature)</th>
+                    <th style="text-align: center;">원본 계수</th>
+                    <th style="text-align: center;">재분배 계수</th>
+                    <th style="text-align: center;">단위 (Unit)</th>
+                    <th style="text-align: left;">다중공선성 처리 과정</th>
+                </tr>
+            </thead>
+        """
+    else:
+        table_headers = """
             <thead>
                 <tr>
                     <th style="text-align: left;">기능 (Feature)</th>
@@ -112,20 +144,36 @@ def generate_feature_rates_table_html(cost_structure):
                     <th style="text-align: left;">수학적 계산식</th>
                 </tr>
             </thead>
+        """
+    
+    html += f"""
+        <table style="width: auto; margin: 10px 0;">
+            {table_headers}
             <tbody>
     """
     
     # Add base cost if available
     base_cost = cost_structure.get('base_cost', 0)
     if base_cost and base_cost != 0:
-        html += f"""
-                <tr style="background-color: #e8f4fd;">
-                    <td style="font-weight: bold;">기본 인프라 (Base Cost)</td>
-                    <td style="text-align: center; font-weight: bold;">{format_coefficient(base_cost)}</td>
-                    <td style="text-align: center;">₩/요금제</td>
-                    <td><code>β₀ = {base_cost}</code><br><small>고정 기본비용</small></td>
-                </tr>
-        """
+        if has_multicollinearity:
+            html += f"""
+                    <tr style="background-color: #e8f4fd;">
+                        <td style="font-weight: bold;">기본 인프라 (Base Cost)</td>
+                        <td style="text-align: center; font-weight: bold;">{format_coefficient(base_cost)}</td>
+                        <td style="text-align: center; font-weight: bold;">{format_coefficient(base_cost)}</td>
+                        <td style="text-align: center;">₩/요금제</td>
+                        <td><small>기본비용은 다중공선성 영향 없음</small></td>
+                    </tr>
+            """
+        else:
+            html += f"""
+                    <tr style="background-color: #e8f4fd;">
+                        <td style="font-weight: bold;">기본 인프라 (Base Cost)</td>
+                        <td style="text-align: center; font-weight: bold;">{format_coefficient(base_cost)}</td>
+                        <td style="text-align: center;">₩/요금제</td>
+                        <td><code>β₀ = {base_cost}</code><br><small>고정 기본비용</small></td>
+                    </tr>
+            """
     
     # Process feature costs
     for feature, cost_data in feature_costs.items():
@@ -142,21 +190,83 @@ def generate_feature_rates_table_html(cost_structure):
         
         coeff_display = format_coefficient(coefficient)
         
-        # Generate mathematical formula
-        formula = get_mathematical_formula(feature, coefficient, cost_data)
-        
-        html += f"""
-                <tr>
-                    <td>{info['name']}</td>
-                    <td style="text-align: center;">{coeff_display}</td>
-                    <td style="text-align: center;">{info['unit']}</td>
-                    <td style="font-size: 0.9em; color: #666;">{formula}</td>
-                </tr>
-        """
+        # Check if this feature has multicollinearity fixes
+        if feature in multicollinearity_fixes:
+            fix_info = multicollinearity_fixes[feature]
+            original_coeff = fix_info['original_value']
+            redistributed_coeff = fix_info['redistributed_value']
+            paired_feature = fix_info['paired_with']
+            correlation = fix_info['correlation']
+            formula = fix_info['calculation_formula']
+            
+            # Create detailed multicollinearity process description
+            multicollinearity_process = f"""
+                <div style="font-size: 0.85em;">
+                    <strong style="color: #d63384;">상관관계:</strong> {paired_feature} (r={correlation:.3f})<br>
+                    <strong style="color: #0d6efd;">계산식:</strong> <code>{formula}</code><br>
+                    <small style="color: #6c757d;">
+                        균등분배 = (원본₁ + 원본₂) ÷ 2
+                    </small>
+                </div>
+            """
+            
+            html += f"""
+                    <tr style="background-color: #fef7e0;">
+                        <td>{info['name']}</td>
+                        <td style="text-align: center; color: #dc3545;">{format_coefficient(original_coeff)}</td>
+                        <td style="text-align: center; color: #0d6efd; font-weight: bold;">{format_coefficient(redistributed_coeff)}</td>
+                        <td style="text-align: center;">{info['unit']}</td>
+                        <td>{multicollinearity_process}</td>
+                    </tr>
+            """
+        else:
+            # Generate mathematical formula
+            formula = get_mathematical_formula(feature, coefficient, cost_data)
+            
+            if has_multicollinearity:
+                html += f"""
+                        <tr>
+                            <td>{info['name']}</td>
+                            <td style="text-align: center;">{coeff_display}</td>
+                            <td style="text-align: center;">{coeff_display}</td>
+                            <td style="text-align: center;">{info['unit']}</td>
+                            <td><small style="color: #6c757d;">다중공선성 영향 없음</small></td>
+                        </tr>
+                """
+            else:
+                html += f"""
+                        <tr>
+                            <td>{info['name']}</td>
+                            <td style="text-align: center;">{coeff_display}</td>
+                            <td style="text-align: center;">{info['unit']}</td>
+                            <td style="font-size: 0.9em; color: #666;">{formula}</td>
+                        </tr>
+                """
     
     html += """
             </tbody>
         </table>
+    """
+    
+    # Add explanation based on whether multicollinearity was detected
+    if has_multicollinearity:
+        html += """
+        <div style="background-color: #f8f9fa; padding: 15px; margin-top: 15px; border-radius: 5px;">
+            <h4 style="margin: 0 0 10px 0; color: #495057;">📊 다중공선성 처리 상세 과정</h4>
+            <ol style="margin: 0; padding-left: 20px; font-size: 0.9em; color: #495057;">
+                <li><strong>Ridge 정규화</strong>: <code>min ||Xβ - y||² + α||β||²</code> (α=10.0) 적용</li>
+                <li><strong>상관관계 분석</strong>: |correlation| > 0.8인 기능 쌍 감지</li>
+                <li><strong>계수 재분배</strong>: 높은 상관관계 기능들의 계수를 균등 분배</li>
+                <li><strong>경제적 제약</strong>: 음수 계수 및 비현실적 값 보정</li>
+            </ol>
+            <p style="margin: 10px 0 0 0; font-size: 0.85em; color: #6c757d;">
+                <strong>재분배 공식:</strong> β₁_new = β₂_new = (β₁_original + β₂_original) ÷ 2<br>
+                <strong>목적:</strong> 다중공선성으로 인한 계수 불안정성 해결 및 해석 가능성 향상
+            </p>
+        </div>
+        """
+    else:
+        html += """
         <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
             <strong>수식 설명:</strong> 
             <code>min ||Xβ - y||² + α||β||²</code> = Ridge 정규화된 제약 최적화로 다중공선성 문제 해결<br>
@@ -165,6 +275,9 @@ def generate_feature_rates_table_html(cost_structure):
             <strong>X</strong> = 기능 행렬, <strong>β</strong> = 계수 벡터, <strong>y</strong> = 실제 요금, <strong>α</strong> = 정규화 강도<br>
             각 기능의 기여분은 <strong>β × 기능값</strong>으로 계산되어 총 예상 요금에 합산됩니다.
         </p>
+        """
+    
+    html += """
     </div>
     """
     

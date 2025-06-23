@@ -46,17 +46,38 @@ This system provides **objective, data-driven ranking of Korean mobile phone pla
 3. **Baseline Cost Calculation**: Sum of (Feature Amount × Marginal Cost) for all features
 4. **Value Assessment**: Compare calculated fair price vs actual advertised price
 
+### **✅ CS값 계산 검증 완료 (2025-06-23)**
+**실제 사례**: "이야기 라이트 100분 4.5GB+" 요금제 (할인가 100원)
+- **계산된 기준비용**: 22,433.12원 (시스템 값과 **완벽 일치**)
+- **CS비율**: 224.33배 (매우 높은 가성비)
+- **핵심 발견**: **다중공선성 처리**가 정확한 계산의 핵심
+
+**다중공선성 자동 처리**:
+- voice_clean ↔ message_clean (상관관계 0.83): 계수 균등 재분배 (6.44 each)
+- voice_unlimited ↔ message_unlimited (상관관계 0.97): 계수 균등 재분배 (3896.23 each)
+- **Ridge 회귀 + 제약조건 최적화**로 경제적 타당성 보장
+
+### **🔄 리포트 테이블 다중공선성 정보 추가 진행 중**
+**유저 요청**: 테이블에 다중공선성 처리 과정과 계산 결과 표시
+**구현 상태**:
+- **테이블 UI 수정 완료**: 원본 계수/재분배 계수 컬럼 추가
+- **다중공선성 경고 박스 추가**: 처리 적용 시 상단 경고 표시
+- **계산 과정 상세 표시**: 상관관계, 재분배 공식, 처리 과정 설명
+- **진행 필요**: cost_structure에 multicollinearity_fixes 정보 포함 확인
+
 ### **Impact & Value Proposition**
 - **Consumer Protection**: Reveals overpriced "premium" plans that don't deliver value
 - **Market Transparency**: Cuts through marketing claims with mathematical analysis  
 - **Personalized Recommendations**: Ranking adapts to individual usage patterns
 - **Informed Decision Making**: Provides objective data for plan selection
+- **Verified Accuracy**: CS값 계산 검증으로 시스템 신뢰성 확보
 
 ### **Technical Innovation & Advantages**
 - **Advanced Regression Analysis**: Uses entire market dataset, not just cheapest plans
-- **Multicollinearity Handling**: Properly separates individual feature values
+- **Multicollinearity Handling**: Properly separates individual feature values with automatic redistribution
 - **Unlimited Plan Processing**: Separate analysis for unlimited vs metered features
 - **Real-time Processing**: Instant analysis of 1000+ plans with live market data
+- **Mathematical Verification**: CS값 계산 과정 완전 투명화
 
 ## 🔧 Constraint Application Methodology ⭐ **Regression Integration**
 
@@ -102,6 +123,77 @@ result = minimize(objective, initial_guess, bounds=bounds, method='L-BFGS-B')
 - **unconstrained_coefficients**: OLS 원시 결과 (비교용)
 - **coefficients**: 제약 최적화 최종 결과 (실제 사용)
 - **HTML 표시**: 두 값의 차이를 색상으로 구분하여 시각화
+
+## 🔬 Advanced Multicollinearity Handling Methods
+
+### **1. Elastic Net Regularization (검색 결과)**
+**수학적 정의**: `min ||y - Xβ||² + λ₁||β||₁ + λ₂||β||²`
+- **L1 penalty**: Feature selection 및 sparsity 제공
+- **L2 penalty**: Multicollinearity 완화
+- **하이브리드 접근**: Ridge + Lasso의 장점 결합
+- **자동 feature selection**: 불필요한 변수 자동 제거
+- **Grouping effect**: 상관된 변수들을 그룹으로 선택
+
+### **2. Principal Component Regression (PCR)**
+**수학적 원리**: 주성분으로 차원 축소 후 회귀
+- **Orthogonal components**: 상관관계 완전 제거
+- **Variance explained**: 주성분별 설명력 기반 선택
+- **단점**: 해석력 감소 (주성분이 원 변수와 다름)
+- **적용 분야**: 고차원 데이터, 변수 간 복잡한 상관관계
+
+### **3. Partial Least Squares (PLS)**
+**핵심 아이디어**: 독립변수와 종속변수 관계 고려한 차원 축소
+- **Target-aware**: Y와의 관계를 고려한 성분 추출
+- **PCR 개선**: 예측 성능 향상
+- **Latent variables**: 잠재 변수 기반 모델링
+- **Cross-industry usage**: 화학, 바이오인포매틱스 등
+
+### **4. LASSO (L1 Regularization)**
+**Feature Selection**: `min ||y - Xβ||² + λ||β||₁`
+- **Automatic variable selection**: 계수를 0으로 수렴
+- **Sparse solutions**: 파서먼니어스 모델 생성
+- **Limitation**: 상관된 변수 그룹에서 하나만 선택하는 경향
+- **Cross-validation**: λ 파라미터 최적화 필요
+
+### **5. Ridge Regression (L2 Regularization)**
+**Coefficient Shrinkage**: `min ||y - Xβ||² + λ||β||²`
+- **Bias-variance tradeoff**: 편향 증가로 분산 감소
+- **Grouped selection**: 상관된 변수들을 함께 유지
+- **No feature elimination**: 계수를 0으로 만들지 않음
+- **Continuous shrinkage**: 점진적 계수 감소
+
+### **6. Integrated Approaches in Literature**
+**Penn State University 연구 (검색 결과)**:
+- **Data collection strategy**: 다양한 조건에서 추가 데이터 수집
+- **Experimental design**: 다중공선성 사전 방지
+- **SVD-based analysis**: 특이값 분해 활용
+- **Cross-validation methods**: L-curve, GCV 등
+
+**Journal research findings**:
+- **Elastic Net superiority**: 대부분의 시나리오에서 최적 성능
+- **Sample size effects**: 표본 크기가 클수록 정규화 효과 증대
+- **Simulation studies**: 다양한 다중공선성 수준에서 성능 비교
+
+### **7. Current System vs Advanced Methods**
+**현재 시스템**: Ridge + Post-processing redistribution
+- **장점**: 해석력 유지, 경제적 의미 보존
+- **검증됨**: CS값 계산 정확성 확인
+
+**대안 고려사항**:
+- **Elastic Net**: 자동 feature selection + multicollinearity handling
+- **Integrated ridge**: 회귀 과정 중 제약 조건 통합 (현재 사용 중)
+- **Bayesian approaches**: Prior information 활용
+- **Robust methods**: Outlier에 덜 민감한 방법
+
+### **8. Implementation Considerations**
+**현재 프로젝트에 적합한 방법**:
+1. **Interpretability 요구**: 요금제 분석은 투명성 필수
+2. **Economic constraints**: 경제 논리 부합 필요
+3. **Feature importance**: 각 기능별 한계비용 의미 중요
+4. **Verified accuracy**: 현재 방법의 정확성 이미 검증됨
+
+**결론**: 현재 Ridge + 제약조건 최적화 + 사후 재분배 방법이 
+이 프로젝트의 요구사항에 가장 적합함을 확인
 
 ## 📊 Current System Status
 
@@ -923,4 +1015,20 @@ This comprehensive memory document captures the complete current state of the MV
 - **목적**: Multicollinearity 해결로 계수 안정화
 - **CS Ratio 영향**: 직접적 영향 없음 (fee/original_fee 비율은 동일)
 - **계수 품질**: 더 안정적이고 해석 가능한 계수 생성
+
+### **✅ 리포트 테이블 다중공선성 정보 추가 완료 (2025-06-23)**
+**유저 요청**: 테이블에 다중공선성 처리 과정과 계산 결과 표시
+**완료된 구현**:
+- **테이블 UI 완성**: 원본 계수/재분배 계수 컬럼 추가
+- **다중공선성 경고 박스**: 처리 적용 시 노란색 경고 표시
+- **계산 과정 상세 표시**: 상관관계, 재분배 공식, 처리 과정 설명
+- **시각적 구분**: 다중공선성 영향 받은 기능은 노란색 배경 강조
+- **종합 설명 섹션**: 4단계 처리 과정 및 수학적 공식 완전 설명
+
+**실제 검증 결과**:
+- voice_clean ↔ message_clean (r=0.830): 12.79 + 0.10 → 6.44 각각
+- voice_unlimited ↔ message_unlimited (r=0.967): 7692.47 + 100.00 → 3896.23 각각
+- data_unlimited_speed ↔ has_unlimited_speed (r=1.000): 완전 상관관계 처리
+- **HTML 테이블 길이**: 9,322자 (상세한 다중공선성 정보 포함)
+- **투명성 달성**: 모든 계수 재분배 과정이 완전히 공개됨
 
