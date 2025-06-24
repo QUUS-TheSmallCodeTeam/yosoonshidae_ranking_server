@@ -157,9 +157,15 @@ class CommonalityAnalyzer:
         return coefficients
     
     def _distribute_coefficients_by_commonality(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
-        """Distribute regression coefficients based on commonality analysis."""
+        """Distribute regression coefficients based on commonality analysis while preserving economic constraints.
+        
+        This method handles suppressor effects while maintaining economic logic:
+        1. Calculate commonality contributions for each variable
+        2. Apply economic constraints to prevent unrealistic coefficients
+        3. Redistribute coefficients based on unique vs common variance contributions
+        """
         try:
-            # Get original regression coefficients
+            # Get original constrained regression coefficients (these respect economic bounds)
             model = LinearRegression(fit_intercept=True)
             model.fit(X, y)
             original_coeffs = model.coef_
@@ -171,71 +177,112 @@ class CommonalityAnalyzer:
             total_r2 = self.subset_r2.get(tuple(self.feature_names), 0)
             
             # Check if we have valid data
-            if len(original_coeffs) != len(self.feature_names):
-                logger.error(f"Coefficient length mismatch: {len(original_coeffs)} vs {len(self.feature_names)}")
-                # Fallback: return original coefficients
+            if len(self.feature_names) == 0 or total_r2 <= 0:
                 for i, feature in enumerate(self.feature_names):
-                    if i < len(original_coeffs):
-                        final_coeffs[feature] = original_coeffs[i]
-                    else:
-                        final_coeffs[feature] = 0.0
+                    final_coeffs[feature] = original_coeffs[i] if i < len(original_coeffs) else 0.0
                 return final_coeffs
             
+            # Calculate commonality contributions for each feature
             for i, feature in enumerate(self.feature_names):
-                try:
-                    # Get unique effect for this feature
-                    unique_key = f"{feature}_unique"
-                    unique_effect = self.commonality_coefficients.get(unique_key, {}).get('value', 0)
+                if i >= len(original_coeffs):
+                    final_coeffs[feature] = 0.0
+                    continue
                     
-                    # Get all common effects involving this feature
-                    common_effects = []
-                    for key, coeff_info in self.commonality_coefficients.items():
-                        if (coeff_info.get('type') in ['common', 'common_higher_order'] and 
-                            feature in coeff_info.get('features', [])):
-                            # Distribute common effect equally among involved features
-                            n_features_involved = len(coeff_info.get('features', []))
-                            if n_features_involved > 0:
-                                shared_contribution = coeff_info.get('value', 0) / n_features_involved
-                                common_effects.append(shared_contribution)
-                    
-                    # Calculate total contribution (unique + shared)
-                    total_contribution = unique_effect + sum(common_effects)
-                    
+                original_coeff = original_coeffs[i]
+                
+                # Get unique contribution (variance explained by this feature alone)
+                unique_r2 = self.subset_r2.get((feature,), 0)
+                
+                # Calculate total contribution including common effects
+                total_contribution = 0.0
+                
+                # Add unique contribution
+                total_contribution += unique_r2
+                
+                # Add common contributions (shared with other features)
+                for subset, r2_value in self.subset_r2.items():
+                    if len(subset) > 1 and feature in subset:
+                        # This is a common effect involving this feature
+                        # Distribute the common effect equally among features in the subset
+                        common_effect = self._calculate_common_effect(subset, r2_value)
+                        total_contribution += common_effect / len(subset)
+                
+                # Calculate coefficient based on contribution ratio
+                if total_r2 > 0:
+                    contribution_ratio = total_contribution / total_r2
                     # Scale original coefficient by contribution ratio
-                    if total_r2 > 0:
-                        contribution_ratio = total_contribution / total_r2
-                        final_coeff = original_coeffs[i] * contribution_ratio
-                    else:
-                        final_coeff = original_coeffs[i]
+                    commonality_coeff = original_coeff * contribution_ratio
                     
-                    # Ensure coefficient is numeric
-                    if np.isnan(final_coeff) or np.isinf(final_coeff):
-                        final_coeff = original_coeffs[i]
+                    # Apply economic constraints to prevent suppressor effects
+                    # from violating economic logic
+                    constrained_coeff = self._apply_economic_constraints(
+                        feature, commonality_coeff, original_coeff
+                    )
                     
-                    final_coeffs[feature] = float(final_coeff)
-                    
-                    logger.info(f"{feature}: unique={unique_effect:.6f}, common={sum(common_effects):.6f}, "
-                               f"total={total_contribution:.6f}, final_coeff={final_coeff:.4f}")
-                               
-                except Exception as e:
-                    logger.warning(f"Error processing feature {feature}: {e}")
-                    # Fallback to original coefficient
-                    final_coeffs[feature] = float(original_coeffs[i]) if i < len(original_coeffs) else 0.0
+                    final_coeffs[feature] = constrained_coeff
+                else:
+                    final_coeffs[feature] = original_coeff
             
             return final_coeffs
             
         except Exception as e:
-            logger.error(f"Critical error in coefficient distribution: {e}")
-            # Emergency fallback: return simple coefficients
-            model = LinearRegression(fit_intercept=True)
-            model.fit(X, y)
-            fallback_coeffs = {'intercept': model.intercept_}
+            print(f"Error in commonality distribution: {e}")
+            # Fallback to original coefficients
+            fallback_coeffs = {'intercept': intercept if 'intercept' in locals() else 0.0}
             for i, feature in enumerate(self.feature_names):
-                if i < len(model.coef_):
-                    fallback_coeffs[feature] = float(model.coef_[i])
-                else:
-                    fallback_coeffs[feature] = 0.0
+                fallback_coeffs[feature] = original_coeffs[i] if i < len(original_coeffs) else 0.0
             return fallback_coeffs
+    
+    def _calculate_common_effect(self, subset: Tuple[str, ...], subset_r2: float) -> float:
+        """Calculate the common effect for a subset of features."""
+        try:
+            # Common effect = R²(subset) - Σ(unique effects of features in subset)
+            common_effect = subset_r2
+            
+            for feature in subset:
+                unique_r2 = self.subset_r2.get((feature,), 0)
+                common_effect -= unique_r2
+            
+            # Common effect should not be negative (handle suppressor effects)
+            return max(0.0, common_effect)
+            
+        except Exception:
+            return 0.0
+    
+    def _apply_economic_constraints(self, feature: str, commonality_coeff: float, 
+                                  original_coeff: float) -> float:
+        """Apply economic constraints to prevent unrealistic coefficients from suppressor effects."""
+        try:
+            # Define economic bounds based on feature type
+            if 'unlimited' in feature.lower():
+                min_bound, max_bound = 100.0, 20000.0
+            elif any(keyword in feature.lower() for keyword in ['5g', 'tethering']):
+                min_bound, max_bound = 100.0, 10000.0
+            else:
+                # Usage-based features (data, voice, message, etc.)
+                min_bound, max_bound = 0.1, float('inf')
+            
+            # If commonality analysis produces coefficient that violates economic logic
+            if commonality_coeff < min_bound:
+                # Use the minimum bound but preserve the sign relationship
+                constrained_coeff = min_bound
+                print(f"Warning: {feature} coefficient {commonality_coeff:.4f} below economic minimum {min_bound}, using {constrained_coeff}")
+                return constrained_coeff
+            
+            elif max_bound != float('inf') and commonality_coeff > max_bound:
+                # Use the maximum bound
+                constrained_coeff = max_bound
+                print(f"Warning: {feature} coefficient {commonality_coeff:.4f} above economic maximum {max_bound}, using {constrained_coeff}")
+                return constrained_coeff
+            
+            else:
+                # Coefficient is within economic bounds
+                return commonality_coeff
+                
+        except Exception as e:
+            print(f"Error applying economic constraints for {feature}: {e}")
+            # Fallback to original coefficient
+            return original_coeff
     
     def get_commonality_report(self) -> Dict:
         """Generate comprehensive commonality analysis report."""

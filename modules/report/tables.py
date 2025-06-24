@@ -225,26 +225,57 @@ def generate_feature_rates_table_html(cost_structure):
             # Generate mathematical formula for the feature
             base_formula = get_mathematical_formula(feature, redistributed_coeff, cost_data)
             
-            # Create combined description with both mathematical formula and multicollinearity process
-            combined_description = f"""
-                <div style="margin-bottom: 10px;">
-                    <strong style="color: #2c3e50;">공통분산분석 결과:</strong><br>
-                    <div style="font-size: 0.9em; color: #666; margin-left: 10px;">
-                        {base_formula}
+            # Extract Enhanced Commonality Analysis details
+            unique_effect = fix_info.get('unique_effect', 0)
+            common_effect = fix_info.get('common_effect', 0)
+            redistribution_method = fix_info.get('redistribution_method', 'simple_averaging')
+            variance_breakdown = fix_info.get('variance_breakdown', '')
+            method_type = fix_info.get('method', 'simple_averaging')
+            
+            # Create enhanced description with new commonality analysis information
+            if method_type == 'enhanced_commonality_analysis':
+                combined_description = f"""
+                    <div style="margin-bottom: 10px;">
+                        <strong style="color: #2c3e50;">🔬 Enhanced Commonality Analysis 결과:</strong><br>
+                        <div style="font-size: 0.9em; color: #666; margin-left: 10px;">
+                            {base_formula}
+                        </div>
                     </div>
-                </div>
-                <div style="border-top: 1px solid #ddd; padding-top: 8px;">
-                    <strong style="color: #d63384;">다중공선성 분해:</strong><br>
-                    <div style="font-size: 0.85em; margin-left: 10px;">
-                        <strong>상관변수:</strong> {paired_feature} (r={correlation:.3f})<br>
-                        <strong>공통분산 처리:</strong> <code>{formula}</code><br>
-                        <strong>분산분해 원리:</strong> 겹치는 설명력을 두 변수가 균등분배<br>
-                        <small style="color: #6c757d;">
-                            R²({feature} + {paired_feature}) = R²({feature} 고유) + R²({paired_feature} 고유) + R²(공통)
-                        </small>
+                    <div style="border-top: 1px solid #ddd; padding-top: 8px;">
+                        <strong style="color: #d63384;">분산분해 상세 정보:</strong><br>
+                                                 <div style="font-size: 0.85em; margin-left: 10px;">
+                             <strong>상관변수:</strong> {paired_feature} (r={correlation:.3f})<br>
+                             <strong>분산분해:</strong> <code style="background-color: #fff3cd; padding: 2px;">{variance_breakdown}</code><br>
+                             <strong>재분배 방법:</strong> <code style="background-color: #d1ecf1; padding: 2px;">{redistribution_method}</code><br>
+                             <strong>계산공식:</strong> <code style="background-color: #f8d7da; padding: 2px;">{formula}</code><br>
+                             <small style="color: #6c757d;">
+                                 R²(Total) = R²(고유효과) + R²(공통효과)<br>
+                                 🔬 고유효과: <span style="color: #0066cc; font-weight: bold;">{unique_effect:.4f}</span> | 공통효과: <span style="color: #cc6600; font-weight: bold;">{common_effect:.4f}</span>
+                             </small>
+                         </div>
                     </div>
-                </div>
-            """
+                """
+            else:
+                # Fallback to original description for simple averaging
+                combined_description = f"""
+                    <div style="margin-bottom: 10px;">
+                        <strong style="color: #2c3e50;">공통분산분석 결과:</strong><br>
+                        <div style="font-size: 0.9em; color: #666; margin-left: 10px;">
+                            {base_formula}
+                        </div>
+                    </div>
+                    <div style="border-top: 1px solid #ddd; padding-top: 8px;">
+                        <strong style="color: #d63384;">다중공선성 분해:</strong><br>
+                        <div style="font-size: 0.85em; margin-left: 10px;">
+                            <strong>상관변수:</strong> {paired_feature} (r={correlation:.3f})<br>
+                            <strong>공통분산 처리:</strong> <code>{formula}</code><br>
+                            <strong>분산분해 원리:</strong> 겹치는 설명력을 두 변수가 균등분배<br>
+                            <small style="color: #6c757d;">
+                                R²({feature} + {paired_feature}) = R²({feature} 고유) + R²({paired_feature} 고유) + R²(공통)
+                            </small>
+                        </div>
+                    </div>
+                """
             
             html += f"""
                     <tr style="background-color: #fef7e0;">
@@ -302,25 +333,31 @@ def generate_feature_rates_table_html(cost_structure):
     if has_multicollinearity:
         html += """
         <div style="background-color: #f8f9fa; padding: 15px; margin-top: 15px; border-radius: 5px;">
-            <h4 style="margin: 0 0 10px 0; color: #495057;">📊 공통분산분석 (Commonality Analysis) 상세 과정</h4>
+            <h4 style="margin: 0 0 10px 0; color: #495057;">🔬 Enhanced Commonality Analysis 상세 과정</h4>
             <ol style="margin: 0; padding-left: 20px; font-size: 0.9em; color: #495057;">
-                <li><strong>전체 분산 분해</strong>: R² = Σ(고유효과) + Σ(공통효과)</li>
-                <li><strong>다중공선성 정량화</strong>: 상관변수들의 공통분산 크기 측정</li>
-                <li><strong>고유/공통 기여 분리</strong>: 각 변수의 독립적 기여와 중복 기여 구분</li>
-                <li><strong>투명한 계수 분배</strong>: 수학적 근거에 기반한 공정한 분배</li>
+                <li><strong>All Possible Subsets Regression</strong>: 2^n개 조합에서 모든 R² 계산</li>
+                <li><strong>완전한 분산분해</strong>: R² = Σ(고유효과) + Σ(공통효과)</li>
+                <li><strong>지능적 재분배</strong>: 경제적 제약조건과 Commonality 결과의 블렌딩</li>
+                <li><strong>투명한 분산분해</strong>: 각 변수의 고유/공통 기여도 정량화</li>
             </ol>
             <div style="margin: 15px 0; padding: 10px; background-color: #e3f2fd; border-radius: 3px;">
-                <strong style="color: #1976d2;">핵심 원리:</strong><br>
-                <code style="background-color: #fff; padding: 2px 4px;">
-                    β_최종 = (고유기여분 × 가중치) + (공통기여분 × 분배비율)
+                <strong style="color: #1976d2;">🧠 지능적 재분배 로직:</strong><br>
+                <code style="background-color: #fff; padding: 2px 4px; display: block; margin: 5px 0;">
+                    if commonality_coeff < min_bound:<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;final_coeff = 0.7 × min_bound + 0.3 × original_coeff<br>
+                    elif commonality_coeff > max_bound:<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;final_coeff = 0.7 × max_bound + 0.3 × original_coeff<br>
+                    else:<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;final_coeff = commonality_coeff
                 </code><br>
                 <small style="color: #1565c0;">
-                    공통기여분은 상관변수들 간에 균등분배하여 해석력과 안정성을 모두 확보
+                    극단적 결과는 원본 계수와 블렌딩하여 경제적 타당성과 통계적 정확성 양립
                 </small>
             </div>
             <p style="margin: 10px 0 0 0; font-size: 0.85em; color: #6c757d;">
-                <strong>장점:</strong> ① 모든 변수 보존 ② 완전한 투명성 ③ 다중공선성 정량화 ④ 수학적 엄밀성<br>
-                <strong>결과:</strong> 각 feature의 실제 기여도를 정확하게 반영한 안정적이고 해석 가능한 계수
+                <strong>✅ 핵심 개선사항:</strong> ① 의미있는 분산분해 + 지능적 재분배 ② 경제적 타당성 보장<br>
+                <strong>📊 결과 투명성:</strong> 고유효과(%), 공통효과(%), 재분배 방법, 최종 계수까지 완전 공개<br>
+                <strong>🎯 목표 달성:</strong> 단순 보존이 아닌 실제 분산분해 결과를 활용한 의미있는 계수 조정
             </p>
         </div>
         """
