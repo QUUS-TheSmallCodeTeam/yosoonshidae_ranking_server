@@ -1,663 +1,321 @@
----
-title: Mvno Plan Ranking Model
-emoji: 🌖
-colorFrom: indigo
-colorTo: blue
-sdk: docker
-pinned: false
+# 🚀 **MVNO 요금제 순위 시스템** 
+## **💡 한국 MVNO 요금제 효율성 분석 및 순위화 플랫폼**
+
 ---
 
-# Moyo Mobile Plan Ranking API
+## 📋 **프로젝트 개요**
 
-This FastAPI application provides a comprehensive API for preprocessing and ranking mobile phone plans using advanced Cost-Spec ratio methodology with file-based multiprocessing architecture.
+### **🎯 미션**
+- **한국 MVNO(알뜰폰) 요금제 가성비 객관적 분석**
+- **Cost-Spec (CS) 비율 기반 효율성 평가**
+- **데이터 기반 소비자 선택 지원**
 
-## API Endpoints
+### **✨ 핵심 기능**
+- **Efficiency Frontier 기반 회귀 분석** (2025-06-25 구현)
+- **실시간 요금제 순위화**
+- **CS 비율 계산 및 비교**
+- **대화형 차트 시각화**
+- **RESTful API 인터페이스**
 
-### Core Endpoints
-- **GET `/`**: Interactive HTML interface with ranking tables, charts, and feature coefficient analysis
-- **POST `/process`**: Main data processing endpoint - handles complete mobile plan analysis pipeline
-- **POST `/test`**: Test endpoint for API validation
+---
 
-### Chart & Status Endpoints  
-- **GET `/chart-status`**: Overall chart calculation status
-- **GET `/chart-status/{chart_type}`**: Individual chart calculation status
-- **GET `/chart-data/{chart_type}`**: Retrieve specific chart data
-- **GET `/status`**: System status page with processing information
+## 🏗️ **시스템 아키텍처**
 
-### Debug Endpoints
-- **GET `/test-reload`**: Test system reload functionality
-- **GET `/debug-global`**: Debug global state and file-based storage
-
-## Key Features
-
-### Advanced Ranking Algorithm
-- **Fixed Rates Method**: Uses pure marginal coefficients from entire dataset analysis
-- **File-Based Storage**: Multiprocessing-compatible data sharing via `/app/data/shared/` directory
-- **Async Chart Generation**: Background chart calculation with real-time status indicators
-- **Comprehensive Feature Analysis**: 16+ features including unlimited plans, 5G support, and data throttling
-
-### Data Processing Pipeline
-1. **Raw Data Ingestion**: JSON plan data with comprehensive feature extraction
-2. **Feature Engineering**: Advanced preprocessing with unlimited flag handling
-3. **Coefficient Calculation**: FullDatasetMultiFeatureRegression with multicollinearity handling
-4. **CS Ratio Computation**: Baseline cost vs actual fee analysis
-5. **Ranking Generation**: Tie-aware ranking with Korean notation support
-6. **Report Generation**: HTML reports with interactive charts and coefficient tables
-
-## Requirements
+### **1. 주요 컴포넌트**
 
 ```
-fastapi==0.115.12
-uvicorn[standard]==0.34.1
-pydantic==2.11.3
-pandas==2.2.3
-numpy==1.26.4
-matplotlib==3.10.1
-scikit-learn==1.6.1
-jinja2
-python-multipart==0.0.6
-psutil==6.1.1
+mvno-plan-ranking/
+├── app.py                          # FastAPI 메인 애플리케이션
+├── config.py                       # 설정 및 상수 정의
+├── requirements.txt                # Python 의존성
+├── docker-compose.yml              # Docker 컨테이너 설정
+├── README.md                       # 프로젝트 문서
+├── memory.md                       # 작업 메모리
+├── todolist.md                     # 할 일 목록
+├── error.log                       # 시스템 로그
+├── data/                           # 데이터 저장소
+│   ├── raw/                        # 원시 JSON 데이터
+│   ├── processed/                  # 전처리된 CSV 데이터
+│   ├── reports/                    # HTML 리포트
+│   └── cache/                      # 캐시 파일
+├── modules/                        # 핵심 모듈
+│   ├── __init__.py
+│   ├── data_processing.py          # 데이터 전처리
+│   ├── feature_engineering.py     # 피처 엔지니어링
+│   ├── cost_spec/                  # CS 비율 계산
+│   │   ├── __init__.py
+│   │   ├── ratio.py               # CS 비율 계산 로직
+│   │   └── features.py            # 피처 정의
+│   ├── regression/                 # 회귀 분석 모듈
+│   │   ├── __init__.py
+│   │   ├── efficiency_frontier.py # 🆕 Efficiency Frontier 회귀
+│   │   ├── full_dataset.py        # 전체 데이터셋 회귀
+│   │   ├── regression_core.py     # 회귀 분석 코어
+│   │   ├── multicollinearity_handler.py  # 다중공선성 처리
+│   │   └── model_validator.py     # 모델 검증
+│   ├── ranking.py                  # 순위화 로직
+│   ├── validation.py               # 데이터 검증
+│   ├── utils.py                   # 유틸리티 함수
+│   ├── chart/                     # 차트 생성
+│   │   ├── __init__.py
+│   │   ├── performance.py         # 성능 차트
+│   │   ├── distribution.py        # 분포 차트
+│   │   ├── comparison.py          # 비교 차트
+│   │   └── correlation.py         # 상관관계 차트
+│   ├── report/                    # 리포트 생성
+│   │   ├── __init__.py
+│   │   ├── html_generator.py      # HTML 리포트 생성
+│   │   ├── tables.py              # 테이블 생성
+│   │   └── formatter.py           # 데이터 포매팅
+│   └── storage/                   # 데이터 저장
+│       ├── __init__.py
+│       └── data_storage.py        # 데이터 저장 로직
+└── templates/                     # HTML 템플릿
+    ├── report_template.html       # 메인 리포트 템플릿
+    └── status.html               # 상태 페이지 템플릿
 ```
 
-## Directory Structure
+### **2. 데이터 흐름**
 
-```
-app/
-├── app.py                   # Main FastAPI application with async processing
-├── Dockerfile               # Hugging Face Spaces deployment
-├── requirements.txt         # Python dependencies
-├── simple_log_monitor.sh    # Log monitoring script
-├── memory.md               # System status and context
-├── todolist.md            # Task management
-├── modules/                # Modular code organization
-│   ├── __init__.py         # Module exports
-│   ├── config.py           # Configuration management
-│   ├── data_storage.py     # File-based data persistence (multiprocessing)
-│   ├── data.py             # Data loading functions
-│   ├── data_models.py      # Pydantic data models
-│   ├── preprocess.py       # Advanced feature engineering
-│   ├── cost_spec.py        # Cost-Spec ratio calculation (121KB, 2746 lines)
-│   ├── ranking.py          # Ranking display logic
-│   ├── report_html.py      # HTML report generation (96KB, 2058 lines)
-│   ├── report_charts.py    # Chart generation (86KB, 1825 lines)
-│   ├── report_tables.py    # Table generation
-│   ├── report_utils.py     # Report utilities
-│   ├── report.py           # Report coordination
-│   ├── piecewise_regression.py  # Piecewise linear modeling
-│   ├── categorical_handlers.py # Categorical data processing
-│   ├── models.py           # Feature definitions
-│   └── utils.py            # Utility functions
-├── data/
-│   ├── raw/                # Raw input data files
-│   ├── processed/          # Processed data cache
-│   ├── shared/             # File-based multiprocessing storage
-│   └── test/               # Test datasets
-├── trained_models/         # Model persistence
-├── results/                # Analysis results
-│   ├── latest/             # Current results
-│   └── archive/            # Historical results
-└── reports/                # Generated reports
+```mermaid
+graph TD
+    A[JSON Raw Data] --> B[Data Preprocessing]
+    B --> C[Feature Engineering]
+    C --> D[Efficiency Frontier Analysis]
+    D --> E[CS Ratio Calculation]
+    E --> F[Plan Ranking]
+    F --> G[HTML Report Generation]
+    G --> H[RESTful API Response]
 ```
 
-## Deployment
+---
 
-### Hugging Face Spaces (Production)
-1. **Automatic Deployment**: Push to Space repository triggers Docker build
-2. **Container Setup**: Python 3.11 with optimized dependencies
-3. **Directory Creation**: Automatic setup of data, model, and report directories
-4. **Port Configuration**: Uvicorn server on port 7860
-5. **Log Monitoring**: Automated background log monitoring with filtering
+## ⚡ **Efficiency Frontier 구현** (2025-06-25)
 
-### Local Development
+### **🎯 핵심 개선사항**
+
+#### **1. Pareto 최적성 기반 분석**
+- **효율적 요금제만 선별**: 전체 2,325개 중 243개(10.5%) 효율적 요금제 추출
+- **지배당 요금제 제거**: 더 비싸면서 덜 좋은 요금제 배제
+- **순수한 가격 경쟁력 측정**: 시장 왜곡 최소화
+
+#### **2. 데이터 기반 계수 도출**
+- **임의적 범위 제거**: 사용자 요구사항에 따라 순수 데이터 기반
+- **Ridge 정규화**: α=1.0으로 과적합 방지
+- **경계 조건**: 기본적 경제 논리만 적용 (음수 방지)
+
+#### **3. 성능 향상**
+- **Basic Data 계수**: ₩1,644/GB → ₩114.38/GB (93% 개선)
+- **현실적 범위**: Voice ₩0.90/분, Message ₩2.64/건
+- **Commonality Analysis 비활성화**: 계수 인플레이션 문제 해결
+
+### **🔧 기술적 구현**
+
+#### **EfficiencyFrontierRegression 클래스**
+```python
+# modules/regression/efficiency_frontier.py
+class EfficiencyFrontierRegression:
+    def __init__(self, features: List[str], alpha: float = 1.0):
+        self.features = features
+        self.alpha = alpha  # Ridge regularization
+        self.efficient_plans = None
+        self.coefficients = None
+        self.efficiency_ratio = None
+        
+    def extract_pareto_frontier(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Pareto 최적 요금제 추출"""
+        
+    def solve_efficiency_frontier_coefficients(self, df: pd.DataFrame) -> np.ndarray:
+        """효율적 요금제만으로 회귀 계수 도출"""
+        
+    def get_coefficient_breakdown(self) -> Dict:
+        """계수 분석 결과 반환"""
+```
+
+#### **시스템 통합**
+- **FullDatasetMultiFeatureRegression**: `use_efficiency_frontier=True` 옵션
+- **기본 method**: `fixed_rates` (Efficiency Frontier 기본 활성화)
+- **Fallback 시스템**: 최적화 실패 시 전통적 Ridge 회귀로 대체
+
+---
+
+## 🚀 **API 엔드포인트**
+
+### **1. 메인 데이터 처리**
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+POST /process
+Content-Type: application/json
 
-# Run development server
-uvicorn app:app --reload --host 0.0.0.0 --port 7860
-
-# Monitor logs (if script available)
-chmod +x simple_log_monitor.sh
-./simple_log_monitor.sh &
+{
+    "options": {
+        "method": "fixed_rates",        # 기본: Efficiency Frontier
+        "featureSet": "basic",
+        "feeColumn": "fee"
+    },
+    "data": [...]  # 요금제 JSON 배열
+}
 ```
 
-## API Usage
-
-### Processing Mobile Plan Data
-
-Send POST request to `/process` with plan data:
-
-```json
-[
-  {
-    "id": 1,
-    "plan_name": "Example Plan",
-    "network": "5G",
-    "mvno": "Example Provider",
-    "mno": "SKT",
-    "basic_data": 5,
-    "daily_data": 0,
-    "data_exhaustion": "1Mbps",
-    "voice": 300,
-    "message": 100,
-    "additional_call": 0,
-    "data_sharing": false,
-    "roaming_support": true,
-    "micro_payment": false,
-    "is_esim": true,
-    "signup_minor": false,
-    "signup_foreigner": false,
-    "has_usim": true,
-    "has_nfc_usim": false,
-    "tethering_gb": 2,
-    "tethering_status": "included",
-    "esim_fee": 0,
-    "usim_delivery_fee": 3000,
-    "fee": 29000,
-    "original_fee": 35000,
-    "discount_fee": 6000,
-    "discount_period": 12,
-    "post_discount_fee": 35000,
-    "agreement": true,
-    "agreement_period": 24,
-    "agreement_type": "standard",
-    "num_of_signup": 1,
-    "mvno_rating": 4.2,
-    "monthly_review_score": 3.8,
-    "discount_percentage": 17.1
-  }
-]
+### **2. HTML 리포트 조회**
+```bash
+GET /
 ```
 
-### Response Structure
+### **3. 차트 상태 모니터링**
+```bash
+GET /chart-status           # 전체 차트 상태
+GET /chart-data/{type}      # 특정 차트 데이터
+```
 
-The API returns:
-- **Immediate JSON response** with ranked plans and CS ratios
-- **Background chart generation** with real-time status updates
-- **File-based storage** for persistent data sharing
+### **4. 성능 모니터링**
+```bash
+GET /performance            # 성능 통계
+GET /status                 # 시스템 상태
+```
 
+---
+
+## 📊 **데이터 모델**
+
+### **1. 요금제 데이터 구조**
 ```json
 {
-  "request_id": "uuid-string",
-  "processing_time": 0.45,
-  "method": "fixed_rates",
-  "fee_type": "original_fee",
-  "paths": {
-    "raw_data": "/app/data/raw/data_20241219_164523.json",
-    "processed_data": "/app/data/processed/processed_20241219_164523.json",
-    "report": "/app/reports/report_20241219_164523.html"
-  },
-  "top_plans": [...],
-  "all_ranked_plans": [...]
+    "id": 12345,
+    "plan_name": "알뜰폰 데이터 15GB",
+    "mvno": "알뜰모바일",
+    "basic_data": 15.0,
+    "voice": 300,
+    "message": 100,
+    "fee": 25000,
+    "original_fee": 25000
 }
 ```
 
-## Mathematical Foundation & Algorithm Design
-
-### Core Mathematical Principles
-
-The system implements advanced mathematical modeling for mobile plan value assessment based on established economic and statistical principles.
-
-#### 1. Marginal Cost Theory
-
-**Economic Foundation**:
-- **Frontier Purpose**: Trend learning by selecting minimum cost at each feature level, removing overpriced plans
-- **Piecewise Beta Coefficients**: Reflects economies of scale (cost per 1GB ≠ cost per 100th GB)
-- **No Interaction Effects**: Maintains interpretability and prevents model complexity
-- **1 KRW/Feature Rule**: Ensures monotonicity in cost-feature relationships
-
-**Mathematical Formulation**:
-```
-Marginal_Cost(feature_level) = {
-  β₁, if 0 ≤ feature_level < threshold₁
-  β₂, if threshold₁ ≤ feature_level < threshold₂
-  β₃, if feature_level ≥ threshold₂
+### **2. CS 비율 계산 결과**
+```json
+{
+    "B": 18213.23,                    # 베이스라인 비용
+    "CS": 0.7285,                     # Cost-Spec 비율
+    "rank": 1,                        # 순위
+    "efficiency_ratio": 0.105         # 효율성 비율
 }
 ```
 
-Where thresholds are determined by gradient change points in the cost curve.
-
-#### 2. Feature Frontier Analysis
-
-**Monotonic Frontier Construction**:
-For each feature f, construct frontier F_f where:
-```
-F_f = {(x, min_cost(x)) | x ∈ feature_values, cost(x) is monotonically increasing}
-```
-
-**Cross-Contamination Problem**:
-- **Issue**: Frontier point prices contain value from multiple features
-- **Solution**: Multi-feature simultaneous regression on entire dataset
-- **Improvement**: Pure independent feature value estimation
-
-#### 3. FullDatasetMultiFeatureRegression Algorithm
-
-**Regression Formulation**:
-```
-Price = β₀ + Σᵢ βᵢ × featureᵢ + ε
-
-Where:
-- β₀: Base cost (intercept)
-- βᵢ: Marginal cost coefficient for feature i
-- featureᵢ: Normalized feature value
-- ε: Error term
-```
-
-**Constraint Optimization**:
-```
-minimize: ||Xβ - y||² + α||β||²
-subject to: βᵢ ≥ 0 for economic features
-           βⱼ ∈ ℝ for unlimited flags
-```
-
-**Multicollinearity Handling**:
-When correlation(fᵢ, fⱼ) > 0.8:
-```
-β'ᵢ = β'ⱼ = (βᵢ + βⱼ) / 2
-```
-
-#### 4. Cost-Spec Ratio Calculation
-
-**Fixed Rates Method**:
-```
-Baseline_Cost = β₀ + Σᵢ βᵢ × feature_valueᵢ
-
-CS_Ratio = Baseline_Cost / Actual_Fee
-
-Value_Score = {
-  "Excellent": CS_Ratio > 1.2
-  "Good": 1.0 < CS_Ratio ≤ 1.2
-  "Fair": 0.8 < CS_Ratio ≤ 1.0
-  "Poor": CS_Ratio ≤ 0.8
+### **3. 회귀 계수 구조**
+```json
+{
+    "method": "efficiency_frontier",
+    "base_cost": 5144.0,
+    "feature_costs": {
+        "basic_data_clean": {
+            "coefficient": 114.38,
+            "cost_per_unit": 114.38
+        },
+        "voice_clean": {
+            "coefficient": 0.90,
+            "cost_per_unit": 0.90
+        }
+    }
 }
 ```
 
-#### 5. Unlimited Feature Modeling
+---
 
-**Boolean Flag Approach**:
-```
-Unlimited_Value = {
-  βᵢ × multiplier, if unlimited_flagᵢ = 1
-  0, if unlimited_flagᵢ = 0
-}
+## ⚙️ **설치 및 실행**
 
-Continuous_Value = {
-  βᵢ × actual_value, if unlimited_flagᵢ = 0
-  0, if unlimited_flagᵢ = 1  # Prevent double counting
-}
-```
+### **1. 환경 요구사항**
+- **Python 3.9+**
+- **FastAPI**
+- **Pandas, NumPy, SciPy**
+- **Plotly** (차트 생성)
 
-**Unlimited Type Classification**:
-```
-Unlimited_Type = {
-  3: unlimited_speed (data AND speed unlimited)
-  2: throttled_unlimited (quota → throttled)
-  1: unlimited_with_throttling (always throttled)
-  0: limited (service stops after quota)
-}
-```
-
-### Advanced Implementation Details
-
-#### 1. Categorical Feature Processing
-
-**CategoricalFeatureHandler** (`categorical_handlers.py`):
-- **Dummy Variable Encoding**: One-hot encoding for categorical features
-- **Effect Coding**: Sum-to-zero constraints for balanced coefficients
-- **Cost-Based Encoding**: Premium calculation using actual cost differences
-- **Mixed Modeling**: Unlimited as very high continuous values
-
-#### 2. Piecewise Linear Regression
-
-**PiecewiseLinearRegression** (`piecewise_regression.py`):
-- **Automatic Breakpoint Detection**: Gradient analysis for change points
-- **Segment-Based Coefficients**: Different marginal costs per feature range
-- **Economies of Scale**: Decreasing marginal costs at higher usage levels
-
-#### 3. Korean Tie Ranking System
-
-**Ranking Algorithm** (`ranking.py`):
-```python
-def calculate_rankings_with_ties(df, value_column='CS'):
-    """
-    Korean tie notation: '공동 X위' (joint X rank)
-    Proper rank incrementing after tied groups
-    """
-    # Group by rounded CS ratio values
-    value_groups = df.groupby(df[value_column].round(10)).indices
-    
-    # Assign ranks with tie handling
-    for value, indices in sorted(value_groups.items(), reverse=True):
-        if len(indices) > 1:  # Tied plans
-            for idx in indices:
-                display_ranks[idx] = f"공동 {current_rank}위"
-        else:  # Single plan
-            display_ranks[indices[0]] = f"{current_rank}위"
-        
-        current_rank += len(indices)  # Skip positions for ties
-```
-
-#### 4. File-Based Multiprocessing Architecture
-
-**Data Storage System** (`data_storage.py`):
-```python
-# Storage configuration
-STORAGE_DIR = Path("/app/data/shared")
-FILES = {
-    'rankings': "rankings.json",
-    'cost_structure': "cost_structure.json", 
-    'metadata': "metadata.json",
-    'charts': "charts.json"
-}
-
-# Save/load operations with error handling
-def save_rankings_data(df, cost_structure, method, charts_data):
-    """Serialize DataFrame and metadata to JSON files"""
-    
-def load_rankings_data():
-    """Load DataFrame and metadata from JSON files"""
-    return df_with_rankings, cost_structure, method, charts_data
-```
-
-#### 6. Piecewise Linear Modeling
-
-**Cumulative Cost Calculation**:
-```
-Cumulative_Cost(x) = Σᵢ₌₁ⁿ βᵢ × segment_widthᵢ
-
-Where:
-segment_widthᵢ = min(x, threshold_{i+1}) - threshold_i
-```
-
-**Change Point Detection**:
-Uses gradient analysis to identify natural breakpoints:
-```
-Change_Point = argmax |∇Cost(x)|
-```
-
-#### 7. Statistical Validation Framework
-
-**Multicollinearity Detection**:
-```
-VIF_i = 1 / (1 - R²_i)
-
-Where R²_i is from regression of feature_i on all other features
-```
-
-**Ridge Regression Activation**:
-```
-Regularization = {
-  Ridge(α=10.0), if max(correlation_matrix) > 0.8
-  LinearRegression(), otherwise
-}
-```
-
-**Outlier Detection**:
-```
-Z_Score = |x - μ| / σ
-Outlier = Z_Score > 3.0
-```
-
-### Advanced Features
-
-#### 1. Coefficient Transparency
-
-**Mathematical Steps Display**:
-```
-Raw_OLS → Constraint_Application → Multicollinearity_Redistribution
-β_raw → β_constrained → β_final
-
-Example: "(70.2 + 49.8) / 2 = 60.0" for correlated features
-```
-
-#### 2. Economic Bounds
-
-**Feature-Specific Constraints**:
-```
-Data_Features: β ≥ 0 (positive marginal cost)
-Unlimited_Flags: β ∈ [-∞, +∞] (can represent discounts)
-Network_Features: β ≥ 0 (premium for better service)
-```
-
-#### 3. Ranking Algorithm
-
-**Tie-Aware Ranking**:
-```
-Rank(plan_i) = |{plan_j : CS_Ratio_j > CS_Ratio_i}| + 1
-
-For ties: Rank_Display = "공동 " + min(tied_ranks) + "위"
-```
-
-## Advanced Ranking Algorithm
-
-### Cost-Spec Ratio Method (Enhanced)
-
-The system uses a sophisticated **Fixed Rates** methodology:
-
-#### 1. Feature Engineering Pipeline
-
-**Data Preprocessing** (`prepare_features()`):
-- **Network Analysis**: 5G support detection and binary encoding
-- **Data Throttling**: Speed extraction from `data_exhaustion` fields
-- **Unlimited Classification**: Multi-tier unlimited data categorization
-- **Voice/Message Processing**: Unlimited flag creation and value cleaning
-- **Price Feature Engineering**: Per-GB pricing and discount ratio calculation
-
-**Unlimited Data Classification**:
-- `unlimited_speed` (3): Unlimited data AND speed
-- `throttled_unlimited` (2): Full speed until quota, then throttled  
-- `unlimited_with_throttling` (1): Always throttled despite unlimited data
-- `limited` (0): Service stops after quota
-
-#### 2. Coefficient Calculation
-
-**FullDatasetMultiFeatureRegression**:
-- **Comprehensive Analysis**: Uses entire dataset (2000+ plans) instead of frontier points
-- **Multicollinearity Handling**: Automatic Ridge regression when correlations > 0.8
-- **Constraint Optimization**: Economic bounds with positive coefficient enforcement
-- **Outlier Removal**: Z-score based outlier detection (threshold: 3.0)
-
-**Feature Set** (16 features):
-```
-['basic_data_clean', 'basic_data_unlimited', 'daily_data_clean', 'daily_data_unlimited',
- 'voice_clean', 'voice_unlimited', 'message_clean', 'message_unlimited', 
- 'additional_call', 'is_5g', 'tethering_gb', 'speed_when_exhausted',
- 'data_throttled_after_quota', 'data_unlimited_speed', 'has_unlimited_speed']
-```
-
-#### 3. CS Ratio Calculation
-
-**Fixed Rates Method**:
-```
-baseline_cost = β₀ + β₁×data + β₂×voice + β₃×SMS + β₄×tethering + β₅×5G + ...
-cs_ratio = baseline_cost / actual_fee
-```
-
-Where β coefficients represent pure marginal costs from regression analysis.
-
-#### 4. Ranking System
-
-**Tie-Aware Ranking**:
-- Plans ranked by CS ratio (descending)
-- Korean tie notation: '공동 X위' (joint X rank)
-- Proper rank incrementing after tied groups
-- Value ratio calculation for comparative analysis
-
-### File-Based Architecture
-
-**Multiprocessing Compatibility**:
-- **Storage Location**: `/app/data/shared/` directory
-- **Data Files**: `rankings.json`, `cost_structure.json`, `metadata.json`
-- **Process Flow**: `/process` saves → `/` loads → Background charts update
-- **Serialization**: pandas DataFrame → JSON with metadata preservation
-
-### Chart Generation System
-
-**Available Chart Types**:
-1. **Feature Frontier Charts**: Market-based cost trends by feature
-2. **Plan Efficiency Charts**: Value ratio distribution and rankings
-
-**Async Processing**:
-- **Immediate API Response**: Rankings available instantly
-- **Background Calculation**: Charts computed asynchronously  
-- **Status Tracking**: Real-time progress indicators with individual chart monitoring
-- **Manual Refresh**: No auto-polling, user-controlled updates
-
-**Chart Data Processing**:
-```python
-# Synchronous chart calculation for file storage
-charts_data = calculate_and_save_charts(df_ranked, method, cost_structure)
-
-# Chart status tracking
-chart_statuses = {
-    'feature_frontier': {'status': 'calculating', 'progress': 45},
-    'plan_efficiency': {'status': 'completed', 'timestamp': '2025-01-19T...'}
-}
-```
-
-### HTML Report Features
-
-**Interactive Interface**:
-- **Ranking Table**: Complete plan rankings with CS ratios and value metrics
-- **Coefficient Table**: Feature marginal costs with unconstrained vs constrained comparison
-- **Chart Visualization**: Interactive charts with hover tooltips and zoom
-- **Status Indicators**: Loading (⚙️) and error (❌) states for chart sections
-- **Refresh Controls**: Manual page refresh button (🔄 새로고침)
-
-**Technical Implementation**:
-- **No Caching**: Fresh content generation on each request
-- **Error Resilience**: Graceful degradation when files unavailable
-- **Mobile Responsive**: Adaptive design for different screen sizes
-- **Korean Localization**: Korean text and formatting throughout interface
-
-**Report Generation** (`report_html.py`):
-```python
-# Main report generation with chart status integration
-generate_html_report(df, timestamp, report_title, is_cs=True, 
-                    method=method, cost_structure=cost_structure,
-                    chart_statuses=chart_statuses, charts_data=charts_data)
-
-# Feature coefficient table with transparency
-generate_feature_rates_table_html(cost_structure)
-
-# Plan efficiency data for visualizations  
-prepare_plan_efficiency_data(df, method)
-```
-
-## System Architecture
-
-### Multiprocessing Design
-- **File-Based Storage**: Eliminates global variable sharing issues
-- **Process Isolation**: Each FastAPI worker operates independently
-- **Data Persistence**: Reliable inter-process communication via filesystem
-- **Error Recovery**: Graceful handling of missing or corrupted data files
-
-### Performance Optimizations
-- **Async Background Tasks**: Chart calculations don't block API responses
-- **Efficient Serialization**: Optimized JSON handling with numpy type conversion via `NumpyEncoder`
-- **Memory Management**: Garbage collection and resource cleanup
-- **Log Monitoring**: Automated log management with HF Space polling filter
-
-### Development Environment
-- **Docker Container**: Python 3.11 with optimized dependency installation
-- **Dev Mode Support**: Hugging Face Spaces development mode compatibility
-- **Log Monitoring**: Background log monitoring with SSH polling filtration
-- **Debug Endpoints**: Comprehensive debugging tools for development
-
-## Testing
-
-### End-to-End Testing
+### **2. 로컬 실행**
 ```bash
-# Test with latest raw data file
-curl -X POST http://localhost:7860/process \
-  -H "Content-Type: application/json" \
-  -d @$(ls -t data/raw/*.json | head -1)
+# 의존성 설치
+pip install -r requirements.txt
 
-# Check processing status
-curl http://localhost:7860/chart-status
+# 서버 실행
+uvicorn app:app --host 0.0.0.0 --port 7860
 
-# View results
-open http://localhost:7860/
+# 브라우저에서 접속
+# http://localhost:7860
 ```
 
-### Log Monitoring
+### **3. Docker 실행**
 ```bash
-# Monitor filtered logs (recommended)
-./simple_log_monitor.sh &
+docker-compose up -d
+```
+
+---
+
+## 📈 **성능 지표**
+
+### **🎯 Efficiency Frontier 결과 (2025-06-25)**
+- **처리 시간**: ~191초 (2,325개 요금제)
+- **효율성 비율**: 10.5% (243개 효율적 요금제)
+- **계수 개선**: Basic Data 93% 개선
+- **메모리 사용량**: 최적화됨
+
+### **📊 주요 계수**
+| 피처 | 계수 값 | 단위 |
+|------|---------|------|
+| Base Cost | ₩5,144 | 기본 비용 |
+| Basic Data | ₩114.38 | /GB |
+| Voice | ₩0.90 | /분 |
+| Message | ₩2.64 | /건 |
+| 5G Premium | ₩8,499 | 고정 |
+
+---
+
+## 🔬 **기술적 특징**
+
+### **1. Efficiency Frontier 알고리즘**
+- **Pareto 도미넌스 체크**: 다차원 효율성 분석
+- **Ridge 정규화**: 과적합 방지
+- **제약 조건**: 경제적 타당성 보장
+
+### **2. 캐싱 및 최적화**
+- **DataFrame 연산 캐싱**: 중복 계산 방지
+- **메모리 모니터링**: 대용량 데이터 처리
+- **가비지 컬렉션**: 메모리 효율성
+
+### **3. 확장성**
+- **모듈화된 아키텍처**: 각 기능별 독립 모듈
+- **플러그인 가능한 회귀 방법**: 새로운 알고리즘 추가 용이
+- **비동기 차트 생성**: 백그라운드 처리
+
+---
+
+## 🐛 **문제 해결**
+
+### **1. 공통 이슈**
+- **계수 테이블 미표시**: HTML 템플릿 및 cost_structure 전달 확인
+- **메모리 부족**: 대용량 데이터 처리 시 배치 크기 조정
+- **차트 로딩 실패**: 백그라운드 계산 완료 대기
+
+### **2. 로그 모니터링**
+```bash
+# 실시간 로그 확인
 tail -f error.log
 
-# Monitor raw server logs (debugging)
-PID=$(ps aux | grep "python.*uvicorn" | grep -v grep | awk '{print $2}' | head -1)
-cat /proc/$PID/fd/1
+# 회귀 관련 로그 필터링
+grep -i "efficiency\|regression\|coefficient" error.log
 ```
 
-## Troubleshooting
+---
 
-### Common Issues
+## 📞 **문의 및 지원**
 
-**Chart Status "Calculating"**:
-- Charts compute asynchronously after API response
-- Use manual refresh button to check progress
-- Check `/chart-status` endpoint for detailed status
+### **🔗 주요 링크**
+- **API 문서**: `/docs` (FastAPI 자동 생성)
+- **상태 페이지**: `/status`
+- **성능 모니터링**: `/performance`
 
-**Empty Ranking Table**:
-- Verify `/process` endpoint was called successfully
-- Check file permissions in `/app/data/shared/` directory
-- Use `/debug-global` endpoint to inspect storage state
+### **📧 개발팀 연락처**
+- **이슈 리포팅**: GitHub Issues
+- **기능 제안**: Feature Requests
+- **기술 문의**: Technical Support
 
-**Memory Issues**:
-- Monitor with `psutil` integration
-- Check for outlier data causing processing issues
-- Verify garbage collection effectiveness
+---
 
-### Performance Monitoring
-
-**Key Metrics**:
-- API response time < 500ms (excluding charts)
-- Chart generation < 30 seconds
-- Memory usage < 2GB for typical datasets
-- Error rate < 1% for valid input
-
-**Health Checks**:
-- `/status` endpoint for system overview
-- `/chart-status` for background task monitoring
-- Log analysis for error patterns and performance issues
-
-## Contributing
-
-### Development Workflow
-1. **Local Setup**: Clone repository and install dependencies
-2. **Feature Development**: Use provided debug endpoints for testing
-3. **End-to-End Testing**: Test with actual mobile plan data
-4. **Documentation**: Update this README with any architectural changes
-
-### Code Organization
-- **Modular Design**: Each module has specific responsibility
-- **Type Hints**: Comprehensive typing throughout codebase
-- **Error Handling**: Graceful degradation and informative logging
-- **Performance**: Async operations and efficient data structures
-
-### Key Modules Overview
-
-**Core Analysis** (`cost_spec.py`):
-- `LinearDecomposition`: Constrained optimization approach
-- `MultiFeatureFrontierRegression`: Frontier-based analysis
-- `FullDatasetMultiFeatureRegression`: Comprehensive dataset regression
-
-**Data Processing** (`preprocess.py`):
-- Feature engineering pipeline with unlimited flag handling
-- Data type conversion and validation
-- Missing value imputation and outlier detection
-
-**Visualization** (`report_charts.py`, `report_html.py`):
-- Interactive chart generation with Chart.js integration
-- HTML report templates with Korean localization
-- Async chart calculation with status tracking
-
-**Utilities**:
-- `ranking.py`: Korean tie notation ranking algorithm
-- `data_storage.py`: File-based multiprocessing data sharing
-- `categorical_handlers.py`: Advanced categorical feature processing
-- `piecewise_regression.py`: Piecewise linear modeling capabilities
-
-This system provides a production-ready solution for mobile plan ranking with advanced mathematical modeling, robust multiprocessing architecture, and comprehensive user interface capabilities.
+*마지막 업데이트: 2025-06-25 (Efficiency Frontier 구현)*

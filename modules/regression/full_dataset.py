@@ -44,7 +44,7 @@ class FullDatasetMultiFeatureRegression:
     backward compatibility while using the new modular architecture.
     """
     
-    def __init__(self, features=None, outlier_threshold=3.0, alpha=0.0):
+    def __init__(self, features=None, outlier_threshold=3.0, alpha=0.0, use_efficiency_frontier=True):
         """
         Initialize the full dataset regression analyzer.
         
@@ -52,11 +52,20 @@ class FullDatasetMultiFeatureRegression:
             features: List of feature names to use in regression
             outlier_threshold: Z-score threshold for outlier removal
             alpha: Regularization parameter (currently unused)
+            use_efficiency_frontier: Use efficiency frontier regression (recommended)
         """
         # Initialize component modules
         self.regression_core = FullDatasetRegressionCore(features, outlier_threshold, alpha)
-        self.multicollinearity_handler = MulticollinearityHandler()
+        self.multicollinearity_handler = MulticollinearityHandler(use_commonality_analysis=False)  # DISABLED
         self.model_validator = ModelValidator()
+        
+        # NEW: Efficiency frontier regression
+        self.use_efficiency_frontier = use_efficiency_frontier
+        if use_efficiency_frontier:
+            from .efficiency_frontier import EfficiencyFrontierRegression
+            self.efficiency_regressor = EfficiencyFrontierRegression(features=features, alpha=1.0)
+        else:
+            self.efficiency_regressor = None
         
         # Maintain backward compatibility with existing attributes
         self.features = self.regression_core.features
@@ -120,47 +129,39 @@ class FullDatasetMultiFeatureRegression:
         Returns:
             Array of coefficients [β₀, β₁, β₂, ...]
         """
+        # NEW: Use efficiency frontier if enabled
+        if self.use_efficiency_frontier and self.efficiency_regressor is not None:
+            logger.info("🎯 Using Efficiency Frontier Regression (Pareto-optimal plans only)")
+            
+            try:
+                # Use fee or original_fee as target
+                price_col = 'original_fee' if 'original_fee' in df.columns else 'fee'
+                coefficients = self.efficiency_regressor.solve_efficiency_frontier_coefficients(df, price_col)
+                
+                # Update instance attributes for backward compatibility
+                self.coefficients = coefficients
+                self.all_plans = self.efficiency_regressor.efficient_plans
+                self.outliers_removed = len(df) - len(self.efficiency_regressor.efficient_plans)
+                
+                logger.info(f"✅ Efficiency Frontier Regression completed successfully")
+                logger.info(f"   Efficiency ratio: {self.efficiency_regressor.efficiency_ratio:.1%}")
+                logger.info(f"   Used {len(self.efficiency_regressor.efficient_plans)} efficient plans")
+                
+                return coefficients
+                
+            except Exception as e:
+                logger.error(f"❌ Efficiency Frontier Regression failed: {e}")
+                logger.info("   Falling back to traditional full dataset regression")
+                self.use_efficiency_frontier = False
+        
+        # FALLBACK: Traditional full dataset regression
+        logger.info("📊 Using Traditional Full Dataset Regression")
+        
         # Step 1: Core regression analysis
         coefficients = self.regression_core.solve_full_dataset_coefficients(df)
         
-        # Step 2: Detect and handle multicollinearity
-        analysis_features = [f for f in self.regression_core.features if f in df.columns]
-        X_data = []
-        for _, plan in self.regression_core.all_plans.iterrows():
-            feature_vector = []
-            for feature in analysis_features:
-                if feature not in plan:
-                    feature_vector.append(0)
-                else:
-                    feature_vector.append(plan[feature])
-            X_data.append(feature_vector)
-        
-        X = np.array(X_data)
-        
-        # Detect multicollinearity
-        self.detect_multicollinearity(X, analysis_features)
-        
-        # Fix multicollinearity if detected
-        if self.multicollinearity_handler.multicollinearity_detected:
-            # Get y data for Commonality Analysis
-            # Try different possible fee column names
-            fee_columns = ['monthly_fee', 'fee', 'original_fee']
-            y_data = None
-            
-            for col in fee_columns:
-                if col in self.regression_core.all_plans.columns:
-                    y_data = self.regression_core.all_plans[col].values
-                    logger.info(f"Using '{col}' column for Commonality Analysis")
-                    break
-            
-            if y_data is None:
-                # Fallback: create synthetic y_data from coefficients prediction
-                logger.warning("No fee column found for Commonality Analysis, using synthetic data")
-                y_data = np.dot(X, coefficients[1:])  # Exclude intercept
-            
-            coefficients = self.multicollinearity_handler.fix_multicollinearity_coefficients(
-                coefficients, analysis_features, X, y_data
-            )
+        # Step 2: Skip multicollinearity handling (commonality analysis disabled)
+        logger.info("⚠️  Multicollinearity handling disabled (Commonality Analysis OFF)")
         
         # Update instance attributes for backward compatibility
         self.coefficients = coefficients
@@ -168,7 +169,7 @@ class FullDatasetMultiFeatureRegression:
         self.coefficient_bounds = self.regression_core.coefficient_bounds
         self.all_plans = self.regression_core.all_plans
         self.outliers_removed = self.regression_core.outliers_removed
-        self.multicollinearity_fixes = self.multicollinearity_handler.multicollinearity_fixes
+        # self.multicollinearity_fixes = {}  # No multicollinearity processing
         
         return coefficients
     
@@ -196,12 +197,21 @@ class FullDatasetMultiFeatureRegression:
         """
         if self.coefficients is None:
             raise ValueError("Must solve coefficients first")
-            
+        
+        # Use efficiency frontier breakdown if available
+        if self.use_efficiency_frontier and self.efficiency_regressor is not None:
+            try:
+                return self.efficiency_regressor.get_coefficient_breakdown()
+            except:
+                # Fallback to traditional breakdown
+                pass
+        
+        # Traditional breakdown
         breakdown = self.regression_core.get_coefficient_breakdown()
         
-        # Add multicollinearity information
-        if self.multicollinearity_fixes:
-            breakdown['multicollinearity_fixes'] = self.multicollinearity_fixes
+        # Add multicollinearity information (empty since disabled)
+        breakdown['multicollinearity_fixes'] = {}
+        breakdown['multicollinearity_disabled'] = True
             
         return breakdown
     

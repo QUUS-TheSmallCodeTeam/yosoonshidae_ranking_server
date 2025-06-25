@@ -206,7 +206,8 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
     
     elif method == 'fixed_rates':
         # Use fixed marginal rates from pure coefficients for entire dataset
-        logger.info("Starting fixed rates method using pure coefficients")
+        # NOW USES EFFICIENCY FRONTIER BY DEFAULT
+        logger.info("Starting fixed rates method using Efficiency Frontier Regression")
         df_result = df.copy()
         
         # Get ALL features for this feature set (including unlimited flags)
@@ -219,7 +220,7 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
                     all_features.append(unlimited_flag)
         else:
             raise ValueError(f"Unknown feature set: {feature_set}")
-        
+
         # Only use features that actually exist in the dataframe
         analysis_features = [f for f in all_features if f in df.columns]
         analysis_features = method_kwargs.get('features', analysis_features)
@@ -227,23 +228,29 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
         logger.info(f"Fixed rates analysis features: {analysis_features}")
         
         try:
-            # Use FullDatasetMultiFeatureRegression to get pure coefficients
-            regressor = FullDatasetMultiFeatureRegression(features=analysis_features)
+            # Use FullDatasetMultiFeatureRegression with Efficiency Frontier enabled
+            regressor = FullDatasetMultiFeatureRegression(
+                features=analysis_features, 
+                use_efficiency_frontier=True  # ENABLE EFFICIENCY FRONTIER
+            )
             
-            # Solve for pure marginal costs using entire dataset (no filtering)
+            # Solve for pure marginal costs using efficiency frontier (efficient plans only)
             coefficients = regressor.solve_full_dataset_coefficients(df)
-            logger.info(f"Successfully solved fixed rate coefficients: {coefficients}")
+            logger.info(f"Successfully solved efficiency frontier coefficients: {coefficients}")
             
-            # Calculate baselines using pure coefficients for ALL plans (no base cost)
-            baselines = np.zeros(len(df))  # Start from 0 (no base cost)
+            # Calculate baselines using pure coefficients for ALL plans
+            baselines = np.full(len(df), coefficients[0])  # Start with intercept
             
             for i, feature in enumerate(analysis_features):
-                if feature in df.columns:
+                if feature in df.columns and i + 1 < len(coefficients):
                     # Use the actual feature values (continuous features already zeroed out for unlimited plans, 
                     # unlimited flags have their own coefficients)
                     baselines += coefficients[i+1] * df[feature].values
                 else:
-                    logger.warning(f"Feature {feature} not found in data, treating as 0")
+                    if feature in df.columns:
+                        logger.warning(f"Feature {feature} index out of range in coefficients")
+                    else:
+                        logger.warning(f"Feature {feature} not found in data, treating as 0")
             
             # Add results to dataframe
             df_result['B_fixed_rates'] = baselines
@@ -258,13 +265,19 @@ def calculate_cs_ratio_enhanced(df: pd.DataFrame, method: str = 'frontier',
             df_result.attrs['fixed_rates_breakdown'] = coefficient_breakdown
             df_result.attrs['cost_structure'] = coefficient_breakdown  # For compatibility
             
-            logger.info(f"Created fixed rates breakdown: {coefficient_breakdown}")
-            logger.info(f"Processed {len(df_result)} plans using fixed marginal rates")
+            logger.info(f"Created efficiency frontier breakdown: {coefficient_breakdown}")
+            logger.info(f"Processed {len(df_result)} plans using efficiency frontier regression")
+            
+            # Log efficiency statistics
+            if hasattr(regressor, 'efficiency_regressor') and regressor.efficiency_regressor:
+                efficiency_ratio = regressor.efficiency_regressor.efficiency_ratio
+                efficient_count = len(regressor.efficiency_regressor.efficient_plans) if regressor.efficiency_regressor.efficient_plans is not None else 0
+                logger.info(f"Efficiency statistics: {efficient_count} efficient plans ({efficiency_ratio:.1%})")
             
             return df_result
             
         except Exception as e:
-            logger.error(f"Fixed rates method failed: {str(e)}")
+            logger.error(f"Fixed rates method (efficiency frontier) failed: {str(e)}")
             logger.error(f"Error type: {type(e).__name__}")
             # Fallback to frontier method
             logger.info("Falling back to frontier method")
