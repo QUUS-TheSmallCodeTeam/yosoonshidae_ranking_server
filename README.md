@@ -1,3 +1,13 @@
+---
+title: Mvno Plan Ranking Model
+emoji: 🌖
+colorFrom: indigo
+colorTo: blue
+sdk: docker
+pinned: false
+---
+
+
 # 🚀 **MVNO 요금제 순위 시스템** 
 ## **💡 한국 MVNO 요금제 효율성 분석 및 순위화 플랫폼**
 
