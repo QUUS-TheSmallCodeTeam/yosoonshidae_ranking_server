@@ -100,8 +100,8 @@ def generate_feature_rates_table_html(cost_structure):
     # Feature display information
     feature_display_info = {
         'basic_data_clean': {'name': '데이터 (Data)', 'unit': '₩/GB'},
-        'voice_clean': {'name': '음성통화 (Voice)', 'unit': '₩/100분'},
-        'message_clean': {'name': 'SMS 문자', 'unit': '₩/100건'},
+        'voice_clean': {'name': '음성통화 (Voice)', 'unit': '₩/분'},
+        'message_clean': {'name': 'SMS 문자', 'unit': '₩/건'},
         'tethering_gb': {'name': '테더링 (Tethering)', 'unit': '₩/GB'},
         'is_5g': {'name': '5G 기술료', 'unit': '₩/요금제'},
         'additional_call': {'name': '추가 통화', 'unit': '₩/unit'},

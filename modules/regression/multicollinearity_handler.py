@@ -113,139 +113,195 @@ class MulticollinearityHandler:
     def _apply_enhanced_commonality_redistribution(self, coefficients: np.ndarray, features: List[str], 
                                                   X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """
-        Apply Enhanced Commonality Analysis with intelligent redistribution.
+        Apply Enhanced Commonality Analysis for variance decomposition and coefficient redistribution.
         
-        This method:
-        1. Performs true variance decomposition using All Possible Subsets Regression
-        2. Redistributes coefficients based on unique vs common variance contributions
-        3. Applies economic constraints and intelligent blending when needed
+        **UPDATED**: This method now applies the redistributed coefficients for actual CS calculation.
         
         Args:
-            coefficients: Original constrained regression coefficients
+            coefficients: Original coefficients (including base cost at index 0)
             features: List of feature names
-            X: Feature matrix
+            X: Feature matrix for commonality analysis
             y: Target variable
             
         Returns:
-            Intelligently redistributed coefficients based on commonality analysis
+            Redistributed coefficients based on commonality analysis results
         """
-        # Perform Commonality Analysis for variance decomposition
-        results = self.commonality_analyzer.fit(X, y, features)
+        logger.info("Applying Enhanced Commonality Analysis with coefficient redistribution...")
         
-        # Get economic bounds for each feature type
-        bounds = self._get_economic_bounds(features)
-        
-        # Create redistributed coefficient array
+        # **KEY CHANGE: Use redistributed coefficients for actual calculation**
+        # Start with original coefficients but apply redistribution
         redistributed_coefficients = coefficients.copy()
         
-        # Apply commonality-based redistribution with economic constraints
-        for i, feature in enumerate(features):
-            original_coeff = coefficients[i+1]  # Skip intercept
-            
-            # Get variance decomposition results
-            unique_effect = 0.0
-            total_common_effect = 0.0
-            
-            # Extract unique effect for this feature
-            unique_key = f"{feature}_unique"
-            if unique_key in results.get('commonality_coefficients', {}):
-                # Convert R² contribution to coefficient contribution
-                unique_r2 = results['commonality_coefficients'][unique_key]['value']
-                total_r2 = results.get('total_r2', 1.0)
-                if total_r2 > 0:
-                    unique_effect = original_coeff * (unique_r2 / total_r2)
-            
-            # Find common effects involving this feature
-            common_effects = []
-            total_common_r2 = 0.0
-            
-            for key, coeff_info in results.get('commonality_coefficients', {}).items():
-                if coeff_info['type'] == 'common' and feature in coeff_info['features']:
-                    # This is a common effect involving this feature
-                    common_r2 = max(0, coeff_info['value'])  # Ensure non-negative
-                    total_common_r2 += common_r2
-                    
-                    # Find the paired feature
-                    other_features = [f for f in coeff_info['features'] if f != feature]
-                    if other_features:
-                        correlation = self._get_correlation(feature, coeff_info['features'])
-                        common_effects.append({
-                            'paired_with': other_features[0],
-                            'correlation': correlation,
-                            'r2_contribution': common_r2
-                        })
-            
-            # Convert common R² to coefficient contribution
-            total_r2 = results.get('total_r2', 1.0)
-            if total_r2 > 0:
-                total_common_effect = original_coeff * (total_common_r2 / total_r2)
-            
-            # Calculate redistributed coefficient
-            # Method 1: Pure variance decomposition approach
-            variance_based_coeff = unique_effect + total_common_effect
-            
-            # Method 2: Apply intelligent redistribution with economic constraints
-            min_bound, max_bound = bounds.get(feature, (0.1, None))
-            
-            if variance_based_coeff < min_bound * 0.5:  # Very low compared to minimum
-                # Use intelligent blending: prefer original coefficient with variance insight
-                blend_factor = 0.3  # 30% variance analysis, 70% original coefficient
-                final_coeff = blend_factor * max(variance_based_coeff, min_bound) + (1 - blend_factor) * original_coeff
-                redistribution_method = f"conservative_blend (Var: {variance_based_coeff:.4f}, Orig: {original_coeff:.4f}, blend: {blend_factor})"
-                
-            elif variance_based_coeff > original_coeff * 2.0:  # Much higher than original
-                # Cap the increase to prevent unrealistic inflation
-                blend_factor = 0.6  # 60% variance analysis, 40% original coefficient  
-                capped_coeff = min(variance_based_coeff, original_coeff * 1.5)
-                final_coeff = blend_factor * capped_coeff + (1 - blend_factor) * original_coeff
-                redistribution_method = f"capped_blend (Var: {variance_based_coeff:.4f}, Cap: {capped_coeff:.4f}, blend: {blend_factor})"
-                
-            else:
-                # Variance analysis result is reasonable, use it with minor safety adjustment
-                safety_factor = 0.8  # 80% variance analysis, 20% original coefficient
-                final_coeff = safety_factor * variance_based_coeff + (1 - safety_factor) * original_coeff
-                redistribution_method = f"variance_guided (Var: {variance_based_coeff:.4f}, safety: {safety_factor})"
-            
-            # Ensure final coefficient meets minimum bounds
-            final_coeff = max(final_coeff, min_bound)
-            if max_bound:
-                final_coeff = min(final_coeff, max_bound)
-            
-            # Update coefficient
-            redistributed_coefficients[i+1] = final_coeff
-            
-            # Store detailed information for reporting
-            if len(common_effects) > 0:
-                paired_feature = common_effects[0]['paired_with']
-                correlation = common_effects[0]['correlation']
-                
-                # Calculate meaningful percentage breakdowns
-                total_variance_effect = unique_effect + total_common_effect
-                if total_variance_effect > 0:
-                    unique_pct = (unique_effect / total_variance_effect) * 100
-                    common_pct = (total_common_effect / total_variance_effect) * 100
-                else:
-                    unique_pct = 50.0
-                    common_pct = 50.0
-                
-                self.multicollinearity_fixes[feature] = {
-                    'paired_with': paired_feature,
-                    'correlation': correlation,
-                    'original_value': original_coeff,
-                    'redistributed_value': final_coeff,
-                    'unique_effect': unique_effect,
-                    'common_effect': total_common_effect,
-                    'total_variance_effect': total_variance_effect,
-                    'redistribution_method': redistribution_method,
-                    'variance_breakdown': f"고유: {unique_effect:.4f} ({unique_pct:.1f}%) + 공통: {total_common_effect:.4f} ({common_pct:.1f}%)",
-                    'method': 'enhanced_commonality_analysis',
-                    'calculation_formula': f"unique({unique_effect:.4f}) + common({total_common_effect:.4f}) = {total_variance_effect:.4f} → {final_coeff:.4f}"
-                }
-                
-                logger.info(f"  {feature}: {original_coeff:.4f} → {final_coeff:.4f}")
-                logger.info(f"    Variance breakdown: unique={unique_effect:.4f}, common={total_common_effect:.4f}")
-                logger.info(f"    Method: {redistribution_method}")
+        # Initialize commonality analyzer
+        analyzer = CommonalityAnalyzer()
         
+        try:
+            # Perform commonality analysis to get variance decomposition
+            results = analyzer.fit(X, y, features)
+            
+            # Get economic bounds for applying constraints
+            bounds = self._get_economic_bounds(features)
+            
+            # Process each feature for variance decomposition and redistribution
+            for i, feature in enumerate(features):
+                original_coeff = coefficients[i+1]  # Skip base cost at index 0
+                
+                # Extract variance decomposition information
+                unique_effect = 0.0
+                total_common_effect = 0.0
+                common_effects = []
+                
+                # Get unique effect for this feature
+                unique_key = f"{feature}_unique"
+                if unique_key in results['commonality_coefficients']:
+                    unique_effect = results['commonality_coefficients'][unique_key]['value']
+                
+                # Get common effects involving this feature
+                for key, coeff_info in results['commonality_coefficients'].items():
+                    if coeff_info['type'] == 'common' and feature in coeff_info['features']:
+                        # This is a common effect involving this feature
+                        common_r2 = max(0, coeff_info['value'])  # Ensure non-negative
+                        total_common_effect += common_r2
+                        
+                        # Find the paired feature
+                        other_features = [f for f in coeff_info['features'] if f != feature]
+                        if other_features:
+                            correlation = self._get_correlation(feature, coeff_info['features'])
+                            common_effects.append({
+                                'paired_with': other_features[0],
+                                'correlation': correlation,
+                                'r2_contribution': common_r2
+                            })
+                
+                # **CORE LOGIC: True Redistribution for actual calculation**
+                # Redistribute coefficients between correlated features while preserving total value
+                total_r2 = results.get('total_r2', 1.0)
+                
+                # **IMPORTANT: Apply redistributed values to actual coefficients**
+                final_coeff = original_coeff  # Start with original
+                
+                # Find correlated features for redistribution
+                if len(common_effects) > 0:
+                    paired_feature = common_effects[0]['paired_with']
+                    correlation = common_effects[0]['correlation']
+                    
+                    # Get partner's coefficient for redistribution calculation
+                    partner_idx = None
+                    for idx, feat in enumerate(features):
+                        if feat == paired_feature:
+                            partner_idx = idx
+                            break
+                    
+                    if partner_idx is not None:
+                        partner_coeff = coefficients[partner_idx + 1]  # +1 for intercept
+                        
+                        # **REDISTRIBUTION LOGIC**: 
+                        # Total value = original_coeff + partner_coeff
+                        # Redistribute based on unique variance contributions
+                        total_value = original_coeff + partner_coeff
+                        
+                        if (unique_effect + total_common_effect) > 0:
+                            # Calculate redistribution ratio based on unique contribution
+                            unique_ratio = unique_effect / (unique_effect + total_common_effect)
+                            
+                            # Redistribute total value based on unique contributions
+                            # Higher unique contribution = larger share of total value
+                            redistributed_value = total_value * unique_ratio
+                            
+                            # Apply economic constraints to redistributed value
+                            min_bound, max_bound = bounds.get(feature, (0.1, None))
+                            
+                            if redistributed_value < min_bound:
+                                final_coeff = min_bound
+                                redistribution_method = f"redistribution_capped_min (unique_ratio: {unique_ratio:.3f}, total: {total_value:.2f})"
+                            elif max_bound and redistributed_value > max_bound:
+                                final_coeff = max_bound
+                                redistribution_method = f"redistribution_capped_max (unique_ratio: {unique_ratio:.3f}, total: {total_value:.2f})"
+                            else:
+                                final_coeff = redistributed_value
+                                redistribution_method = f"variance_redistribution (unique_ratio: {unique_ratio:.3f}, total: {total_value:.2f})"
+                        else:
+                            # Fallback: equal redistribution
+                            final_coeff = (original_coeff + partner_coeff) / 2
+                            redistribution_method = "equal_redistribution (no variance data)"
+                    else:
+                        redistribution_method = "no_partner_found (coefficient preserved)"
+                else:
+                    # No correlation detected - keep original coefficient
+                    redistribution_method = "no_correlation (coefficient preserved)"
+                
+                # **CRITICAL: Apply redistributed coefficient to actual array**
+                redistributed_coefficients[i+1] = final_coeff
+                
+                # Store detailed variance decomposition information for display
+                if len(common_effects) > 0:
+                    paired_feature = common_effects[0]['paired_with']
+                    correlation = common_effects[0]['correlation']
+                    
+                    # Calculate meaningful percentage breakdowns
+                    total_variance_effect = unique_effect + total_common_effect
+                    if total_variance_effect > 0:
+                        unique_pct = (unique_effect / total_variance_effect) * 100
+                        common_pct = (total_common_effect / total_variance_effect) * 100
+                    else:
+                        unique_pct = 100.0
+                        common_pct = 0.0
+                    
+                    self.multicollinearity_fixes[feature] = {
+                        'paired_with': paired_feature,
+                        'correlation': correlation,
+                        'original_value': original_coeff,
+                        'redistributed_value': final_coeff,
+                        'unique_effect': unique_effect,
+                        'common_effect': total_common_effect,
+                        'total_variance_effect': total_variance_effect,
+                        'redistribution_method': redistribution_method,
+                        'variance_breakdown': f"고유: {unique_effect:.4f} ({unique_pct:.1f}%) + 공통: {total_common_effect:.4f} ({common_pct:.1f}%)",
+                        'method': 'enhanced_commonality_analysis',
+                        'calculation_formula': f"unique({unique_effect:.4f}) + common({total_common_effect:.4f}) = {total_variance_effect:.4f} → {final_coeff:.4f}"
+                    }
+                    
+                    logger.info(f"  {feature}: Coefficient redistributed from {original_coeff:.4f} to {final_coeff:.4f} using {redistribution_method}")
+                    logger.info(f"    Variance decomposition: unique={unique_effect:.4f} ({unique_pct:.1f}%), common={total_common_effect:.4f} ({common_pct:.1f}%)")
+                    logger.info(f"    Paired with: {paired_feature} (r={correlation:.3f})")
+                else:
+                    # No multicollinearity detected for this feature
+                    self.multicollinearity_fixes[feature] = {
+                        'paired_with': 'none',
+                        'correlation': 0.0,
+                        'original_value': original_coeff,
+                        'redistributed_value': final_coeff,
+                        'unique_effect': unique_effect,
+                        'common_effect': 0.0,
+                        'total_variance_effect': unique_effect,
+                        'redistribution_method': redistribution_method,
+                        'variance_breakdown': f"고유: {unique_effect:.4f} (100.0%) + 공통: 0.0000 (0.0%)",
+                        'method': 'enhanced_commonality_analysis',
+                        'calculation_formula': f"unique({unique_effect:.4f}) + common(0.0000) = {unique_effect:.4f} → {final_coeff:.4f}"
+                    }
+                    
+                    logger.info(f"  {feature}: No multicollinearity detected, coefficient applied as {final_coeff:.4f} using {redistribution_method}")
+        
+        except Exception as e:
+            logger.error(f"Enhanced Commonality Analysis failed: {e}")
+            # Fallback: no multicollinearity fixes, preserve all coefficients
+            for i, feature in enumerate(features):
+                original_coeff = coefficients[i+1]
+                self.multicollinearity_fixes[feature] = {
+                    'paired_with': 'analysis_failed',
+                    'correlation': 0.0,
+                    'original_value': original_coeff,
+                    'redistributed_value': original_coeff,
+                    'unique_effect': 0.0,
+                    'common_effect': 0.0,
+                    'total_variance_effect': 0.0,
+                    'redistribution_method': 'fallback_preserve_original',
+                    'variance_breakdown': 'Analysis failed - coefficient preserved',
+                    'method': 'enhanced_commonality_analysis',
+                    'calculation_formula': f'Analysis failed → {original_coeff:.4f} (preserved)'
+                }
+        
+        logger.info("Enhanced Commonality Analysis completed - redistributed coefficients applied to calculation")
         return redistributed_coefficients
 
     def _apply_simple_redistribution(self, coefficients: np.ndarray, features: List[str]) -> np.ndarray:

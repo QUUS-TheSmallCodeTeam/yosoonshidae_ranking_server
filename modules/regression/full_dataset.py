@@ -44,7 +44,7 @@ class FullDatasetMultiFeatureRegression:
     backward compatibility while using the new modular architecture.
     """
     
-    def __init__(self, features=None, outlier_threshold=3.0, alpha=10.0):
+    def __init__(self, features=None, outlier_threshold=3.0, alpha=0.0):
         """
         Initialize the full dataset regression analyzer.
         

@@ -157,15 +157,15 @@ class CommonalityAnalyzer:
         return coefficients
     
     def _distribute_coefficients_by_commonality(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
-        """Distribute regression coefficients based on commonality analysis while preserving economic constraints.
+        """Calculate variance decomposition for each feature while preserving original coefficients.
         
-        This method handles suppressor effects while maintaining economic logic:
-        1. Calculate commonality contributions for each variable
-        2. Apply economic constraints to prevent unrealistic coefficients
-        3. Redistribute coefficients based on unique vs common variance contributions
+        This method provides commonality analysis information without modifying coefficients:
+        1. Calculate unique and common variance contributions for each variable
+        2. Preserve original constrained coefficients (which respect economic bounds)
+        3. Provide decomposition information for transparency
         """
         try:
-            # Get original constrained regression coefficients (these respect economic bounds)
+            # Get original constrained regression coefficients (these already respect economic bounds)
             model = LinearRegression(fit_intercept=True)
             model.fit(X, y)
             original_coeffs = model.coef_
@@ -182,7 +182,9 @@ class CommonalityAnalyzer:
                     final_coeffs[feature] = original_coeffs[i] if i < len(original_coeffs) else 0.0
                 return final_coeffs
             
-            # Calculate commonality contributions for each feature
+            # Calculate variance decomposition for each feature (for information only)
+            variance_decomposition = {}
+            
             for i, feature in enumerate(self.feature_names):
                 if i >= len(original_coeffs):
                     final_coeffs[feature] = 0.0
@@ -193,40 +195,43 @@ class CommonalityAnalyzer:
                 # Get unique contribution (variance explained by this feature alone)
                 unique_r2 = self.subset_r2.get((feature,), 0)
                 
-                # Calculate total contribution including common effects
-                total_contribution = 0.0
+                # Calculate common contributions (shared with other features)
+                common_contribution = 0.0
                 
-                # Add unique contribution
-                total_contribution += unique_r2
-                
-                # Add common contributions (shared with other features)
+                # Add common contributions from all subsets containing this feature
                 for subset, r2_value in self.subset_r2.items():
                     if len(subset) > 1 and feature in subset:
                         # This is a common effect involving this feature
-                        # Distribute the common effect equally among features in the subset
                         common_effect = self._calculate_common_effect(subset, r2_value)
-                        total_contribution += common_effect / len(subset)
+                        # Distribute the common effect equally among features in the subset
+                        common_contribution += common_effect / len(subset)
                 
-                # Calculate coefficient based on contribution ratio
-                if total_r2 > 0:
-                    contribution_ratio = total_contribution / total_r2
-                    # Scale original coefficient by contribution ratio
-                    commonality_coeff = original_coeff * contribution_ratio
-                    
-                    # Apply economic constraints to prevent suppressor effects
-                    # from violating economic logic
-                    constrained_coeff = self._apply_economic_constraints(
-                        feature, commonality_coeff, original_coeff
-                    )
-                    
-                    final_coeffs[feature] = constrained_coeff
-                else:
-                    final_coeffs[feature] = original_coeff
+                # Store variance decomposition information
+                variance_decomposition[feature] = {
+                    'unique_variance': unique_r2,
+                    'common_variance': common_contribution,
+                    'total_contribution': unique_r2 + common_contribution,
+                    'unique_percentage': (unique_r2 / total_r2 * 100) if total_r2 > 0 else 0,
+                    'common_percentage': (common_contribution / total_r2 * 100) if total_r2 > 0 else 0
+                }
+                
+                # **KEY CHANGE: Keep original coefficient unchanged**
+                # Commonality analysis provides decomposition information, not coefficient modification
+                final_coeffs[feature] = original_coeff
+                
+                # Log the decomposition for transparency
+                logger.info(f"Variance decomposition for {feature}: "
+                          f"Unique: {unique_r2:.4f} ({variance_decomposition[feature]['unique_percentage']:.1f}%), "
+                          f"Common: {common_contribution:.4f} ({variance_decomposition[feature]['common_percentage']:.1f}%), "
+                          f"Coefficient: {original_coeff:.4f} (preserved)")
+            
+            # Store decomposition information in results
+            self.variance_decomposition = variance_decomposition
             
             return final_coeffs
             
         except Exception as e:
-            print(f"Error in commonality distribution: {e}")
+            logger.error(f"Error in commonality analysis: {e}")
             # Fallback to original coefficients
             fallback_coeffs = {'intercept': intercept if 'intercept' in locals() else 0.0}
             for i, feature in enumerate(self.feature_names):

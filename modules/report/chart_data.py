@@ -43,8 +43,8 @@ def prepare_cost_structure_chart_data(cost_structure):
     # Feature costs with Korean labels and units
     feature_labels = {
         'basic_data_clean': {'label': '데이터 비용 (Data Cost)', 'unit': 'per GB'},
-        'voice_clean': {'label': '음성 비용 (Voice Cost)', 'unit': 'per 100min'},
-        'message_clean': {'label': 'SMS 비용 (SMS Cost)', 'unit': 'per 100msg'},
+        'voice_clean': {'label': '음성 비용 (Voice Cost)', 'unit': 'per min'},
+        'message_clean': {'label': 'SMS 비용 (SMS Cost)', 'unit': 'per msg'},
         'tethering_gb': {'label': '테더링 프리미엄 (Tethering Premium)', 'unit': 'per GB'},
         'is_5g': {'label': '5G 기술료 (5G Technology)', 'unit': 'per plan'}
     }

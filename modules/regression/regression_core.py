@@ -36,7 +36,7 @@ class FullDatasetRegressionCore:
     Handles outlier removal, constrained regression, and coefficient calculation.
     """
     
-    def __init__(self, features=None, outlier_threshold=3.0, alpha=10.0):
+    def __init__(self, features=None, outlier_threshold=3.0, alpha=0.0):
         self.coefficients = None
         self.features = features
         self.unconstrained_coefficients = None
